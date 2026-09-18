@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { SessionView } from "@/lib/engine/serialize";
 import type { ControlAction } from "@/lib/apiClient";
 
@@ -13,6 +12,7 @@ export function TopBar({
   onControl,
   onToggleBreakOnFailure,
   onJumpToFailure,
+  onNewSession,
 }: {
   session: SessionView;
   busy: boolean;
@@ -20,6 +20,7 @@ export function TopBar({
   onControl: (action: ControlAction) => void;
   onToggleBreakOnFailure: (v: boolean) => void;
   onJumpToFailure: () => void;
+  onNewSession: () => void;
 }) {
   const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const terminal = !lane || TERMINAL.has(lane.status);
@@ -28,9 +29,9 @@ export function TopBar({
 
   return (
     <div className="flex items-center gap-3 border-b border-bg-border bg-bg-panel px-4 py-2">
-      <Link href="/" className="text-sm text-gray-400 hover:text-white">
+      <button onClick={onNewSession} className="text-sm text-gray-400 hover:text-white">
         ← New session
-      </Link>
+      </button>
       <div className="h-4 w-px bg-bg-border" />
       <span className="text-sm font-semibold text-white">{session.workflow.name ?? "workflow"}</span>
       <div className="h-4 w-px bg-bg-border" />

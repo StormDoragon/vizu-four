@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   applyWhatIf,
   control,
+  deleteSession,
   getSession,
   setActiveLane,
   setBreakpoint,
@@ -29,6 +31,7 @@ const TABS: { id: RightTab; label: string }[] = [
 ];
 
 export function DebuggerApp({ sessionId }: { sessionId: string }) {
+  const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -138,6 +141,13 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     setSession(updated);
   }
 
+  function onNewSession() {
+    // Best-effort: reclaim this session's workspace dir immediately rather
+    // than leaving it for the idle reaper. Navigate regardless of outcome.
+    if (session) deleteSession(session.id).catch(() => {});
+    router.push("/");
+  }
+
   if (loadError) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-red-400">
@@ -169,6 +179,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         onControl={runControl}
         onToggleBreakOnFailure={onToggleBreakOnFailure}
         onJumpToFailure={jumpToFailure}
+        onNewSession={onNewSession}
       />
       {actionError && (
         <div className="border-b border-status-failure/40 bg-status-failure/10 px-4 py-1.5 text-xs text-red-300">

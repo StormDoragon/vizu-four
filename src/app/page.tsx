@@ -27,7 +27,7 @@ jobs:
           fi
       - name: Report
         if: always()
-        run: echo "tests outcome: \${{ steps.tests.outcome }}"
+        run: 'echo "tests outcome: \${{ steps.tests.outcome }}"'
 `;
 
 export default function HomePage() {

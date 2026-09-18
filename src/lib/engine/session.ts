@@ -46,6 +46,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
   const session: DebugSession = {
     id: randomUUID(),
     createdAt: new Date().toISOString(),
+    lastAccessedAt: new Date().toISOString(),
     workflow: opts.workflow,
     workspaceDir: opts.workspaceDir,
     config,

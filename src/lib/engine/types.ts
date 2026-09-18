@@ -70,6 +70,8 @@ export interface RunConfig {
 export interface DebugSession {
   id: string;
   createdAt: string;
+  /** Bumped on every read/write via the store; drives idle-session reaping. */
+  lastAccessedAt: string;
   workflow: WorkflowFile;
   workspaceDir: string;
   config: RunConfig;
