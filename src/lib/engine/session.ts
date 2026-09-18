@@ -80,6 +80,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
           outputs: {},
           stdout: "",
           stderr: "",
+          combinedOutput: [],
         })),
         env: {},
         extraPath: [],
@@ -289,6 +290,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
       record.exitCode = runResult.exitCode;
       record.stdout = maskSecrets(runResult.stdout, session.config.secrets);
       record.stderr = maskSecrets(runResult.stderr, session.config.secrets);
+      record.combinedOutput = runResult.combined.map((chunk) => ({
+        stream: chunk.stream,
+        text: maskSecrets(chunk.text, session.config.secrets),
+      }));
       record.summary = runResult.summary
         ? maskSecrets(runResult.summary, session.config.secrets)
         : undefined;

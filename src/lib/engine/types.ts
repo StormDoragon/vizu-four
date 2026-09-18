@@ -21,6 +21,8 @@ export interface StepRunRecord {
   outputs: Record<string, string>;
   stdout: string;
   stderr: string;
+  /** stdout/stderr interleaved in arrival order, for a chronological combined view. */
+  combinedOutput: { stream: "stdout" | "stderr"; text: string }[];
   summary?: string;
   simulated?: boolean;
   simulationNote?: string;

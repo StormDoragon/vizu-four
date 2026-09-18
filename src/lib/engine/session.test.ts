@@ -509,6 +509,25 @@ jobs:
     expect(record.stdout).not.toContain("supersecretvalue123");
     expect(record.stdout).toContain("***");
   });
+
+  it("masks secrets in combinedOutput too, not just the split stdout/stderr fields", async () => {
+    const s = session(
+      `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "token is $TOKEN" 1>&2
+        env:
+          TOKEN: \${{ secrets.TOKEN }}
+`,
+      { secrets: { TOKEN: "supersecretvalue123" } }
+    );
+    const record = await controlStep(s, "build::default");
+    const combinedText = record.combinedOutput.map((c) => c.text).join("");
+    expect(combinedText).not.toContain("supersecretvalue123");
+    expect(combinedText).toContain("***");
+  });
 });
 
 describe("simulated uses: steps", () => {

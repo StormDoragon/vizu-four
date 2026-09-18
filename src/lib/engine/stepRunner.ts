@@ -4,8 +4,85 @@ import os from "node:os";
 import path from "node:path";
 import { parseEnvFile, parsePathFile } from "./envFile";
 
-const MAX_CAPTURE_BYTES = 300_000;
+// Character counts (UTF-16 code units, like every other .length in this
+// file) - "BYTES" in the old single constant this replaces was misleading.
+const HEAD_CHARS = 100_000;
+const TAIL_CHARS = 200_000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+export type OutputStream = "stdout" | "stderr";
+export interface OutputChunk {
+  stream: OutputStream;
+  text: string;
+}
+
+/**
+ * Keeps the first HEAD_CHARS and last TAIL_CHARS of a stream instead of just
+ * the first MAX_CAPTURE_CHARS - a build/test log's real error is almost
+ * always at the tail, which a head-only cap silently threw away.
+ */
+class TextCapture {
+  private chunks: string[] = [];
+  private headFrozen: string | null = null;
+  private tail = "";
+  private total = 0;
+
+  feed(text: string): void {
+    this.total += text.length;
+    if (this.headFrozen === null) {
+      this.chunks.push(text);
+      const joined = this.chunks.join("");
+      if (joined.length > HEAD_CHARS + TAIL_CHARS) {
+        this.headFrozen = joined.slice(0, HEAD_CHARS);
+        this.tail = joined.slice(joined.length - TAIL_CHARS);
+        this.chunks = [];
+      }
+    } else {
+      this.tail += text;
+      if (this.tail.length > TAIL_CHARS) {
+        this.tail = this.tail.slice(this.tail.length - TAIL_CHARS);
+      }
+    }
+  }
+
+  finalize(): string {
+    if (this.headFrozen === null) return this.chunks.join("");
+    return (
+      `${this.headFrozen}\n… output truncated (${this.total.toLocaleString()} chars total, ` +
+      `showing first ${HEAD_CHARS.toLocaleString()} and last ${TAIL_CHARS.toLocaleString()}) …\n${this.tail}`
+    );
+  }
+}
+
+/**
+ * A chronological, per-stream-tagged log of the same output TextCapture
+ * buffers separately - stdout/stderr are captured into independent buffers
+ * above (so callers like the AI explainer keep clean, complete-per-stream
+ * text), but rendering them as two blocks loses which line failed *where*
+ * relative to the other stream. This is a supplementary view only, so it
+ * uses a simpler head-only cap rather than duplicating the head+tail
+ * bookkeeping above.
+ */
+class CombinedCapture {
+  private entries: OutputChunk[] = [];
+  private total = 0;
+  private truncated = false;
+
+  feed(stream: OutputStream, text: string): void {
+    this.total += text.length;
+    if (this.truncated) return;
+    if (this.total > HEAD_CHARS + TAIL_CHARS) {
+      this.truncated = true;
+      this.entries.push({ stream, text: "\n… output truncated …\n" });
+      return;
+    }
+    this.entries.push({ stream, text });
+  }
+
+  finalize(): OutputChunk[] {
+    return this.entries;
+  }
+}
 
 /**
  * Only this narrow, documented allowlist of the host's own environment is
@@ -63,6 +140,8 @@ export interface RunStepResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  /** stdout/stderr interleaved in arrival order, tagged per chunk - see CombinedCapture. */
+  combined: OutputChunk[];
   outputs: Record<string, string>;
   envAdditions: Record<string, string>;
   pathAdditions: string[];
@@ -87,18 +166,6 @@ function buildCommand(shell: string, scriptPath: string): { cmd: string; args: s
       return { cmd: "python3", args: [scriptPath] };
     default:
       return { cmd: normalized, args: [scriptPath] };
-  }
-}
-
-function capture(chunks: string[], data: Buffer, totalRef: { total: number }): void {
-  if (totalRef.total >= MAX_CAPTURE_BYTES) return;
-  const text = data.toString("utf8");
-  totalRef.total += text.length;
-  if (totalRef.total >= MAX_CAPTURE_BYTES) {
-    chunks.push(text.slice(0, Math.max(0, text.length - (totalRef.total - MAX_CAPTURE_BYTES))));
-    chunks.push("\n… output truncated …\n");
-  } else {
-    chunks.push(text);
   }
 }
 
@@ -146,10 +213,9 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
   };
 
   const result = await new Promise<RunStepResult>((resolve) => {
-    const stdoutChunks: string[] = [];
-    const stderrChunks: string[] = [];
-    const stdoutTotal = { total: 0 };
-    const stderrTotal = { total: 0 };
+    const stdoutCapture = new TextCapture();
+    const stderrCapture = new TextCapture();
+    const combinedCapture = new CombinedCapture();
     let settled = false;
     let timedOut = false;
 
@@ -177,6 +243,7 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
         exitCode: null,
         stdout: "",
         stderr: "",
+        combined: [],
         outputs: {},
         envAdditions: {},
         pathAdditions: [],
@@ -201,8 +268,16 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
       setTimeout(() => killTree("SIGKILL"), 3000);
     }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
-    child.stdout?.on("data", (d: Buffer) => capture(stdoutChunks, d, stdoutTotal));
-    child.stderr?.on("data", (d: Buffer) => capture(stderrChunks, d, stderrTotal));
+    child.stdout?.on("data", (d: Buffer) => {
+      const text = d.toString("utf8");
+      stdoutCapture.feed(text);
+      combinedCapture.feed("stdout", text);
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      const text = d.toString("utf8");
+      stderrCapture.feed(text);
+      combinedCapture.feed("stderr", text);
+    });
 
     child.on("error", (err) => {
       if (settled) return;
@@ -210,8 +285,9 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
       clearTimeout(timeout);
       resolve({
         exitCode: null,
-        stdout: stdoutChunks.join(""),
-        stderr: stderrChunks.join(""),
+        stdout: stdoutCapture.finalize(),
+        stderr: stderrCapture.finalize(),
+        combined: combinedCapture.finalize(),
         outputs: {},
         envAdditions: {},
         pathAdditions: [],
@@ -232,8 +308,9 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
       ]);
       resolve({
         exitCode: timedOut ? null : code,
-        stdout: stdoutChunks.join(""),
-        stderr: stderrChunks.join(""),
+        stdout: stdoutCapture.finalize(),
+        stderr: stderrCapture.finalize(),
+        combined: combinedCapture.finalize(),
         outputs: parseEnvFile(outputRaw),
         envAdditions: parseEnvFile(envRaw),
         pathAdditions: parsePathFile(pathRaw),

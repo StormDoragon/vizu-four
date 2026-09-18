@@ -43,6 +43,43 @@ describe("executeRunStep", () => {
     }
   });
 
+  it("keeps head and tail of a stream that exceeds the capture cap, instead of dropping the tail", async () => {
+    // 350k chars of 'a' comfortably exceeds HEAD_CHARS + TAIL_CHARS (300k),
+    // with a distinctive marker right at the very end where a real error
+    // usually is.
+    const result = await executeRunStep({
+      script:
+        'python3 -c "import sys; sys.stdout.write(\'a\' * 350000); sys.stdout.write(\'END-OF-LOG\')"',
+      shell: "bash",
+      cwd,
+      env: {},
+      extraPath: [],
+    });
+    expect(result.stdout).toContain("output truncated");
+    expect(result.stdout.startsWith("a")).toBe(true);
+    expect(result.stdout.endsWith("END-OF-LOG")).toBe(true);
+  });
+
+  it("interleaves stdout and stderr in one chronological combined log", async () => {
+    // Small sleeps between writes give each pipe time to be read separately
+    // before the next write, so the combined ordering reliably reflects
+    // wall-clock arrival order rather than racing on event-loop scheduling.
+    const result = await executeRunStep({
+      script: "echo out1; sleep 0.05; echo err1 1>&2; sleep 0.05; echo out2; sleep 0.05; echo err2 1>&2",
+      cwd,
+      env: {},
+      extraPath: [],
+    });
+    const streams = result.combined.map((c) => c.stream);
+    expect(streams).toContain("stdout");
+    expect(streams).toContain("stderr");
+    const joined = result.combined.map((c) => c.text).join("");
+    // Chronological: out1 before err1 before out2 before err2.
+    expect(joined.indexOf("out1")).toBeLessThan(joined.indexOf("err1"));
+    expect(joined.indexOf("err1")).toBeLessThan(joined.indexOf("out2"));
+    expect(joined.indexOf("out2")).toBeLessThan(joined.indexOf("err2"));
+  });
+
   it("still inherits the allowlisted host PATH so the shell/tools resolve", async () => {
     const result = await executeRunStep({
       script: "echo PATH=$PATH",

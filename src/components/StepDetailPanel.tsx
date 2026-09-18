@@ -133,7 +133,7 @@ export function StepDetailPanel({
           </p>
         )}
 
-        {record.stdout || record.stderr ? (
+        {record.combinedOutput.length > 0 ? (
           <pre
             ref={logRef}
             className={`max-h-64 overflow-auto whitespace-pre-wrap break-words rounded p-2 font-mono text-xs ${
@@ -142,8 +142,18 @@ export function StepDetailPanel({
                 : "text-gray-300"
             }`}
           >
-            {record.stdout}
-            {record.stderr && <span className="text-red-300">{record.stderr}</span>}
+            {/* Interleaved in arrival order (not two separate stdout/stderr
+                blocks) so which line failed relative to the other stream is
+                visible, matching what a real terminal would have shown. */}
+            {record.combinedOutput.map((chunk, i) =>
+              chunk.stream === "stderr" ? (
+                <span key={i} className="text-red-300">
+                  {chunk.text}
+                </span>
+              ) : (
+                <span key={i}>{chunk.text}</span>
+              )
+            )}
           </pre>
         ) : (
           <p className="text-xs italic text-gray-600">No output yet.</p>
