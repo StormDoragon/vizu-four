@@ -216,6 +216,34 @@ jobs:
     expect(lane.status).toBe("skipped");
     expect(lane.steps[0].status).toBe("skipped");
   });
+
+  it("skips a dependent job by default when its need was itself skipped, not just failed", async () => {
+    const s = session(`
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - run: echo a-ran
+  b:
+    needs: a
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo b-ran
+  c:
+    needs: b
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo c-ran
+`);
+    await controlRunAll(s);
+    expect(s.lanes["a::default"].status).toBe("skipped");
+    expect(s.lanes["b::default"].status).toBe("skipped");
+    expect(s.lanes["b::default"].steps[0].status).toBe("skipped");
+    expect(s.lanes["c::default"].status).toBe("success");
+    expect(s.lanes["c::default"].steps[0].stdout).toContain("c-ran");
+  });
 });
 
 describe("continue-on-error and status functions", () => {

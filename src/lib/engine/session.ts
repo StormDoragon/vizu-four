@@ -123,13 +123,21 @@ function activateLane(session: DebugSession, lane: Lane): void {
   const anyDepFailure = job.needs.some((dep) =>
     lanesForJob(session, dep).some((l) => l.jobResult === "failure")
   );
+  // GitHub skips a job by default not just when a dependency failed, but also
+  // when one was itself skipped (e.g. by its own `if:`) - a job's implicit
+  // default condition requires every job in `needs` to have *succeeded*, not
+  // merely "not failed". Without `always()`/`!cancelled()` etc. in its own
+  // `if:`, a skip propagates transitively down the whole needs chain.
+  const allDepsSucceeded = job.needs.every((dep) =>
+    lanesForJob(session, dep).every((l) => l.jobResult === "success")
+  );
   const effectiveEnv = resolveEffectiveEnv(session, lane, 0, undefined);
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: 0, effectiveEnv });
   evalCtx.status = { anyFailure: anyDepFailure, cancelled: session.cancelled };
 
   const cond =
     job.if === undefined
-      ? { result: !anyDepFailure && !session.cancelled }
+      ? { result: allDepsSucceeded && !session.cancelled }
       : evaluateCondition(job.if, evalCtx);
 
   if (!cond.result) {
