@@ -4,7 +4,12 @@ import type { MatrixCombo } from "../workflow/matrix";
 export type Conclusion = "success" | "failure" | "skipped" | "cancelled";
 
 export interface StepRunRecord {
+  /** Internal identity, used for breakpoints/mock-outputs/matrix highlighting -
+   * falls back to a synthetic `step-N` when the workflow gives no explicit `id`. */
   key: string;
+  /** The workflow's own explicit `id:`, if any - only steps with one are
+   * addressable via the `steps.*` expression context, matching real GitHub. */
+  id?: string;
   name: string;
   status: "pending" | "running" | "success" | "failure" | "skipped";
   ifExpr?: string;

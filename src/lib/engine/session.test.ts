@@ -489,6 +489,26 @@ jobs:
     const second = await controlStep(s, "build::default");
     expect(second.stdout).toContain("got 42");
   });
+
+  it("does not expose an id-less step under its synthetic key in the steps context", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "no id here"
+      - id: named
+        run: echo "has an id"
+      - run: echo "dump=\${{ toJSON(steps) }}"
+`);
+    await controlStep(s, "build::default");
+    await controlStep(s, "build::default");
+    const third = await controlStep(s, "build::default");
+    // The id-less first step must not leak in under its internal step-0
+    // key - only the explicitly-id'd step is real, addressable context.
+    expect(third.stdout).not.toContain("step-0");
+    expect(third.stdout).toContain("named");
+  });
 });
 
 describe("secret masking", () => {

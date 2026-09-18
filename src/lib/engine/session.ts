@@ -74,6 +74,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
         pointer: 0,
         steps: job.steps.map((s) => ({
           key: s.key,
+          id: s.id,
           name: stepDisplayName(s),
           status: "pending",
           continueOnError: false,

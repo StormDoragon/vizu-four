@@ -88,9 +88,14 @@ export function buildEvalContext(
   const job = session.workflow.jobs[lane.jobId];
   const cfg = session.config;
 
+  // Real GitHub only exposes a step under `steps.*` when it has an explicit
+  // `id:` - a step without one genuinely isn't addressable there, even
+  // though the engine still tracks it internally (breakpoints, mock
+  // outputs, matrix highlighting) via its synthetic `step-N` key.
   const stepsContext: Record<string, JsonValue> = {};
   for (const record of lane.steps.slice(0, opts.uptoStepIndex)) {
-    stepsContext[record.key] = {
+    if (!record.id) continue;
+    stepsContext[record.id] = {
       outputs: record.outputs,
       outcome: record.outcome ?? "skipped",
       conclusion: record.conclusion ?? "skipped",
