@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import type { JsonValue, WorkflowFile, WorkflowStep } from "../workflow/types";
+import type { JsonValue, ParseIssue, WorkflowFile, WorkflowStep } from "../workflow/types";
 import { comboKey, expandMatrix } from "../workflow/matrix";
 import { evaluateCondition, interpolate } from "../expressions/interpolate";
 import {
@@ -41,6 +41,9 @@ export interface CreateSessionOptions {
   workflow: WorkflowFile;
   workspaceDir: string;
   config?: Partial<RunConfig>;
+  /** Non-fatal warnings from the parse that produced `workflow`, carried
+   * onto the session so they survive past the request that created it. */
+  parseIssues?: ParseIssue[];
 }
 
 export function createSession(opts: CreateSessionOptions): DebugSession {
@@ -60,6 +63,8 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     cancelled: false,
     events: [],
     mockOutputs: {},
+    revision: 0,
+    parseIssues: opts.parseIssues ?? [],
   };
 
   for (const job of Object.values(opts.workflow.jobs)) {
@@ -364,6 +369,7 @@ export async function controlStep(session: DebugSession, laneId: string): Promis
   lane.status = "running";
   const record = await stepLane(session, laneId);
   if (!isTerminal(lane.status)) lane.status = "paused";
+  session.revision++;
   return record;
 }
 
@@ -382,23 +388,27 @@ async function runLaneLoop(
   lane.status = "running";
   let executedAtLeastOne = false;
 
-  while (lane.pointer < lane.steps.length) {
-    const stepKey = job.steps[lane.pointer].key;
-    if (
-      opts.respectBreakpoints &&
-      executedAtLeastOne &&
-      session.breakpoints.has(breakpointKey(lane.jobId, stepKey))
-    ) {
-      lane.status = "paused";
-      return;
+  try {
+    while (lane.pointer < lane.steps.length) {
+      const stepKey = job.steps[lane.pointer].key;
+      if (
+        opts.respectBreakpoints &&
+        executedAtLeastOne &&
+        session.breakpoints.has(breakpointKey(lane.jobId, stepKey))
+      ) {
+        lane.status = "paused";
+        return;
+      }
+      const record = await stepLane(session, laneId);
+      executedAtLeastOne = true;
+      if (isTerminal(lane.status)) return;
+      if (opts.respectFailureStop && record.conclusion === "failure") {
+        lane.status = "paused";
+        return;
+      }
     }
-    const record = await stepLane(session, laneId);
-    executedAtLeastOne = true;
-    if (isTerminal(lane.status)) return;
-    if (opts.respectFailureStop && record.conclusion === "failure") {
-      lane.status = "paused";
-      return;
-    }
+  } finally {
+    session.revision++;
   }
 }
 
@@ -441,6 +451,7 @@ export function setBreakpoint(
   const key = breakpointKey(jobId, stepKey);
   if (enabled) session.breakpoints.add(key);
   else session.breakpoints.delete(key);
+  session.revision++;
 }
 
 /**
@@ -461,6 +472,7 @@ export function setMockOutputs(
   } else {
     session.mockOutputs[key] = outputs;
   }
+  session.revision++;
 }
 
 export interface WhatIfPatch {
@@ -496,6 +508,7 @@ export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
   if (patch.eventName !== undefined) session.config.eventName = patch.eventName;
   if (patch.ref !== undefined) session.config.ref = patch.ref;
   if (patch.breakOnFailure !== undefined) session.breakOnFailure = patch.breakOnFailure;
+  session.revision++;
 }
 
 export function setActiveLane(session: DebugSession, laneId: string): void {

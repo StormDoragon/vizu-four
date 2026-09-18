@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-"));
-  const session = createSession({ workflow, workspaceDir, config });
+  const session = createSession({ workflow, workspaceDir, config, parseIssues: issues });
   saveSession(session);
 
   return NextResponse.json({ session: toSessionView(session), issues });

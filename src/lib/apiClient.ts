@@ -142,7 +142,9 @@ export async function evaluateExpression(
 
 export async function getContext(
   id: string,
-  laneId: string
+  laneId: string,
+  stepIndex?: number
 ): Promise<{ context: Record<string, JsonValue>; pointer: number }> {
-  return request(`/api/sessions/${id}/context?laneId=${encodeURIComponent(laneId)}`);
+  const stepParam = stepIndex !== undefined ? `&stepIndex=${stepIndex}` : "";
+  return request(`/api/sessions/${id}/context?laneId=${encodeURIComponent(laneId)}${stepParam}`);
 }

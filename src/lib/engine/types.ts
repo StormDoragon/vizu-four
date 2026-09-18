@@ -1,4 +1,4 @@
-import type { JsonValue, WorkflowFile } from "../workflow/types";
+import type { JsonValue, ParseIssue, WorkflowFile } from "../workflow/types";
 import type { MatrixCombo } from "../workflow/matrix";
 
 export type Conclusion = "success" | "failure" | "skipped" | "cancelled";
@@ -95,6 +95,16 @@ export interface DebugSession {
   events: string[];
   /** User-defined output stubs for `uses:` steps, keyed by mockOutputsKey(jobId, stepKey). */
   mockOutputs: Record<string, Record<string, string>>;
+  /** Bumped on every session mutation (step execution, breakpoints, mock
+   * outputs, What-If) - a cheap, always-correct "has anything changed"
+   * signal for clients to key cache invalidation off, instead of trying to
+   * infer staleness from an unrelated field like the active lane's pointer. */
+  revision: number;
+  /** Non-fatal warnings from parsing this session's workflow (e.g. an
+   * unknown `needs`, a step with neither `run` nor `uses`) - the session
+   * outlives the create-and-navigate round trip that computed them, so
+   * they're not lost the moment the create page unmounts. */
+  parseIssues: ParseIssue[];
 }
 
 export function breakpointKey(jobId: string, stepKey: string): string {

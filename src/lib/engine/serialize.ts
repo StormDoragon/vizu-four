@@ -1,4 +1,4 @@
-import type { JsonValue } from "../workflow/types";
+import type { JsonValue, ParseIssue } from "../workflow/types";
 import { buildJobGraph } from "../workflow/graph";
 import { expandMatrix, type MatrixCombo } from "../workflow/matrix";
 import type { DebugSession, Lane } from "./types";
@@ -52,6 +52,11 @@ export interface SessionView {
   laneOrder: string[];
   /** User-defined output stubs for `uses:` steps, keyed by `${jobId}:${stepKey}`. */
   mockOutputs: Record<string, Record<string, string>>;
+  /** Bumped on every session mutation - use as a cache-invalidation key
+   * instead of an unrelated field like the active lane's pointer. */
+  revision: number;
+  /** Non-fatal warnings from parsing this session's workflow. */
+  parseIssues: ParseIssue[];
 }
 
 export function toSessionView(session: DebugSession): SessionView {
@@ -105,5 +110,7 @@ export function toSessionView(session: DebugSession): SessionView {
     lanes: session.lanes,
     laneOrder: session.laneOrder,
     mockOutputs: session.mockOutputs,
+    revision: session.revision,
+    parseIssues: session.parseIssues,
   };
 }

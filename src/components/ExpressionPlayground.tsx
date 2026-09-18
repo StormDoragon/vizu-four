@@ -37,23 +37,34 @@ export function ExpressionPlayground({
   return (
     <div className="space-y-2">
       <p className="text-xs text-gray-500">
-        Evaluate a raw expression (no wrapper needed) against the active lane&apos;s current
-        context. Secrets in the result are masked, same as everywhere else.
+        Evaluate an expression against the active lane&apos;s current context - paste one
+        straight from a workflow file, <code>${"{{ }}"}</code> wrapper and all, or write a bare
+        one. Secrets in the result are masked, same as everywhere else.
       </p>
       <textarea
         value={expr}
         onChange={(e) => setExpr(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            e.preventDefault();
+            run();
+          }
+        }}
         rows={3}
         spellCheck={false}
         className="w-full rounded-md border border-bg-border bg-bg-panel p-2 font-mono text-xs text-gray-100 focus:border-status-running focus:outline-none"
       />
-      <button
-        onClick={run}
-        disabled={loading}
-        className="rounded-md bg-status-running px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-      >
-        {loading ? "Evaluating…" : "Evaluate"}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={run}
+          disabled={loading}
+          title="⌘/Ctrl+Enter"
+          className="rounded-md bg-status-running px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        >
+          {loading ? "Evaluating…" : "Evaluate"}
+        </button>
+        <span className="text-xs text-gray-600">⌘/Ctrl+Enter</span>
+      </div>
       {error && (
         <pre className="whitespace-pre-wrap rounded-md border border-status-failure/40 bg-status-failure/10 p-2 text-xs text-red-300">
           {error}

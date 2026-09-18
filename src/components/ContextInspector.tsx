@@ -22,11 +22,17 @@ const OPEN_BY_DEFAULT = new Set(["matrix", "env", "steps"]);
 export function ContextInspector({
   sessionId,
   laneId,
-  refreshKey,
+  stepIndex,
+  revision,
 }: {
   sessionId: string;
   laneId: string | null;
-  refreshKey: number;
+  /** Show context as of this already-executed step, not just the lane's
+   * current pointer - so selecting an earlier step shows its own context. */
+  stepIndex?: number;
+  /** Bumped by the session on every mutation - refetches even when neither
+   * laneId nor stepIndex changed (e.g. a What-If or mock-output edit). */
+  revision: number;
 }) {
   const [context, setContext] = useState<Record<string, JsonValue> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +43,8 @@ export function ContextInspector({
       return;
     }
     let cancelled = false;
-    getContext(sessionId, laneId)
+    setError(null);
+    getContext(sessionId, laneId, stepIndex)
       .then((r) => {
         if (!cancelled) setContext(r.context);
       })
@@ -48,7 +55,7 @@ export function ContextInspector({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, laneId, refreshKey]);
+  }, [sessionId, laneId, stepIndex, revision]);
 
   if (!laneId) return <p className="text-sm text-gray-500">No active lane selected yet.</p>;
   if (error) return <p className="text-sm text-red-400">{error}</p>;

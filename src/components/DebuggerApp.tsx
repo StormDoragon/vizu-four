@@ -39,6 +39,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("inspector");
   const [failureCursor, setFailureCursor] = useState(0);
+  const [parseIssuesDismissed, setParseIssuesDismissed] = useState(false);
 
   useEffect(() => {
     getSession(sessionId)
@@ -165,10 +166,12 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
 
   const activeLane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const inspectorLaneId = selection?.laneId ?? session.activeLaneId ?? null;
-  const inspectorRefreshKey = inspectorLaneId
-    ? (session.lanes[inspectorLaneId]?.pointer ?? 0) +
-      (session.lanes[inspectorLaneId]?.steps.length ?? 0) * 1000
-    : 0;
+  // Context as of right after the selected step finished, so its own
+  // outputs show up in `steps.*` - not always the lane's current pointer,
+  // which is "the next step to run", not "the step the user clicked".
+  const inspectorStepIndex = selection
+    ? selection.stepIndex + 1
+    : (inspectorLaneId ? session.lanes[inspectorLaneId]?.pointer : undefined);
 
   return (
     <div className="flex h-screen flex-col">
@@ -189,6 +192,22 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
       {activeLane?.jobIfWarning && (
         <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-300">
           ⚠ {activeLane.jobIfWarning}
+        </div>
+      )}
+      {!parseIssuesDismissed && session.parseIssues.length > 0 && (
+        <div className="flex items-start gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-300">
+          <ul className="flex-1 space-y-0.5">
+            {session.parseIssues.map((issue, i) => (
+              <li key={i}>⚠ {issue.message}</li>
+            ))}
+          </ul>
+          <button
+            onClick={() => setParseIssuesDismissed(true)}
+            className="shrink-0 text-yellow-400 hover:text-yellow-200"
+            aria-label="Dismiss parse warnings"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -221,9 +240,16 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           </div>
           <div className="flex-1 overflow-auto p-3">
             {rightTab === "inspector" && (
-              <ContextInspector sessionId={session.id} laneId={inspectorLaneId} refreshKey={inspectorRefreshKey} />
+              <ContextInspector
+                sessionId={session.id}
+                laneId={inspectorLaneId}
+                stepIndex={inspectorStepIndex}
+                revision={session.revision}
+              />
             )}
-            {rightTab === "matrix" && <MatrixExplorer session={session} onSelectLane={onSelectLane} />}
+            {rightTab === "matrix" && (
+              <MatrixExplorer session={session} selectedLaneId={inspectorLaneId} onSelectLane={onSelectLane} />
+            )}
             {rightTab === "playground" && (
               <ExpressionPlayground sessionId={session.id} laneId={inspectorLaneId} />
             )}

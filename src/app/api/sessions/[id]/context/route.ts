@@ -12,12 +12,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const session = getSession(id);
   if (!session) return errorResponse(404, "Session not found");
 
-  const laneId = new URL(req.url).searchParams.get("laneId");
+  const url = new URL(req.url);
+  const laneId = url.searchParams.get("laneId");
   const lane = laneId ? session.lanes[laneId] : undefined;
   if (!lane) return errorResponse(404, "Unknown or missing 'laneId'");
 
-  const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, undefined);
-  const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
+  // Defaults to the lane's own pointer (its current position) but a caller
+  // can ask for the context as of any already-executed step - e.g. the step
+  // the user actually clicked on, rather than always the pointer's step.
+  // Clamped so a request can't peek at a step that hasn't run yet.
+  const stepIndexParam = url.searchParams.get("stepIndex");
+  const requestedIndex = stepIndexParam === null ? NaN : Number(stepIndexParam);
+  const uptoStepIndex = Number.isFinite(requestedIndex)
+    ? Math.max(0, Math.min(requestedIndex, lane.pointer))
+    : lane.pointer;
+
+  const effectiveEnv = resolveEffectiveEnv(session, lane, uptoStepIndex, undefined);
+  const evalCtx = buildEvalContext(session, lane, { uptoStepIndex, effectiveEnv });
 
   // Belt-and-suspenders: mask any secret value that leaked into another
   // context (e.g. via `env: TOKEN: ${{ secrets.TOKEN }}`), then replace the

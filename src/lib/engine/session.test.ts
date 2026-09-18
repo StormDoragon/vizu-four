@@ -688,3 +688,63 @@ jobs:
     expect(record.outputs.token).toBe("***");
   });
 });
+
+describe("session.parseIssues", () => {
+  it("carries parse warnings onto the session instead of losing them after creation", () => {
+    const { workflow } = parseWorkflow(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: []
+`);
+    const issues = [{ severity: "warning" as const, message: "jobs.build.steps is empty" }];
+    const s = createSession({ workflow: workflow!, workspaceDir, parseIssues: issues });
+    createdSessionIds.push(s.id);
+    expect(s.parseIssues).toEqual(issues);
+  });
+
+  it("defaults to an empty list when no parse issues are given", () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    expect(s.parseIssues).toEqual([]);
+  });
+});
+
+describe("session.revision", () => {
+  it("bumps on every mutating operation, not just when a lane's pointer moves", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo one
+      - run: echo two
+`);
+    const seen: number[] = [s.revision];
+
+    setBreakpoint(s, "build", "step-1", true);
+    seen.push(s.revision);
+
+    setMockOutputs(s, "build", "step-0", null);
+    seen.push(s.revision);
+
+    applyWhatIf(s, { env: { FOO: "bar" } });
+    seen.push(s.revision);
+
+    await controlStep(s, "build::default");
+    seen.push(s.revision);
+
+    await controlContinue(s, "build::default");
+    seen.push(s.revision);
+
+    // Strictly increasing - every operation above mutated the session.
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]).toBeGreaterThan(seen[i - 1]);
+    }
+  });
+});
