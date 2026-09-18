@@ -91,7 +91,18 @@ describe("operators", () => {
     expect(evaluateExpression("1 < 2", ctx())).toBe(true);
     expect(evaluateExpression("2 <= 2", ctx())).toBe(true);
     expect(evaluateExpression("3 > 2", ctx())).toBe(true);
-    expect(evaluateExpression("'apple' < 'banana'", ctx())).toBe(true);
+  });
+
+  it("coerces both sides of a relational comparison to numbers, even two strings", () => {
+    // GitHub's real behavior: unlike `==`/`!=`, relational operators don't
+    // special-case two string operands with a lexicographic comparison -
+    // both sides go through the same number coercion as every other type
+    // combination. 'apple'/'banana' both coerce to NaN, so every relational
+    // comparison between them is false, not a lexicographic "apple" < "banana".
+    expect(evaluateExpression("'apple' < 'banana'", ctx())).toBe(false);
+    expect(evaluateExpression("'apple' > 'banana'", ctx())).toBe(false);
+    expect(evaluateExpression("'10' < '9'", ctx())).toBe(false);
+    expect(evaluateExpression("'10' > '9'", ctx())).toBe(true);
   });
 
   it("negates with !", () => {

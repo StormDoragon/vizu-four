@@ -85,22 +85,22 @@ export function looseEquals(a: JsonValue | undefined, b: JsonValue | undefined):
   return toNumber(a) === toNumber(b);
 }
 
+/**
+ * GitHub coerces *both* operands of every relational operator to numbers -
+ * there's no special-casing for two string operands, unlike `==`/`!=`'s
+ * case-insensitive string comparison. So `'apple' < 'banana'` is `false` on
+ * a real runner: both sides coerce to `NaN` and every relational comparison
+ * against `NaN` is false.
+ */
 export function compareRelational(
   op: "<" | "<=" | ">" | ">=",
   a: JsonValue | undefined,
   b: JsonValue | undefined
 ): boolean {
-  let cmp: number;
-  if (typeof a === "string" && typeof b === "string") {
-    const la = a.toLowerCase();
-    const lb = b.toLowerCase();
-    cmp = la < lb ? -1 : la > lb ? 1 : 0;
-  } else {
-    const na = toNumber(a);
-    const nb = toNumber(b);
-    if (Number.isNaN(na) || Number.isNaN(nb)) return false;
-    cmp = na < nb ? -1 : na > nb ? 1 : 0;
-  }
+  const na = toNumber(a);
+  const nb = toNumber(b);
+  if (Number.isNaN(na) || Number.isNaN(nb)) return false;
+  const cmp = na < nb ? -1 : na > nb ? 1 : 0;
   switch (op) {
     case "<":
       return cmp < 0;
