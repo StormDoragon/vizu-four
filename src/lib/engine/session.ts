@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { JsonValue, WorkflowFile, WorkflowStep } from "../workflow/types";
 import { comboKey, expandMatrix } from "../workflow/matrix";
@@ -7,6 +8,7 @@ import {
   resolveEffectiveEnv,
   buildEvalContext,
   evaluateBooleanField,
+  sessionTempRoot,
 } from "./contexts";
 import { executeRunStep } from "./stepRunner";
 import { runSimulatedAction } from "./simulatedActions";
@@ -82,6 +84,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
         env: {},
         extraPath: [],
         outputs: {},
+        tempDir: path.join(sessionTempRoot(session.id), "runner-temp", laneId.replace(/:/g, "_")),
       };
       session.lanes[laneId] = lane;
       session.laneOrder.push(laneId);
@@ -270,12 +273,14 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
         ? interpolate(step["working-directory"], evalCtx).result
         : undefined;
       const cwd = workDirRaw ? path.resolve(session.workspaceDir, workDirRaw) : session.workspaceDir;
+      await fs.mkdir(lane.tempDir, { recursive: true });
       const runResult = await executeRunStep({
         script,
         shell: step.shell,
         cwd,
         env: effectiveEnv,
         extraPath: lane.extraPath,
+        runnerTempDir: lane.tempDir,
         timeoutMs:
           typeof step["timeout-minutes"] === "number"
             ? step["timeout-minutes"] * 60_000

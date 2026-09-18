@@ -48,6 +48,15 @@ export interface RunStepOptions {
   env: Record<string, string>;
   extraPath: string[];
   timeoutMs?: number;
+  /**
+   * `$RUNNER_TEMP`/`runner.temp` for the whole job this step belongs to -
+   * unlike the per-step scratch dir this function creates for its own
+   * $GITHUB_OUTPUT/$GITHUB_ENV bookkeeping (deleted right after the step),
+   * this one is created by the caller once per lane and persists across
+   * every step in that lane, matching real Actions semantics. Falls back to
+   * the per-step scratch dir if the caller doesn't provide one (e.g. tests).
+   */
+  runnerTempDir?: string;
 }
 
 export interface RunStepResult {
@@ -133,7 +142,7 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
     GITHUB_ENV: envFile,
     GITHUB_PATH: pathFile,
     GITHUB_STEP_SUMMARY: summaryFile,
-    RUNNER_TEMP: workDir,
+    RUNNER_TEMP: opts.runnerTempDir ?? workDir,
   };
 
   const result = await new Promise<RunStepResult>((resolve) => {

@@ -12,6 +12,38 @@ function lanesForJob(session: DebugSession, jobId: string): Lane[] {
     .filter((lane) => lane.jobId === jobId);
 }
 
+/** Root of every temp path this session creates on disk - swept on session cleanup. */
+export function sessionTempRoot(sessionId: string): string {
+  return path.join(os.tmpdir(), "actions-debugger", sessionId);
+}
+
+function flattenRunsOnLabels(runsOn: JsonValue): string[] {
+  if (typeof runsOn === "string") return [runsOn];
+  if (Array.isArray(runsOn)) return runsOn.filter((v): v is string => typeof v === "string");
+  if (runsOn && typeof runsOn === "object" && !Array.isArray(runsOn)) {
+    const labels = (runsOn as Record<string, JsonValue>).labels;
+    return flattenRunsOnLabels(labels ?? null);
+  }
+  return [];
+}
+
+/**
+ * `run:` steps always execute on this machine's real OS - full cross-OS
+ * emulation is out of scope - but deriving `runner.os` from the job's
+ * declared `runs-on` (rather than hardcoding "Linux") is nearly free and
+ * makes `if: runner.os == 'Windows'`-style branches in a matrix-over-OS
+ * workflow evaluate the way they would on the real runner, even though the
+ * shell underneath is still this host's.
+ */
+export function deriveRunnerOs(runsOn: JsonValue): "Linux" | "Windows" | "macOS" {
+  const labels = flattenRunsOnLabels(runsOn).map((l) => l.toLowerCase());
+  if (labels.some((l) => l.includes("windows"))) return "Windows";
+  if (labels.some((l) => l.includes("macos") || l.includes("mac-os") || l.includes("darwin"))) {
+    return "macOS";
+  }
+  return "Linux";
+}
+
 /**
  * Aggregates a job's result across every matrix lane. When lanes finish at
  * different times and disagree on outputs, GitHub's own documented
@@ -91,11 +123,14 @@ export function buildEvalContext(
     needs: needsContext,
     steps: stepsContext,
     runner: {
-      os: "Linux",
+      os: deriveRunnerOs(job["runs-on"]),
       arch: "X64",
       name: "Debugger Local Runner",
-      temp: path.join(os.tmpdir(), "actions-debugger", session.id, "runner-temp"),
-      tool_cache: path.join(os.tmpdir(), "actions-debugger", session.id, "tool-cache"),
+      // Same path the spawned process actually sees as $RUNNER_TEMP (see
+      // stepRunner.ts) - previously this was a different, never-created
+      // path, so `${{ runner.temp }}` and `$RUNNER_TEMP` disagreed.
+      temp: lane.tempDir,
+      tool_cache: path.join(sessionTempRoot(session.id), "tool-cache"),
       debug: "0",
     },
     job: {

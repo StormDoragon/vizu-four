@@ -13,16 +13,22 @@ import {
   setMockOutputs,
 } from "./session";
 import { EngineError } from "./errors";
+import { sessionTempRoot } from "./contexts";
 import type { DebugSession } from "./types";
 
 let workspaceDir: string;
+let createdSessionIds: string[];
 
 beforeEach(async () => {
   workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-session-test-"));
+  createdSessionIds = [];
 });
 
 afterEach(async () => {
   await fs.rm(workspaceDir, { recursive: true, force: true });
+  await Promise.all(
+    createdSessionIds.map((id) => fs.rm(sessionTempRoot(id), { recursive: true, force: true }))
+  );
 });
 
 function session(yaml: string, config?: Parameters<typeof createSession>[0]["config"]): DebugSession {
@@ -31,7 +37,9 @@ function session(yaml: string, config?: Parameters<typeof createSession>[0]["con
   if (!workflow || blocking.length > 0) {
     throw new Error(`fixture failed to parse: ${JSON.stringify(blocking)}`);
   }
-  return createSession({ workflow, workspaceDir, config });
+  const s = createSession({ workflow, workspaceDir, config });
+  createdSessionIds.push(s.id);
+  return s;
 }
 
 describe("createSession", () => {
@@ -377,6 +385,41 @@ jobs:
     expect(s.config.envOverrides.GREETING).toBeUndefined();
     const record = await controlStep(s, "build::default");
     expect(record.stdout).toContain("[]");
+  });
+});
+
+describe("runner context fidelity", () => {
+  it("derives runner.os from runs-on instead of hardcoding Linux", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - run: echo "\${{ runner.os }}"
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.stdout).toContain("Windows");
+  });
+
+  it("keeps runner.temp and $RUNNER_TEMP as the same real, persistent-per-lane directory", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "expr=\${{ runner.temp }}" >> "$GITHUB_OUTPUT"
+          echo "env=$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
+          touch "$RUNNER_TEMP/marker"
+      - run: |
+          echo "still-there=$(test -f "$RUNNER_TEMP/marker" && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+`);
+    await controlStep(s, "build::default");
+    const record2 = await controlStep(s, "build::default");
+    const lane = s.lanes["build::default"];
+    expect(lane.steps[0].outputs.expr).toBe(lane.steps[0].outputs.env);
+    expect(lane.steps[0].outputs.expr).toBe(lane.tempDir);
+    expect(record2.outputs["still-there"]).toBe("yes");
   });
 });
 

@@ -51,6 +51,9 @@ export interface Lane {
   outputs: Record<string, string>;
   jobResult?: Conclusion;
   jobIfWarning?: string;
+  /** This lane's `$RUNNER_TEMP`/`runner.temp` dir - same path for both, unlike a real
+   * per-step scratch dir; created on disk lazily before the first run: step needs it. */
+  tempDir: string;
 }
 
 export interface RunConfig {

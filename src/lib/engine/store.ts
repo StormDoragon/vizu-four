@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { sessionTempRoot } from "./contexts";
 import type { DebugSession } from "./types";
 
 // Stashed on `globalThis` so the singleton survives Next.js dev-mode module
@@ -24,6 +25,9 @@ function getStore(): Map<string, DebugSession> {
 
 async function removeSession(session: DebugSession): Promise<void> {
   await fs.rm(session.workspaceDir, { recursive: true, force: true }).catch(() => {});
+  // Reclaims every lane's $RUNNER_TEMP dir and the shared tool_cache dir in
+  // one shot, since they all live under this session's temp root.
+  await fs.rm(sessionTempRoot(session.id), { recursive: true, force: true }).catch(() => {});
   getStore().delete(session.id);
 }
 
