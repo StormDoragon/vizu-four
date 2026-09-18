@@ -9,13 +9,17 @@ const TERMINAL = new Set(["success", "failure", "skipped"]);
 export function TopBar({
   session,
   busy,
+  failureCount,
   onControl,
   onToggleBreakOnFailure,
+  onJumpToFailure,
 }: {
   session: SessionView;
   busy: boolean;
+  failureCount: number;
   onControl: (action: ControlAction) => void;
   onToggleBreakOnFailure: (v: boolean) => void;
+  onJumpToFailure: () => void;
 }) {
   const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const terminal = !lane || TERMINAL.has(lane.status);
@@ -33,6 +37,16 @@ export function TopBar({
       <span className="text-xs text-gray-500">
         active lane: {lane ? `${lane.id} (${lane.status})` : "none"}
       </span>
+
+      {failureCount > 0 && (
+        <button
+          onClick={onJumpToFailure}
+          data-testid="jump-to-failure"
+          className="rounded-md border border-status-failure/50 bg-status-failure/10 px-3 py-1.5 text-xs font-medium text-status-failure hover:bg-status-failure/20"
+        >
+          ⚠ {failureCount} failing — jump
+        </button>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         <button

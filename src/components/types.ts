@@ -6,6 +6,18 @@ export interface Selection {
   stepIndex: number;
 }
 
+/** Every currently-failed step across the whole session, in lane/step order. */
+export function findFailures(session: SessionView): Selection[] {
+  const failures: Selection[] = [];
+  for (const laneId of session.laneOrder) {
+    const lane = session.lanes[laneId];
+    lane.steps.forEach((step, stepIndex) => {
+      if (step.conclusion === "failure") failures.push({ laneId, stepIndex });
+    });
+  }
+  return failures;
+}
+
 export interface JobNodeData extends Record<string, unknown> {
   session: SessionView;
   jobId: string;

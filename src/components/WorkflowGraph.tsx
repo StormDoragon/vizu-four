@@ -38,7 +38,16 @@ export function WorkflowGraph({
           .filter((l) => l.jobId === jobId);
         const active = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
         const isActiveLaneJob = active?.jobId === jobId;
-        const laneId = isActiveLaneJob ? active!.id : lanesForJob[0]?.id ?? "";
+        // Prefer whichever lane the current selection points at (e.g. after
+        // auto-jumping to a failure in a non-active matrix lane), so the
+        // graph's dropdown/steps agree with what the bottom panel shows.
+        const selectedLane = selection ? session.lanes[selection.laneId] : undefined;
+        const laneId =
+          selectedLane?.jobId === jobId
+            ? selectedLane.id
+            : isActiveLaneJob
+              ? active!.id
+              : (lanesForJob[0]?.id ?? "");
 
         nodes.push({
           id: jobId,
@@ -75,6 +84,7 @@ export function WorkflowGraph({
       if (placed.has(jobId)) continue;
       const job = session.workflow.jobs[jobId];
       const lanesForJob = session.laneOrder.map((id) => session.lanes[id]).filter((l) => l.jobId === jobId);
+      const selectedLane = selection ? session.lanes[selection.laneId] : undefined;
       nodes.push({
         id: jobId,
         type: "job",
@@ -82,7 +92,7 @@ export function WorkflowGraph({
         data: {
           session,
           jobId,
-          laneId: lanesForJob[0]?.id ?? "",
+          laneId: selectedLane?.jobId === jobId ? selectedLane.id : (lanesForJob[0]?.id ?? ""),
           lanesForJob,
           isActiveLaneJob: false,
           selection,

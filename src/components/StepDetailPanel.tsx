@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionView } from "@/lib/engine/serialize";
 import { explainFailure, type FailureExplanation } from "@/lib/apiClient";
 import { MockOutputsEditor } from "./MockOutputsEditor";
@@ -26,8 +26,49 @@ export function StepDetailPanel({
   const [explanation, setExplanation] = useState<FailureExplanation | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const logRef = useRef<HTMLPreElement>(null);
 
-  if (!selection || !session.lanes[selection.laneId]) {
+  // Null-safe derivation so hooks below can run unconditionally, before the
+  // "nothing selected" early return further down.
+  const effectLane = selection ? session.lanes[selection.laneId] : undefined;
+  const effectRecord = effectLane && selection ? effectLane.steps[selection.stepIndex] : undefined;
+  const isFailure = effectRecord?.conclusion === "failure";
+
+  // Auto-fetch the failure explanation the moment a failed step is selected,
+  // instead of waiting for a click - and always reset stale state from
+  // whatever step was previously selected, so switching between two
+  // different failures never shows the wrong one.
+  useEffect(() => {
+    setExplanation(null);
+    setExplainError(null);
+    if (!selection || !isFailure) return;
+    let cancelled = false;
+    setExplaining(true);
+    explainFailure(session.id, selection.laneId, selection.stepIndex)
+      .then(({ explanation }) => {
+        if (!cancelled) setExplanation(explanation);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setExplainError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setExplaining(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, selection?.laneId, selection?.stepIndex, isFailure]);
+
+  // Failures often bury the real error at the end of a long log - jump
+  // straight to it instead of leaving the viewer scrolled to the top.
+  useEffect(() => {
+    if (isFailure && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [selection?.laneId, selection?.stepIndex, isFailure, effectRecord?.stdout, effectRecord?.stderr]);
+
+  if (!selection || !effectLane) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-gray-600">
         Select a step in the graph to see its output.
@@ -35,12 +76,12 @@ export function StepDetailPanel({
     );
   }
 
-  const lane = session.lanes[selection.laneId];
+  const lane = effectLane;
   const job = session.workflow.jobs[lane.jobId];
   const step = job.steps[selection.stepIndex];
   const record = lane.steps[selection.stepIndex];
 
-  async function explain() {
+  async function reAnalyze() {
     setExplaining(true);
     setExplainError(null);
     try {
@@ -86,10 +127,21 @@ export function StepDetailPanel({
         )}
 
         {record.simulationNote && <p className="mb-2 text-xs italic text-gray-500">{record.simulationNote}</p>}
-        {record.engineError && <p className="mb-2 text-xs text-red-400">{record.engineError}</p>}
+        {record.engineError && (
+          <p className="mb-2 rounded border border-status-failure/40 bg-status-failure/10 px-2 py-1 text-xs text-red-300">
+            {record.engineError}
+          </p>
+        )}
 
         {record.stdout || record.stderr ? (
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs text-gray-300">
+          <pre
+            ref={logRef}
+            className={`max-h-64 overflow-auto whitespace-pre-wrap break-words rounded p-2 font-mono text-xs ${
+              record.conclusion === "failure"
+                ? "border-l-4 border-status-failure bg-status-failure/5 text-gray-200"
+                : "text-gray-300"
+            }`}
+          >
             {record.stdout}
             {record.stderr && <span className="text-red-300">{record.stderr}</span>}
           </pre>
@@ -128,11 +180,11 @@ export function StepDetailPanel({
         {record.conclusion === "failure" ? (
           <div>
             <button
-              onClick={explain}
+              onClick={reAnalyze}
               disabled={explaining}
               className="mb-3 rounded-md bg-status-failure/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-status-failure disabled:opacity-50"
             >
-              {explaining ? "Analyzing…" : "Explain this failure"}
+              {explaining ? "Analyzing…" : explanation ? "Re-analyze" : "Explain this failure"}
             </button>
             {explainError && <p className="text-xs text-red-400">{explainError}</p>}
             {explanation && (

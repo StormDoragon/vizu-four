@@ -17,7 +17,7 @@ import { MatrixExplorer } from "./MatrixExplorer";
 import { ExpressionPlayground } from "./ExpressionPlayground";
 import { WhatIfPanel } from "./WhatIfPanel";
 import { StepDetailPanel } from "./StepDetailPanel";
-import type { Selection } from "./types";
+import { findFailures, type Selection } from "./types";
 
 type RightTab = "inspector" | "matrix" | "playground" | "whatif";
 
@@ -35,12 +35,16 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("inspector");
+  const [failureCursor, setFailureCursor] = useState(0);
 
   useEffect(() => {
     getSession(sessionId)
       .then((r) => {
         setSession(r.session);
-        if (r.session.activeLaneId) {
+        const failures = findFailures(r.session);
+        if (failures.length > 0) {
+          setSelection(failures[0]);
+        } else if (r.session.activeLaneId) {
           const lane = r.session.lanes[r.session.activeLaneId];
           setSelection({ laneId: lane.id, stepIndex: Math.min(lane.pointer, Math.max(lane.steps.length - 1, 0)) });
         }
@@ -56,16 +60,54 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     try {
       const { session: updated } = await control(session.id, action, laneId);
       setSession(updated);
-      if (laneId) {
-        const lane = updated.lanes[laneId];
-        const idx = Math.max(0, Math.min(lane.pointer, lane.steps.length - 1));
-        setSelection({ laneId, stepIndex: idx });
-      }
+      setSelection(pickPostControlSelection(updated, laneId ?? null));
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * After executing anything, prefer landing on a failure: the active
+   * lane's own, if it just failed, else the first failure anywhere (e.g.
+   * "Run all" can fail a matrix lane other than the active one). Falls back
+   * to the previous "select whatever just ran" behavior when nothing failed.
+   */
+  function pickPostControlSelection(updated: SessionView, laneId: string | null): Selection | null {
+    if (laneId) {
+      const lane = updated.lanes[laneId];
+      const idx = Math.max(0, Math.min(lane.pointer, lane.steps.length - 1));
+      if (lane.steps[idx]?.conclusion === "failure") {
+        return { laneId, stepIndex: idx };
+      }
+    }
+    const failures = findFailures(updated);
+    if (failures.length > 0) return failures[0];
+    if (laneId) {
+      const lane = updated.lanes[laneId];
+      const idx = Math.max(0, Math.min(lane.pointer, lane.steps.length - 1));
+      return { laneId, stepIndex: idx };
+    }
+    return null;
+  }
+
+  async function jumpToFailure() {
+    if (!session) return;
+    const failures = findFailures(session);
+    if (failures.length === 0) return;
+    const target = failures[failureCursor % failures.length];
+    setFailureCursor((c) => (c + 1) % failures.length);
+    if (target.laneId !== session.activeLaneId) {
+      try {
+        const { session: updated } = await setActiveLane(session.id, target.laneId);
+        setSession(updated);
+      } catch (err) {
+        setActionError((err as Error).message);
+        return;
+      }
+    }
+    setSelection(target);
   }
 
   async function onSelectLane(laneId: string) {
@@ -123,8 +165,10 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
       <TopBar
         session={session}
         busy={busy}
+        failureCount={findFailures(session).length}
         onControl={runControl}
         onToggleBreakOnFailure={onToggleBreakOnFailure}
+        onJumpToFailure={jumpToFailure}
       />
       {actionError && (
         <div className="border-b border-status-failure/40 bg-status-failure/10 px-4 py-1.5 text-xs text-red-300">
