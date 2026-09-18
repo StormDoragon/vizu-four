@@ -253,7 +253,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     const artifactsDir = path.join(session.workspaceDir, ".debugger", "artifacts");
     const simResult = runSimulatedAction(step.uses, withInputs, session.workspaceDir, artifactsDir);
     record.simulated = true;
-    record.simulationNote = simResult.note;
+    // simResult.note can legitimately echo back `with:` input values (e.g. a
+    // registry username) that a workflow commonly sources from `secrets.*` -
+    // mask it the same as every other client-visible surface.
+    record.simulationNote = maskSecrets(simResult.note, session.config.secrets);
     record.outputs = maskObjectStrings(simResult.outputs, session.config.secrets);
     record.outcome = simResult.conclusion;
     record.exitCode = simResult.conclusion === "success" ? 0 : 1;
