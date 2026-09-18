@@ -1,0 +1,29 @@
+name: Simple CI
+on: [push]
+
+env:
+  NODE_ENV: test
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: echo "npm ci"
+
+      - name: Run linter
+        id: lint
+        run: |
+          echo "Linting…"
+          echo "0 problems" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run tests
+        id: tests
+        run: |
+          echo "Running test suite in $NODE_ENV mode"
+          echo "count=42" >> "$GITHUB_OUTPUT"
+
+      - name: Report test count
+        run: echo "Ran ${{ steps.tests.outputs.count }} tests"

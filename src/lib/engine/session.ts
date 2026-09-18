@@ -1,0 +1,394 @@
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { JsonValue, WorkflowFile, WorkflowStep } from "../workflow/types";
+import { comboKey, expandMatrix } from "../workflow/matrix";
+import { evaluateCondition, interpolate } from "../expressions/interpolate";
+import {
+  resolveEffectiveEnv,
+  buildEvalContext,
+  evaluateBooleanField,
+} from "./contexts";
+import { executeRunStep } from "./stepRunner";
+import { runSimulatedAction } from "./simulatedActions";
+import { maskObjectStrings, maskSecrets } from "./masking";
+import { EngineError } from "./errors";
+import { defaultRunConfig } from "./defaults";
+import {
+  breakpointKey,
+  type DebugSession,
+  type Lane,
+  type LaneStatus,
+  type RunConfig,
+  type StepRunRecord,
+} from "./types";
+
+const TERMINAL: ReadonlySet<LaneStatus> = new Set(["success", "failure", "skipped"]);
+function isTerminal(status: LaneStatus): boolean {
+  return TERMINAL.has(status);
+}
+
+function stepDisplayName(step: WorkflowStep): string {
+  if (step.name) return step.name;
+  if (step.uses) return step.uses;
+  if (step.run) return step.run.split("\n")[0].slice(0, 60);
+  return step.key;
+}
+
+export interface CreateSessionOptions {
+  workflow: WorkflowFile;
+  workspaceDir: string;
+  config?: Partial<RunConfig>;
+}
+
+export function createSession(opts: CreateSessionOptions): DebugSession {
+  const config: RunConfig = { ...defaultRunConfig(opts.workflow), ...opts.config };
+  const session: DebugSession = {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    workflow: opts.workflow,
+    workspaceDir: opts.workspaceDir,
+    config,
+    breakpoints: new Set(),
+    breakOnFailure: true,
+    lanes: {},
+    laneOrder: [],
+    activeLaneId: null,
+    cancelled: false,
+    events: [],
+  };
+
+  for (const job of Object.values(opts.workflow.jobs)) {
+    const combos = job.strategy?.matrix ? expandMatrix(job.strategy.matrix) : [{}];
+    for (const combo of combos) {
+      const laneId = `${job.id}::${comboKey(combo)}`;
+      const lane: Lane = {
+        id: laneId,
+        jobId: job.id,
+        matrix: combo,
+        status: "blocked",
+        pointer: 0,
+        steps: job.steps.map((s) => ({
+          key: s.key,
+          name: stepDisplayName(s),
+          status: "pending",
+          continueOnError: false,
+          outputs: {},
+          stdout: "",
+          stderr: "",
+        })),
+        env: {},
+        extraPath: [],
+        outputs: {},
+      };
+      session.lanes[laneId] = lane;
+      session.laneOrder.push(laneId);
+    }
+  }
+
+  recomputeLaneReadiness(session);
+  session.activeLaneId = session.laneOrder[0] ?? null;
+  return session;
+}
+
+function lanesForJob(session: DebugSession, jobId: string): Lane[] {
+  return session.laneOrder.map((id) => session.lanes[id]).filter((l) => l.jobId === jobId);
+}
+
+function jobNeedsSatisfied(session: DebugSession, jobId: string): boolean {
+  const job = session.workflow.jobs[jobId];
+  return job.needs.every((dep) => {
+    const lanes = lanesForJob(session, dep);
+    return lanes.length > 0 && lanes.every((l) => isTerminal(l.status));
+  });
+}
+
+/** Repeatedly unblocks lanes whose `needs` are satisfied, evaluating each job's `if:` gate. */
+function recomputeLaneReadiness(session: DebugSession): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const lane of Object.values(session.lanes)) {
+      if (lane.status !== "blocked") continue;
+      if (!jobNeedsSatisfied(session, lane.jobId)) continue;
+      activateLane(session, lane);
+      changed = true;
+    }
+  }
+}
+
+function activateLane(session: DebugSession, lane: Lane): void {
+  const job = session.workflow.jobs[lane.jobId];
+  const anyDepFailure = job.needs.some((dep) =>
+    lanesForJob(session, dep).some((l) => l.jobResult === "failure")
+  );
+  const effectiveEnv = resolveEffectiveEnv(session, lane, 0, undefined);
+  const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: 0, effectiveEnv });
+  evalCtx.status = { anyFailure: anyDepFailure, cancelled: session.cancelled };
+
+  const cond =
+    job.if === undefined
+      ? { result: !anyDepFailure && !session.cancelled }
+      : evaluateCondition(job.if, evalCtx);
+
+  if (!cond.result) {
+    for (const s of lane.steps) {
+      s.status = "skipped";
+      s.outcome = "skipped";
+      s.conclusion = "skipped";
+    }
+    lane.pointer = lane.steps.length;
+    lane.jobResult = "skipped";
+    lane.status = "skipped";
+    lane.jobIfWarning = "alwaysTruthyWarning" in cond ? cond.alwaysTruthyWarning : undefined;
+    finalizeLaneOutputs(session, lane);
+  } else {
+    lane.status = "ready";
+  }
+}
+
+function finalizeLaneOutputs(session: DebugSession, lane: Lane): void {
+  const job = session.workflow.jobs[lane.jobId];
+  if (job.outputs) {
+    const effectiveEnv = resolveEffectiveEnv(session, lane, lane.steps.length, undefined);
+    const evalCtx = buildEvalContext(session, lane, {
+      uptoStepIndex: lane.steps.length,
+      effectiveEnv,
+    });
+    for (const [key, expr] of Object.entries(job.outputs)) {
+      const { result } = interpolate(expr, evalCtx);
+      lane.outputs[key] = maskSecrets(result, session.config.secrets);
+    }
+  }
+  recomputeLaneReadiness(session);
+}
+
+function finishStepAdvance(session: DebugSession, lane: Lane, stepIndex: number): void {
+  lane.pointer = stepIndex + 1;
+  if (lane.pointer >= lane.steps.length) {
+    const hasFailure = lane.steps.some((s) => s.conclusion === "failure");
+    const allSkipped = lane.steps.every((s) => s.conclusion === "skipped");
+    lane.jobResult = hasFailure ? "failure" : allSkipped ? "skipped" : "success";
+    lane.status = lane.jobResult;
+    finalizeLaneOutputs(session, lane);
+  }
+}
+
+async function stepLane(session: DebugSession, laneId: string): Promise<StepRunRecord> {
+  const lane = session.lanes[laneId];
+  const job = session.workflow.jobs[lane.jobId];
+  const stepIndex = lane.pointer;
+  const step = job.steps[stepIndex];
+  const record = lane.steps[stepIndex];
+
+  record.status = "running";
+  record.startedAt = new Date().toISOString();
+
+  const effectiveEnv = resolveEffectiveEnv(session, lane, stepIndex, step.env);
+  const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: stepIndex, effectiveEnv });
+
+  record.ifExpr = step.if;
+  const cond =
+    step.if === undefined
+      ? { result: !evalCtx.status.anyFailure && !evalCtx.status.cancelled }
+      : evaluateCondition(step.if, evalCtx);
+  record.ifResult = cond.result;
+  record.ifWarning = "alwaysTruthyWarning" in cond ? cond.alwaysTruthyWarning : undefined;
+  record.ifError = "error" in cond ? cond.error : undefined;
+
+  if (!cond.result) {
+    record.status = "skipped";
+    record.outcome = "skipped";
+    record.conclusion = "skipped";
+    record.endedAt = new Date().toISOString();
+    finishStepAdvance(session, lane, stepIndex);
+    return record;
+  }
+
+  record.continueOnError = evaluateBooleanField(step["continue-on-error"], evalCtx);
+
+  if (step.run !== undefined) {
+    const { result: script, errors: scriptErrors } = interpolate(step.run, evalCtx);
+    if (scriptErrors.length > 0) {
+      record.engineError = `Could not evaluate expression(s) in 'run': ${scriptErrors
+        .map((e) => e.message)
+        .join("; ")}`;
+      record.outcome = "failure";
+    } else {
+      const workDirRaw = step["working-directory"]
+        ? interpolate(step["working-directory"], evalCtx).result
+        : undefined;
+      const cwd = workDirRaw ? path.resolve(session.workspaceDir, workDirRaw) : session.workspaceDir;
+      const runResult = await executeRunStep({
+        script,
+        shell: step.shell,
+        cwd,
+        env: effectiveEnv,
+        extraPath: lane.extraPath,
+      });
+      record.exitCode = runResult.exitCode;
+      record.stdout = maskSecrets(runResult.stdout, session.config.secrets);
+      record.stderr = maskSecrets(runResult.stderr, session.config.secrets);
+      record.summary = runResult.summary
+        ? maskSecrets(runResult.summary, session.config.secrets)
+        : undefined;
+      record.outputs = maskObjectStrings(runResult.outputs, session.config.secrets);
+
+      if (runResult.spawnError) {
+        record.engineError = runResult.spawnError;
+        record.outcome = "failure";
+      } else if (runResult.timedOut) {
+        record.engineError = "Step timed out";
+        record.outcome = "failure";
+      } else {
+        record.outcome = runResult.exitCode === 0 ? "success" : "failure";
+      }
+      lane.env = { ...lane.env, ...runResult.envAdditions };
+      lane.extraPath = [...runResult.pathAdditions, ...lane.extraPath];
+    }
+  } else if (step.uses !== undefined) {
+    const withInputs: Record<string, JsonValue> = {};
+    for (const [k, v] of Object.entries(step.with ?? {})) {
+      withInputs[k] = typeof v === "string" ? interpolate(v, evalCtx).result : v;
+    }
+    const artifactsDir = path.join(session.workspaceDir, ".debugger", "artifacts");
+    const simResult = runSimulatedAction(step.uses, withInputs, session.workspaceDir, artifactsDir);
+    record.simulated = true;
+    record.simulationNote = simResult.note;
+    record.outputs = maskObjectStrings(simResult.outputs, session.config.secrets);
+    record.outcome = simResult.conclusion;
+    record.exitCode = simResult.conclusion === "success" ? 0 : 1;
+  } else {
+    record.engineError = "Step has neither 'run' nor 'uses'";
+    record.outcome = "failure";
+  }
+
+  record.conclusion =
+    record.outcome === "failure" && record.continueOnError ? "success" : record.outcome;
+  record.status = record.conclusion === "failure" ? "failure" : "success";
+  record.endedAt = new Date().toISOString();
+  record.durationMs =
+    new Date(record.endedAt).getTime() - new Date(record.startedAt ?? record.endedAt).getTime();
+
+  finishStepAdvance(session, lane, stepIndex);
+  return record;
+}
+
+function requireLane(session: DebugSession, laneId: string): Lane {
+  const lane = session.lanes[laneId];
+  if (!lane) throw new EngineError(`Unknown lane '${laneId}'`);
+  return lane;
+}
+
+export async function controlStep(session: DebugSession, laneId: string): Promise<StepRunRecord> {
+  const lane = requireLane(session, laneId);
+  if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
+  if (isTerminal(lane.status)) throw new EngineError("Lane has already finished");
+  lane.status = "running";
+  const record = await stepLane(session, laneId);
+  if (!isTerminal(lane.status)) lane.status = "paused";
+  return record;
+}
+
+async function runLaneLoop(
+  session: DebugSession,
+  laneId: string,
+  opts: { respectBreakpoints: boolean; respectFailureStop: boolean }
+): Promise<void> {
+  const lane = requireLane(session, laneId);
+  if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
+  if (isTerminal(lane.status)) return;
+
+  const job = session.workflow.jobs[lane.jobId];
+  lane.status = "running";
+  let executedAtLeastOne = false;
+
+  while (lane.pointer < lane.steps.length) {
+    const stepKey = job.steps[lane.pointer].key;
+    if (
+      opts.respectBreakpoints &&
+      executedAtLeastOne &&
+      session.breakpoints.has(breakpointKey(lane.jobId, stepKey))
+    ) {
+      lane.status = "paused";
+      return;
+    }
+    const record = await stepLane(session, laneId);
+    executedAtLeastOne = true;
+    if (isTerminal(lane.status)) return;
+    if (opts.respectFailureStop && record.conclusion === "failure") {
+      lane.status = "paused";
+      return;
+    }
+  }
+}
+
+export function controlContinue(session: DebugSession, laneId: string): Promise<void> {
+  return runLaneLoop(session, laneId, {
+    respectBreakpoints: true,
+    respectFailureStop: session.breakOnFailure,
+  });
+}
+
+export function controlRunToEnd(session: DebugSession, laneId: string): Promise<void> {
+  return runLaneLoop(session, laneId, {
+    respectBreakpoints: false,
+    respectFailureStop: session.breakOnFailure,
+  });
+}
+
+/** Drives every lane in the graph to completion, ignoring breakpoints entirely. */
+export async function controlRunAll(session: DebugSession): Promise<void> {
+  recomputeLaneReadiness(session);
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const laneId of session.laneOrder) {
+      const lane = session.lanes[laneId];
+      if (lane.status === "ready" || lane.status === "paused") {
+        await runLaneLoop(session, laneId, { respectBreakpoints: false, respectFailureStop: false });
+        progressed = true;
+      }
+    }
+  }
+}
+
+export function setBreakpoint(
+  session: DebugSession,
+  jobId: string,
+  stepKey: string,
+  enabled: boolean
+): void {
+  const key = breakpointKey(jobId, stepKey);
+  if (enabled) session.breakpoints.add(key);
+  else session.breakpoints.delete(key);
+}
+
+export interface WhatIfPatch {
+  env?: Record<string, string>;
+  vars?: Record<string, string>;
+  secrets?: Record<string, string>;
+  inputs?: Record<string, JsonValue>;
+  event?: JsonValue;
+  eventName?: string;
+  ref?: string;
+  breakOnFailure?: boolean;
+}
+
+/** Mutates live session config; takes effect on the next step executed in any lane. */
+export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
+  if (patch.env) Object.assign(session.config.envOverrides, patch.env);
+  if (patch.vars) Object.assign(session.config.vars, patch.vars);
+  if (patch.secrets) Object.assign(session.config.secrets, patch.secrets);
+  if (patch.inputs) Object.assign(session.config.workflowInputs, patch.inputs);
+  if (patch.event !== undefined) session.config.event = patch.event;
+  if (patch.eventName !== undefined) session.config.eventName = patch.eventName;
+  if (patch.ref !== undefined) session.config.ref = patch.ref;
+  if (patch.breakOnFailure !== undefined) session.breakOnFailure = patch.breakOnFailure;
+}
+
+export function setActiveLane(session: DebugSession, laneId: string): void {
+  requireLane(session, laneId);
+  session.activeLaneId = laneId;
+}
+
+export { isTerminal };

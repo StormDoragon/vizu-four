@@ -1,0 +1,77 @@
+"use client";
+
+import Link from "next/link";
+import type { SessionView } from "@/lib/engine/serialize";
+import type { ControlAction } from "@/lib/apiClient";
+
+const TERMINAL = new Set(["success", "failure", "skipped"]);
+
+export function TopBar({
+  session,
+  busy,
+  onControl,
+  onToggleBreakOnFailure,
+}: {
+  session: SessionView;
+  busy: boolean;
+  onControl: (action: ControlAction) => void;
+  onToggleBreakOnFailure: (v: boolean) => void;
+}) {
+  const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
+  const terminal = !lane || TERMINAL.has(lane.status);
+  const blocked = !lane || lane.status === "blocked";
+  const canStep = !!lane && !terminal && !blocked && !busy;
+
+  return (
+    <div className="flex items-center gap-3 border-b border-bg-border bg-bg-panel px-4 py-2">
+      <Link href="/" className="text-sm text-gray-400 hover:text-white">
+        ← New session
+      </Link>
+      <div className="h-4 w-px bg-bg-border" />
+      <span className="text-sm font-semibold text-white">{session.workflow.name ?? "workflow"}</span>
+      <div className="h-4 w-px bg-bg-border" />
+      <span className="text-xs text-gray-500">
+        active lane: {lane ? `${lane.id} (${lane.status})` : "none"}
+      </span>
+
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          onClick={() => onControl("step")}
+          disabled={!canStep}
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+        >
+          Step
+        </button>
+        <button
+          onClick={() => onControl("continue")}
+          disabled={!canStep}
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+        >
+          Continue
+        </button>
+        <button
+          onClick={() => onControl("runToEnd")}
+          disabled={!canStep}
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+        >
+          Run to end
+        </button>
+        <button
+          onClick={() => onControl("runAll")}
+          disabled={busy}
+          className="rounded-md bg-status-running px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+        >
+          Run all
+        </button>
+        <label className="ml-2 flex items-center gap-1.5 text-xs text-gray-400">
+          <input
+            type="checkbox"
+            checked={session.breakOnFailure}
+            onChange={(e) => onToggleBreakOnFailure(e.target.checked)}
+          />
+          pause on failure
+        </label>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,35 @@
+name: Expression Pitfalls
+on: [push]
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: A step that fails but is allowed to
+        id: flaky
+        continue-on-error: true
+        run: |
+          echo "simulating a flaky check"
+          exit 1
+
+      - name: Only runs if everything so far succeeded
+        if: success()
+        run: echo "success() sees past the continue-on-error failure above"
+
+      - name: This condition is a classic footgun
+        if: ${{ github.event_name }} == 'this-will-never-match'
+        run: |
+          echo "This step ALWAYS runs, even though the condition looks false!"
+          echo "Mixing literal text with the expression wrapper stringifies the"
+          echo "result first, and a non-empty string is always truthy. Check"
+          echo "the if-condition warning for this step in the debugger."
+
+      - name: The correct way to write the same condition
+        if: ${{ github.event_name == 'this-will-never-match' }}
+        run: echo "This step correctly does NOT run"
+
+      - name: String and array helpers
+        run: |
+          echo "contains: ${{ contains('refs/heads/main', 'main') }}"
+          echo "format: ${{ format('{0}/{1}', 'octocat', 'hello-world') }}"
+          echo "join: ${{ join(fromJSON('["a","b","c"]'), '-') }}"

@@ -1,0 +1,31 @@
+name: Needs Chain
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linting"
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run tests (fails on purpose)
+        run: |
+          echo "running tests"
+          exit 1
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "deploying"
+
+  notify:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify team
+        run: echo "test job result was ${{ needs.test.result }}"

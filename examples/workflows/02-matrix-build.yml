@@ -1,0 +1,38 @@
+name: Matrix Build
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 20]
+        exclude:
+          - os: windows-latest
+            node: 18
+        include:
+          - os: ubuntu-latest
+            node: 20
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Build
+        run: echo "Building on ${{ matrix.os }} with Node ${{ matrix.node }}"
+
+      - name: Run experimental checks
+        if: matrix.experimental
+        run: echo "Running extra checks for the experimental lane"
+
+      - name: Simulate a flaky failure on Node 18
+        if: matrix.node == 18
+        run: |
+          echo "About to fail on Node 18 to demonstrate the debugger"
+          exit 1
