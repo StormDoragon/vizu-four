@@ -246,6 +246,22 @@ jobs:
   });
 });
 
+describe("timeout-minutes", () => {
+  it("enforces a step's timeout-minutes instead of discarding it", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: sleep 30
+        timeout-minutes: 0.005
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.engineError).toBe("Step timed out");
+    expect(record.outcome).toBe("failure");
+  }, 10000);
+});
+
 describe("continue-on-error and status functions", () => {
   it("lets success() see past a continue-on-error failure, and failure() see past it too", async () => {
     const s = session(`

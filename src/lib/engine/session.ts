@@ -242,6 +242,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
         cwd,
         env: effectiveEnv,
         extraPath: lane.extraPath,
+        timeoutMs:
+          typeof step["timeout-minutes"] === "number"
+            ? step["timeout-minutes"] * 60_000
+            : undefined,
       });
       record.exitCode = runResult.exitCode;
       record.stdout = maskSecrets(runResult.stdout, session.config.secrets);
