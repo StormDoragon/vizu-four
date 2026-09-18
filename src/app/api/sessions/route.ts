@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { parseWorkflow } from "@/lib/workflow/parser";
 import { createSession } from "@/lib/engine/session";
-import { saveSession, listSessions } from "@/lib/engine/store";
+import { saveSession } from "@/lib/engine/store";
 import { toSessionView } from "@/lib/engine/serialize";
 import type { RunConfig } from "@/lib/engine/types";
 import { errorResponse, readJsonBody } from "@/lib/http";
@@ -18,14 +18,11 @@ interface CreateSessionBody {
   config?: Partial<RunConfig>;
 }
 
-export async function GET() {
-  const sessions = listSessions().map((s) => ({
-    id: s.id,
-    createdAt: s.createdAt,
-    name: s.workflow.name,
-  }));
-  return NextResponse.json({ sessions });
-}
+// There is intentionally no GET here. Every session lives in one process-
+// wide in-memory store with no per-visitor ownership check (see the
+// "Security note" in README.md) - a bulk listing endpoint would let any
+// caller enumerate every other session's id and then drive its /control,
+// /context, etc. routes. The UI only ever needs the id it just created.
 
 export async function POST(req: Request) {
   const body = await readJsonBody<CreateSessionBody>(req);

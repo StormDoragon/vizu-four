@@ -140,6 +140,15 @@ debug a workflow you don't trust. Secrets you provide via What-If never
 leave the server process and are masked in every log/output/context sent to
 the browser; they're never written to disk.
 
+Sessions live in one process-wide in-memory store with no user accounts and
+no per-session ownership check — any caller who knows a session's id can
+read or drive it. That's an acceptable trust model for `next dev`/`next
+start` on your own machine (nobody else can reach `localhost`), but this is
+**not safe to deploy as a shared/multi-tenant service** as-is: every visitor
+would share one process and could enumerate or hijack each other's sessions.
+Treat this as a single-user local tool unless real per-visitor authentication
+is added in front of it.
+
 ## Testing
 
 ```bash
