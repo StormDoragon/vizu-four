@@ -91,8 +91,6 @@ export interface DebugSession {
   lanes: Record<string, Lane>;
   laneOrder: string[];
   activeLaneId: string | null;
-  cancelled: boolean;
-  events: string[];
   /** User-defined output stubs for `uses:` steps, keyed by mockOutputsKey(jobId, stepKey). */
   mockOutputs: Record<string, Record<string, string>>;
   /** Bumped on every session mutation (step execution, breakpoints, mock

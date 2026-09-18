@@ -60,8 +60,6 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     lanes: {},
     laneOrder: [],
     activeLaneId: null,
-    cancelled: false,
-    events: [],
     mockOutputs: {},
     revision: 0,
     parseIssues: opts.parseIssues ?? [],
@@ -144,11 +142,14 @@ function activateLane(session: DebugSession, lane: Lane): void {
   );
   const effectiveEnv = resolveEffectiveEnv(session, lane, 0, undefined);
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: 0, effectiveEnv });
-  evalCtx.status = { anyFailure: anyDepFailure, cancelled: session.cancelled };
+  // There's no way to cancel a session from outside it (no cancel endpoint
+  // exists), so cancelled() can never legitimately be true here - hardcoded
+  // rather than threaded through as dead, always-false session state.
+  evalCtx.status = { anyFailure: anyDepFailure, cancelled: false };
 
   const cond =
     job.if === undefined
-      ? { result: allDepsSucceeded && !session.cancelled }
+      ? { result: allDepsSucceeded }
       : evaluateCondition(job.if, evalCtx);
 
   if (!cond.result) {

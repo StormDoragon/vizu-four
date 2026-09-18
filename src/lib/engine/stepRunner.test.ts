@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeRunStep } from "./stepRunner";
 
 describe("executeRunStep", () => {
@@ -200,5 +200,20 @@ describe("executeRunStep", () => {
       extraPath: [],
     });
     expect(result.spawnError).toBeDefined();
+  });
+
+  it("cleans up its temp dir even when setup throws before spawning (crash-safe)", async () => {
+    const mkdtempSpy = vi.spyOn(fs, "mkdtemp");
+    const writeFileSpy = vi.spyOn(fs, "writeFile").mockRejectedValueOnce(new Error("disk full"));
+
+    await expect(
+      executeRunStep({ script: "echo hi", cwd, env: {}, extraPath: [] })
+    ).rejects.toThrow("disk full");
+
+    const createdDir = await mkdtempSpy.mock.results[0]!.value;
+    await expect(fs.stat(createdDir)).rejects.toThrow();
+
+    mkdtempSpy.mockRestore();
+    writeFileSpy.mockRestore();
   });
 });

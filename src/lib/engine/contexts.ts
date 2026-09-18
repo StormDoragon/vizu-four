@@ -4,7 +4,7 @@ import type { JsonValue } from "../workflow/types";
 import { evaluateExpression, type EvalContext } from "../expressions/evaluator";
 import { findExpressionSpans, interpolate } from "../expressions/interpolate";
 import { toBoolean } from "../expressions/coerce";
-import type { Conclusion, DebugSession, Lane, StepRunRecord } from "./types";
+import type { Conclusion, DebugSession, Lane } from "./types";
 
 function lanesForJob(session: DebugSession, jobId: string): Lane[] {
   return session.laneOrder
@@ -169,7 +169,10 @@ export function buildEvalContext(
 
   return {
     contexts,
-    status: { anyFailure, cancelled: session.cancelled },
+    // There's no way to cancel a session (no cancel endpoint exists), so
+    // cancelled() can never legitimately be true - hardcoded rather than
+    // threaded through as dead, always-false session state.
+    status: { anyFailure, cancelled: false },
     cwd: session.workspaceDir,
   };
 }
@@ -212,14 +215,6 @@ export function resolveEffectiveEnv(
   applyLayer(stepEnv, true);
 
   return env;
-}
-
-export function defaultStepCondition(anyFailure: boolean, cancelled: boolean): boolean {
-  return !anyFailure && !cancelled;
-}
-
-export function stepsHaveFailure(steps: StepRunRecord[]): boolean {
-  return steps.some((s) => s.conclusion === "failure");
 }
 
 /**

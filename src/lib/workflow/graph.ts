@@ -58,14 +58,3 @@ export function buildJobGraph(workflow: WorkflowFile): JobGraph {
 
   return { levels, levelOf, dependents, cycles };
 }
-
-/** True if every job in `needs` for `jobId` is present in `completed`. */
-export function needsSatisfied(
-  workflow: WorkflowFile,
-  jobId: string,
-  completed: ReadonlySet<string>
-): boolean {
-  const job = workflow.jobs[jobId];
-  if (!job) return false;
-  return job.needs.every((dep) => completed.has(dep));
-}

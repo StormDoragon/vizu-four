@@ -34,9 +34,7 @@ export function MatrixExplorer({
   selectedLaneId: string | null;
   onSelectLane: (laneId: string) => void;
 }) {
-  const matrixJobs = Object.values(session.workflow.jobs).filter(
-    (j) => session.workflow.jobs[j.id].matrix && (session.workflow.jobs[j.id].matrix?.length ?? 0) > 0
-  );
+  const matrixJobs = Object.values(session.workflow.jobs).filter((j) => (j.matrix?.length ?? 0) > 0);
 
   if (matrixJobs.length === 0) {
     return <p className="text-sm text-gray-500">No job in this workflow uses a build matrix.</p>;

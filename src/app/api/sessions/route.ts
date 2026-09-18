@@ -7,6 +7,7 @@ import { createSession } from "@/lib/engine/session";
 import { saveSession } from "@/lib/engine/store";
 import { toSessionView } from "@/lib/engine/serialize";
 import type { RunConfig } from "@/lib/engine/types";
+import { MAX_WORKFLOW_YAML_LENGTH, validateRunConfigPatch } from "@/lib/engine/validateRequest";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -31,6 +32,14 @@ export async function POST(req: Request) {
   if (typeof workflowYaml !== "string" || workflowYaml.trim() === "") {
     return errorResponse(400, "'workflowYaml' is required");
   }
+  if (workflowYaml.length > MAX_WORKFLOW_YAML_LENGTH) {
+    return errorResponse(400, `'workflowYaml' exceeds the ${MAX_WORKFLOW_YAML_LENGTH}-character limit`);
+  }
+  if (sourcePath !== undefined && typeof sourcePath !== "string") {
+    return errorResponse(400, "'sourcePath' must be a string");
+  }
+  const configError = validateRunConfigPatch(config);
+  if (configError) return errorResponse(400, configError);
 
   const { workflow, issues } = parseWorkflow(workflowYaml, sourcePath);
   if (!workflow) {

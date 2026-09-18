@@ -186,148 +186,154 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
   const pathFile = path.join(workDir, "github_path");
   const summaryFile = path.join(workDir, "github_step_summary");
 
-  await Promise.all([
-    fs.writeFile(scriptPath, opts.script, "utf8"),
-    fs.writeFile(outputFile, "", "utf8"),
-    fs.writeFile(envFile, "", "utf8"),
-    fs.writeFile(pathFile, "", "utf8"),
-    fs.writeFile(summaryFile, "", "utf8"),
-  ]);
+  // try/finally around the whole run, instead of a bare cleanup call after
+  // the promise resolves: without it, any throw between mkdtemp and the
+  // promise resolving (e.g. the writeFile batch below failing) would skip
+  // cleanup entirely and leak the dir - exactly what was observed once
+  // during the audit that flagged this.
+  try {
+    await Promise.all([
+      fs.writeFile(scriptPath, opts.script, "utf8"),
+      fs.writeFile(outputFile, "", "utf8"),
+      fs.writeFile(envFile, "", "utf8"),
+      fs.writeFile(pathFile, "", "utf8"),
+      fs.writeFile(summaryFile, "", "utf8"),
+    ]);
 
-  const { cmd, args } = buildCommand(opts.shell ?? "bash", scriptPath);
-  const pathSeparator = process.platform === "win32" ? ";" : ":";
-  const mergedPath = [...opts.extraPath, process.env.PATH ?? ""].filter(Boolean).join(pathSeparator);
+    const { cmd, args } = buildCommand(opts.shell ?? "bash", scriptPath);
+    const pathSeparator = process.platform === "win32" ? ";" : ":";
+    const mergedPath = [...opts.extraPath, process.env.PATH ?? ""].filter(Boolean).join(pathSeparator);
 
-  const childEnv: Record<string, string> = {
-    ...baseHostEnv(),
-    // Real Actions runners let a workflow override CI/GITHUB_ACTIONS/
-    // GITHUB_WORKSPACE via env: (e.g. env: { CI: 'false' } to make a tool
-    // behave as if running locally) - these are just defaults, so opts.env
-    // must be spread AFTER them, not before.
-    CI: "true",
-    GITHUB_ACTIONS: "true",
-    GITHUB_WORKSPACE: opts.cwd,
-    ...opts.env,
-    // Engine-owned plumbing that a workflow's env: must never be able to
-    // redirect, since doing so would silently break $GITHUB_OUTPUT/$GITHUB_ENV
-    // capture, PATH resolution (which folds in prior steps' $GITHUB_PATH
-    // additions), or $RUNNER_TEMP - always forced last.
-    PATH: mergedPath,
-    GITHUB_OUTPUT: outputFile,
-    GITHUB_ENV: envFile,
-    GITHUB_PATH: pathFile,
-    GITHUB_STEP_SUMMARY: summaryFile,
-    RUNNER_TEMP: opts.runnerTempDir ?? workDir,
-  };
-
-  const result = await new Promise<RunStepResult>((resolve) => {
-    const stdoutCapture = new TextCapture();
-    const stderrCapture = new TextCapture();
-    const combinedCapture = new CombinedCapture();
-    let settled = false;
-    let timedOut = false;
-
-    let child;
-    try {
-      // `detached: true` makes the child the leader of a new process group,
-      // so on timeout we can kill the whole tree (e.g. `sleep` forked by a
-      // wrapping `bash`) via `kill(-pid)` instead of leaking an orphan that
-      // keeps the stdout/stderr pipes open forever.
-      // cmd/cwd are runtime-dynamic by design (whatever the debugged
-      // workflow specifies) - this route only ever runs via `next dev`/
-      // `next start` on the user's own machine, never traced for a
-      // serverless deployment, hence the ignore comment Next's build
-      // analyzer looks for.
-      child = spawn(/*turbopackIgnore: true*/ cmd, args, {
-        cwd: opts.cwd,
-        // Cast: NodeJS.ProcessEnv is augmented (by Next's own types) with a
-        // required NODE_ENV field that our deliberately-narrow childEnv
-        // doesn't carry - spawn itself only needs a string map at runtime.
-        env: childEnv as NodeJS.ProcessEnv,
-        detached: true,
-      });
-    } catch (err) {
-      resolve({
-        exitCode: null,
-        stdout: "",
-        stderr: "",
-        combined: [],
-        outputs: {},
-        envAdditions: {},
-        pathAdditions: [],
-        timedOut: false,
-        spawnError: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
-
-    const killTree = (signal: NodeJS.Signals) => {
-      try {
-        if (child.pid) process.kill(-child.pid, signal);
-        else child.kill(signal);
-      } catch {
-        // Process (group) may already be gone - fine.
-      }
+    const childEnv: Record<string, string> = {
+      ...baseHostEnv(),
+      // Real Actions runners let a workflow override CI/GITHUB_ACTIONS/
+      // GITHUB_WORKSPACE via env: (e.g. env: { CI: 'false' } to make a tool
+      // behave as if running locally) - these are just defaults, so opts.env
+      // must be spread AFTER them, not before.
+      CI: "true",
+      GITHUB_ACTIONS: "true",
+      GITHUB_WORKSPACE: opts.cwd,
+      ...opts.env,
+      // Engine-owned plumbing that a workflow's env: must never be able to
+      // redirect, since doing so would silently break $GITHUB_OUTPUT/$GITHUB_ENV
+      // capture, PATH resolution (which folds in prior steps' $GITHUB_PATH
+      // additions), or $RUNNER_TEMP - always forced last.
+      PATH: mergedPath,
+      GITHUB_OUTPUT: outputFile,
+      GITHUB_ENV: envFile,
+      GITHUB_PATH: pathFile,
+      GITHUB_STEP_SUMMARY: summaryFile,
+      RUNNER_TEMP: opts.runnerTempDir ?? workDir,
     };
 
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killTree("SIGTERM");
-      setTimeout(() => killTree("SIGKILL"), 3000);
-    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    return await new Promise<RunStepResult>((resolve) => {
+      const stdoutCapture = new TextCapture();
+      const stderrCapture = new TextCapture();
+      const combinedCapture = new CombinedCapture();
+      let settled = false;
+      let timedOut = false;
 
-    child.stdout?.on("data", (d: Buffer) => {
-      const text = d.toString("utf8");
-      stdoutCapture.feed(text);
-      combinedCapture.feed("stdout", text);
-    });
-    child.stderr?.on("data", (d: Buffer) => {
-      const text = d.toString("utf8");
-      stderrCapture.feed(text);
-      combinedCapture.feed("stderr", text);
-    });
+      let child;
+      try {
+        // `detached: true` makes the child the leader of a new process group,
+        // so on timeout we can kill the whole tree (e.g. `sleep` forked by a
+        // wrapping `bash`) via `kill(-pid)` instead of leaking an orphan that
+        // keeps the stdout/stderr pipes open forever.
+        // cmd/cwd are runtime-dynamic by design (whatever the debugged
+        // workflow specifies) - this route only ever runs via `next dev`/
+        // `next start` on the user's own machine, never traced for a
+        // serverless deployment, hence the ignore comment Next's build
+        // analyzer looks for.
+        child = spawn(/*turbopackIgnore: true*/ cmd, args, {
+          cwd: opts.cwd,
+          // Cast: NodeJS.ProcessEnv is augmented (by Next's own types) with a
+          // required NODE_ENV field that our deliberately-narrow childEnv
+          // doesn't carry - spawn itself only needs a string map at runtime.
+          env: childEnv as NodeJS.ProcessEnv,
+          detached: true,
+        });
+      } catch (err) {
+        resolve({
+          exitCode: null,
+          stdout: "",
+          stderr: "",
+          combined: [],
+          outputs: {},
+          envAdditions: {},
+          pathAdditions: [],
+          timedOut: false,
+          spawnError: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
 
-    child.on("error", (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve({
-        exitCode: null,
-        stdout: stdoutCapture.finalize(),
-        stderr: stderrCapture.finalize(),
-        combined: combinedCapture.finalize(),
-        outputs: {},
-        envAdditions: {},
-        pathAdditions: [],
-        timedOut,
-        spawnError: err.message,
+      const killTree = (signal: NodeJS.Signals) => {
+        try {
+          if (child.pid) process.kill(-child.pid, signal);
+          else child.kill(signal);
+        } catch {
+          // Process (group) may already be gone - fine.
+        }
+      };
+
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        killTree("SIGTERM");
+        setTimeout(() => killTree("SIGKILL"), 3000);
+      }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+
+      child.stdout?.on("data", (d: Buffer) => {
+        const text = d.toString("utf8");
+        stdoutCapture.feed(text);
+        combinedCapture.feed("stdout", text);
+      });
+      child.stderr?.on("data", (d: Buffer) => {
+        const text = d.toString("utf8");
+        stderrCapture.feed(text);
+        combinedCapture.feed("stderr", text);
+      });
+
+      child.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve({
+          exitCode: null,
+          stdout: stdoutCapture.finalize(),
+          stderr: stderrCapture.finalize(),
+          combined: combinedCapture.finalize(),
+          outputs: {},
+          envAdditions: {},
+          pathAdditions: [],
+          timedOut,
+          spawnError: err.message,
+        });
+      });
+
+      child.on("close", async (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const [outputRaw, envRaw, pathRaw, summaryRaw] = await Promise.all([
+          fs.readFile(outputFile, "utf8").catch(() => ""),
+          fs.readFile(envFile, "utf8").catch(() => ""),
+          fs.readFile(pathFile, "utf8").catch(() => ""),
+          fs.readFile(summaryFile, "utf8").catch(() => ""),
+        ]);
+        resolve({
+          exitCode: timedOut ? null : code,
+          stdout: stdoutCapture.finalize(),
+          stderr: stderrCapture.finalize(),
+          combined: combinedCapture.finalize(),
+          outputs: parseEnvFile(outputRaw),
+          envAdditions: parseEnvFile(envRaw),
+          pathAdditions: parsePathFile(pathRaw),
+          summary: summaryRaw.trim() ? summaryRaw : undefined,
+          timedOut,
+        });
       });
     });
-
-    child.on("close", async (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      const [outputRaw, envRaw, pathRaw, summaryRaw] = await Promise.all([
-        fs.readFile(outputFile, "utf8").catch(() => ""),
-        fs.readFile(envFile, "utf8").catch(() => ""),
-        fs.readFile(pathFile, "utf8").catch(() => ""),
-        fs.readFile(summaryFile, "utf8").catch(() => ""),
-      ]);
-      resolve({
-        exitCode: timedOut ? null : code,
-        stdout: stdoutCapture.finalize(),
-        stderr: stderrCapture.finalize(),
-        combined: combinedCapture.finalize(),
-        outputs: parseEnvFile(outputRaw),
-        envAdditions: parseEnvFile(envRaw),
-        pathAdditions: parsePathFile(pathRaw),
-        summary: summaryRaw.trim() ? summaryRaw : undefined,
-        timedOut,
-      });
-    });
-  });
-
-  await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
-  return result;
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
