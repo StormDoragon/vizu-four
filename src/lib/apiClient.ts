@@ -49,64 +49,90 @@ export async function createSession(
   });
 }
 
-export async function getSession(id: string): Promise<SessionView> {
+export async function getSession(id: string): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}`);
 }
 
+export async function deleteSession(id: string): Promise<void> {
+  await request(`/api/sessions/${id}`, { method: "DELETE" });
+}
+
+export type ControlAction = "step" | "continue" | "runToEnd" | "runAll";
+
 export async function control(
   id: string,
-  action: "step" | "continue" | "runToEnd" | "runAll",
+  action: ControlAction,
   laneId?: string
-): Promise<SessionView> {
+): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}/control`, {
     method: "POST",
     body: JSON.stringify({ action, laneId }),
   });
 }
 
-export async function setBreakpoints(
+export async function setBreakpoint(
   id: string,
-  breakpoints: { jobId: string; stepKey: string; enabled: boolean }[]
-): Promise<SessionView> {
+  jobId: string,
+  stepKey: string,
+  enabled: boolean
+): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}/breakpoints`, {
     method: "POST",
-    body: JSON.stringify({ breakpoints }),
+    body: JSON.stringify({ jobId, stepKey, enabled }),
   });
 }
 
-export async function setActiveLane(id: string, laneId: string): Promise<SessionView> {
-  return request(`/api/sessions/${id}/active-lane`, {
-    method: "POST",
-    body: JSON.stringify({ laneId }),
-  });
-}
-
-export async function applyWhatIf(id: string, patch: WhatIfPatch): Promise<SessionView> {
+export async function applyWhatIf(id: string, patch: WhatIfPatch): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}/whatif`, {
     method: "POST",
     body: JSON.stringify(patch),
   });
 }
 
-export async function getContext(id: string, laneId?: string): Promise<unknown> {
-  const q = laneId ? `?laneId=${encodeURIComponent(laneId)}` : "";
-  return request(`/api/sessions/${id}/context${q}`);
+export async function setActiveLane(id: string, laneId: string): Promise<{ session: SessionView }> {
+  return request(`/api/sessions/${id}/active-lane`, {
+    method: "POST",
+    body: JSON.stringify({ laneId }),
+  });
 }
 
-export async function explain(id: string, laneId: string, stepKey: string): Promise<unknown> {
+export interface FailureCause {
+  title: string;
+  detail: string;
+  confidence: "high" | "medium" | "low";
+  suggestion?: string;
+}
+export interface FailureExplanation {
+  summary: string;
+  causes: FailureCause[];
+  source: "heuristic" | "claude";
+}
+
+export async function explainFailure(
+  id: string,
+  laneId: string,
+  stepIndex: number
+): Promise<{ explanation: FailureExplanation }> {
   return request(`/api/sessions/${id}/explain`, {
     method: "POST",
-    body: JSON.stringify({ laneId, stepKey }),
+    body: JSON.stringify({ laneId, stepIndex }),
   });
 }
 
 export async function evaluateExpression(
-  id: string,
   expression: string,
+  sessionId?: string,
   laneId?: string
-): Promise<{ result: JsonValue; error?: string }> {
+): Promise<{ result?: JsonValue; error?: string }> {
   return request("/api/expressions/evaluate", {
     method: "POST",
-    body: JSON.stringify({ sessionId: id, expression, laneId }),
+    body: JSON.stringify({ expression, sessionId, laneId }),
   });
+}
+
+export async function getContext(
+  id: string,
+  laneId: string
+): Promise<{ context: Record<string, JsonValue>; pointer: number }> {
+  return request(`/api/sessions/${id}/context?laneId=${encodeURIComponent(laneId)}`);
 }
