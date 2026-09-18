@@ -200,6 +200,22 @@ jobs:
     expect(s.lanes["c::default"].status).toBe("success");
     expect(s.lanes["c::default"].steps[0].stdout).toContain("c-ran");
   });
+
+  it("honors a bare YAML boolean/number if: instead of ignoring it", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - run: echo should-not-run
+        if: 0
+`);
+    await controlRunAll(s);
+    const lane = s.lanes["build::default"];
+    expect(lane.status).toBe("skipped");
+    expect(lane.steps[0].status).toBe("skipped");
+  });
 });
 
 describe("continue-on-error and status functions", () => {

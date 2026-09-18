@@ -99,6 +99,21 @@ jobs:
     expect(matrix.exclude).toEqual([{ os: "windows-latest", node: 16 }]);
   });
 
+  it("coerces a YAML boolean/number if: into a string expression instead of dropping it", () => {
+    const src = `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - run: echo hi
+        if: 0
+`;
+    const { workflow } = parseWorkflow(src);
+    expect(workflow!.jobs.build.if).toBe("false");
+    expect(workflow!.jobs.build.steps[0].if).toBe("0");
+  });
+
   it("warns when a job's steps list is empty", () => {
     const src = `
 jobs:

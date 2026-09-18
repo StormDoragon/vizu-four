@@ -21,6 +21,19 @@ function asStringArray(v: unknown): string[] {
 }
 
 /**
+ * `if:` is commonly written without `${{ }}` (e.g. `if: false`, `if: 0`),
+ * which YAML parses as a boolean/number rather than a string. GitHub still
+ * evaluates these as expressions, so we stringify them instead of only
+ * accepting string values - otherwise `if: false` was silently dropped
+ * (treated as "no condition", i.e. always true).
+ */
+function asIfExpr(v: unknown): string | undefined {
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean" || typeof v === "number") return String(v);
+  return undefined;
+}
+
+/**
  * YAML 1.1 parsers historically coerce bare `on`/`off`/`yes`/`no` keys to
  * booleans, which famously breaks GitHub Actions' `on:` trigger key. js-yaml
  * 4's default schema does not do this for `on`, but we normalize defensively
@@ -102,7 +115,7 @@ function parseStep(
     key,
     id,
     name: typeof raw.name === "string" ? raw.name : undefined,
-    if: typeof raw.if === "string" ? raw.if : undefined,
+    if: asIfExpr(raw.if),
     run: typeof raw.run === "string" ? raw.run : undefined,
     shell: typeof raw.shell === "string" ? raw.shell : undefined,
     uses: typeof raw.uses === "string" ? raw.uses : undefined,
@@ -168,7 +181,7 @@ function parseJob(
     name: typeof raw.name === "string" ? raw.name : undefined,
     needs: asStringArray(raw.needs),
     "runs-on": (raw["runs-on"] as JsonValue) ?? "ubuntu-latest",
-    if: typeof raw.if === "string" ? raw.if : undefined,
+    if: asIfExpr(raw.if),
     env: isPlainObject(raw.env)
       ? Object.fromEntries(
           Object.entries(raw.env).map(([k, v]) => [k, String(v)])
