@@ -60,10 +60,10 @@ const HANDLERS: Record<string, Handler> = {
     return {
       outputs: {
         ref,
-        "commit": "local-working-copy",
+        commit: "local-scratch",
       },
       conclusion: "success",
-      note: `Simulated: the local working copy on disk is used as-is (ref=${ref}, fetch-depth=${fetchDepth}, submodules=${submodules}). Token and remote are ignored.`,
+      note: `Simulated: steps run in an empty scratch workspace (not the real repo). ref=${ref}, fetch-depth=${fetchDepth}, submodules=${submodules} are recorded but no files are checked out. Token and remote are ignored.`,
     };
   },
 
@@ -84,7 +84,7 @@ const HANDLERS: Record<string, Handler> = {
 
   "actions/setup-java": setupTool("setup-java", "java-version", (inputs) => ({
     "java-version": str(inputs["java-version"] ?? inputs.version, "(local)"),
-    "path": "/usr/lib/jvm/default",
+    path: "/usr/lib/jvm/default",
   })),
 
   "actions/setup-dotnet": setupTool("setup-dotnet", "dotnet-version"),
@@ -238,7 +238,7 @@ const HANDLERS: Record<string, Handler> = {
       outputs: {
         tags: `${primary}:latest`,
         labels: "",
-        "version": "latest",
+        version: "latest",
       },
       conclusion: "success",
       note: `Simulated: generated tags/labels for ${images.join(", ")}.`,
@@ -261,7 +261,7 @@ const HANDLERS: Record<string, Handler> = {
     outputs: {
       url: "",
       id: "",
-      "upload_url": "",
+      upload_url: "",
     },
     conclusion: "success",
     note: "Simulated: GitHub Release creation is skipped. No release is published.",

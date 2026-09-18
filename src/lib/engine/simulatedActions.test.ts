@@ -27,7 +27,8 @@ describe("runSimulatedAction", () => {
     );
     expect(result.conclusion).toBe("success");
     expect(result.outputs.ref).toBe("main");
-    expect(result.note).toContain("local working copy");
+    expect(result.note).toContain("empty scratch workspace");
+    expect(result.note).toContain("no files are checked out");
   });
 
   it("handles actions/setup-node and reports version + cache-hit", () => {
