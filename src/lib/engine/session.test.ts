@@ -241,7 +241,9 @@ jobs:
 `);
     const first = await controlStep(s, "build::default");
     expect(first.simulated).toBe(true);
-    expect(first.simulationNote).toContain("local working copy");
+    // Updated to match the clarified empty-scratch-workspace wording
+    expect(first.simulationNote).toContain("empty scratch workspace");
+    expect(first.simulationNote).toContain("no files are checked out");
     const second = await controlStep(s, "build::default");
     expect(second.simulated).toBe(true);
     expect(second.simulationNote).toContain("isn't executed locally");
