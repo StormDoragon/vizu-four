@@ -8,7 +8,8 @@ local scratch workspace — no push, no waiting on a runner.
 
 This repository implements the **MVP slice** of a much larger product
 blueprint. See [Scope](#scope-what-this-is-and-isnt) below for exactly what's
-built versus what would come later.
+built versus what would come later, and [ROADMAP.md](./ROADMAP.md) for the
+prioritized checklist of what's next.
 
 ## Quick start
 
