@@ -3,7 +3,7 @@
 import type { SessionView } from "@/lib/engine/serialize";
 import type { ControlAction } from "@/lib/apiClient";
 
-const TERMINAL = new Set(["success", "failure", "skipped"]);
+const TERMINAL = new Set(["success", "failure", "skipped", "cancelled"]);
 
 export function TopBar({
   session,

@@ -23,9 +23,10 @@ function aggregateJob(lanes: Lane[]): { result: Conclusion; outputs: Record<stri
   const outputs: Record<string, string> = {};
   for (const lane of lanes) {
     if (lane.jobResult === "failure") result = "failure";
+    else if (lane.jobResult === "cancelled" && result !== "failure") result = "cancelled";
     Object.assign(outputs, lane.outputs);
   }
-  if (result !== "failure" && lanes.length > 0 && lanes.every((l) => l.jobResult === "skipped")) {
+  if (result === "success" && lanes.length > 0 && lanes.every((l) => l.jobResult === "skipped")) {
     result = "skipped";
   }
   return { result, outputs };

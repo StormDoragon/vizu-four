@@ -11,6 +11,7 @@ const STATUS_DOT: Record<string, string> = {
   success: "bg-status-success",
   failure: "bg-status-failure",
   skipped: "bg-status-skipped",
+  cancelled: "bg-status-skipped",
   blocked: "bg-status-pending",
   ready: "bg-status-pending",
 };
@@ -75,7 +76,13 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
       <div className="max-h-56 overflow-y-auto">
         {job.steps.map((step, idx) => {
           const record = lane?.steps[idx];
-          const isNext = !!lane && lane.pointer === idx && lane.status !== "success" && lane.status !== "failure" && lane.status !== "skipped";
+          const isNext =
+            !!lane &&
+            lane.pointer === idx &&
+            lane.status !== "success" &&
+            lane.status !== "failure" &&
+            lane.status !== "skipped" &&
+            lane.status !== "cancelled";
           const isSelected = !!lane && selection?.laneId === lane.id && selection.stepIndex === idx;
           const stepScopeKey = `${jobId}:${step.key}`;
           const hasBreakpoint = session.breakpoints.includes(stepScopeKey);

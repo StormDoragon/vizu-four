@@ -10,6 +10,7 @@ function statusBadgeClass(status: string): string {
     case "failure":
       return "bg-status-failure/20 text-status-failure";
     case "skipped":
+    case "cancelled":
       return "bg-status-skipped/20 text-status-skipped";
     case "running":
       return "bg-status-running/20 text-status-running";

@@ -246,6 +246,67 @@ jobs:
   });
 });
 
+describe("strategy.fail-fast", () => {
+  it("cancels sibling matrix lanes by default when one combination fails", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [16, 18]
+    steps:
+      - run: |
+          if [ "\${{ matrix.node }}" = "16" ]; then exit 1; fi
+      - run: echo second-step
+`);
+    await controlRunAll(s);
+    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:18"].status).toBe("cancelled");
+    expect(s.lanes["build::node:18"].jobResult).toBe("cancelled");
+    expect(s.lanes["build::node:18"].steps.every((st) => st.conclusion !== "success")).toBe(true);
+  });
+
+  it("does not cancel siblings when fail-fast is explicitly false", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [16, 18]
+    steps:
+      - run: |
+          if [ "\${{ matrix.node }}" = "16" ]; then exit 1; fi
+`);
+    await controlRunAll(s);
+    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:18"].jobResult).toBe("success");
+  });
+
+  it("cancels a sibling lane mid-flight via manual stepping too, not just Run All", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [16, 18]
+    steps:
+      - run: |
+          if [ "\${{ matrix.node }}" = "16" ]; then exit 1; fi
+      - run: echo second-step
+`);
+    // Manually drive only the failing lane to completion; its sibling should
+    // still get cancelled without ever being stepped itself.
+    await controlStep(s, "build::node:16");
+    await controlStep(s, "build::node:16");
+    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:18"].status).toBe("cancelled");
+  });
+});
+
 describe("timeout-minutes", () => {
   it("enforces a step's timeout-minutes instead of discarding it", async () => {
     const s = session(`

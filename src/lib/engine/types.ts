@@ -36,7 +36,8 @@ export type LaneStatus =
   | "paused"
   | "success"
   | "failure"
-  | "skipped";
+  | "skipped"
+  | "cancelled";
 
 export interface Lane {
   id: string;

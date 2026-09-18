@@ -23,7 +23,7 @@ import {
   type StepRunRecord,
 } from "./types";
 
-const TERMINAL: ReadonlySet<LaneStatus> = new Set(["success", "failure", "skipped"]);
+const TERMINAL: ReadonlySet<LaneStatus> = new Set(["success", "failure", "skipped", "cancelled"]);
 function isTerminal(status: LaneStatus): boolean {
   return TERMINAL.has(status);
 }
@@ -181,14 +181,47 @@ function finalizeLaneOutputs(session: DebugSession, lane: Lane): void {
   recomputeLaneReadiness(session);
 }
 
+/**
+ * GitHub's default `strategy.fail-fast: true` cancels every other in-progress
+ * or not-yet-started matrix combination of a job the moment any one of them
+ * fails. Cancelled lanes get their remaining steps marked "cancelled" (not
+ * "skipped" - that's reserved for `if:`-driven skips) rather than being left
+ * to run to their own conclusion.
+ */
+function cancelSiblingLanesOnFailFast(session: DebugSession, failedLane: Lane): void {
+  const job = session.workflow.jobs[failedLane.jobId];
+  const failFast = job.strategy?.["fail-fast"] ?? true;
+  if (!failFast) return;
+
+  for (const lane of lanesForJob(session, failedLane.jobId)) {
+    if (lane.id === failedLane.id || isTerminal(lane.status)) continue;
+    for (const s of lane.steps) {
+      if (s.status === "pending") {
+        s.status = "skipped";
+        s.outcome = "cancelled";
+        s.conclusion = "cancelled";
+      }
+    }
+    lane.pointer = lane.steps.length;
+    lane.jobResult = "cancelled";
+    lane.status = "cancelled";
+    finalizeLaneOutputs(session, lane);
+  }
+}
+
 function finishStepAdvance(session: DebugSession, lane: Lane, stepIndex: number): void {
   lane.pointer = stepIndex + 1;
   if (lane.pointer >= lane.steps.length) {
+    // A concurrent request stepping a *different* matrix lane of this same
+    // job may have already fail-fast-cancelled this one while this step was
+    // in flight - don't let this step's own (now-moot) result clobber that.
+    if (lane.status === "cancelled") return;
     const hasFailure = lane.steps.some((s) => s.conclusion === "failure");
     const allSkipped = lane.steps.every((s) => s.conclusion === "skipped");
     lane.jobResult = hasFailure ? "failure" : allSkipped ? "skipped" : "success";
     lane.status = lane.jobResult;
     finalizeLaneOutputs(session, lane);
+    if (lane.jobResult === "failure") cancelSiblingLanesOnFailFast(session, lane);
   }
 }
 
