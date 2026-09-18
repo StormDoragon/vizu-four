@@ -27,6 +27,32 @@ describe("executeRunStep", () => {
     expect(result.spawnError).toBeUndefined();
   });
 
+  it("does not leak the server's own process.env into the debugged step", async () => {
+    const key = "ACTIONS_DEBUGGER_TEST_SECRET";
+    process.env[key] = "should-not-be-visible";
+    try {
+      const result = await executeRunStep({
+        script: `echo "[$${key}]"`,
+        cwd,
+        env: {},
+        extraPath: [],
+      });
+      expect(result.stdout).toContain("[]");
+    } finally {
+      delete process.env[key];
+    }
+  });
+
+  it("still inherits the allowlisted host PATH so the shell/tools resolve", async () => {
+    const result = await executeRunStep({
+      script: "echo PATH=$PATH",
+      cwd,
+      env: {},
+      extraPath: [],
+    });
+    expect(result.stdout).toContain(process.env.PATH ?? "");
+  });
+
   it("captures a non-zero exit code and stderr", async () => {
     const result = await executeRunStep({
       script: "echo boom 1>&2\nexit 7",

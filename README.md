@@ -140,6 +140,16 @@ debug a workflow you don't trust. Secrets you provide via What-If never
 leave the server process and are masked in every log/output/context sent to
 the browser; they're never written to disk.
 
+A debugged step's process environment is **not** a copy of the debugger
+server's own `process.env` — only a small allowlist is passed through
+(`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `LC_ALL`,
+`TZ`, `TERM`, `TMPDIR`, `TEMP`, `TMP`), plus whatever the workflow itself
+sets via `env:`/`$GITHUB_ENV`/What-If. Otherwise a workflow being debugged
+could read and print (and thus exfiltrate into the browser) secrets that
+belong to the debugger process itself rather than to the workflow — for
+example the `ANTHROPIC_API_KEY` used by the optional failure-explanation
+feature.
+
 Sessions live in one process-wide in-memory store with no user accounts and
 no per-session ownership check — any caller who knows a session's id can
 read or drive it. That's an acceptable trust model for `next dev`/`next

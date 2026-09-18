@@ -7,6 +7,40 @@ import { parseEnvFile, parsePathFile } from "./envFile";
 const MAX_CAPTURE_BYTES = 300_000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * Only this narrow, documented allowlist of the host's own environment is
+ * passed through to a debugged `run:` step - never the full `process.env`.
+ * Without this, any workflow being debugged could read (and print, which
+ * the debugger then shows in the browser) server-side secrets that have
+ * nothing to do with the workflow, e.g. the `ANTHROPIC_API_KEY` used by the
+ * failure-explanation feature, or anything else set on whatever machine or
+ * shell happens to be running the debugger's server process.
+ */
+const INHERITED_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "TZ",
+  "TERM",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+];
+
+function baseHostEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of INHERITED_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 export interface RunStepOptions {
   script: string;
   shell?: string;
@@ -88,8 +122,8 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
   const pathSeparator = process.platform === "win32" ? ";" : ":";
   const mergedPath = [...opts.extraPath, process.env.PATH ?? ""].filter(Boolean).join(pathSeparator);
 
-  const childEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+  const childEnv: Record<string, string> = {
+    ...baseHostEnv(),
     ...opts.env,
     PATH: mergedPath,
     CI: "true",
@@ -123,7 +157,10 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
       // analyzer looks for.
       child = spawn(/*turbopackIgnore: true*/ cmd, args, {
         cwd: opts.cwd,
-        env: childEnv,
+        // Cast: NodeJS.ProcessEnv is augmented (by Next's own types) with a
+        // required NODE_ENV field that our deliberately-narrow childEnv
+        // doesn't carry - spawn itself only needs a string map at runtime.
+        env: childEnv as NodeJS.ProcessEnv,
         detached: true,
       });
     } catch (err) {
