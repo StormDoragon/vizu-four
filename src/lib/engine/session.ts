@@ -419,22 +419,34 @@ export function setMockOutputs(
 }
 
 export interface WhatIfPatch {
-  env?: Record<string, string>;
-  vars?: Record<string, string>;
-  secrets?: Record<string, string>;
-  inputs?: Record<string, JsonValue>;
+  env?: Record<string, string | null>;
+  vars?: Record<string, string | null>;
+  secrets?: Record<string, string | null>;
+  inputs?: Record<string, JsonValue | null>;
   event?: JsonValue;
   eventName?: string;
   ref?: string;
   breakOnFailure?: boolean;
 }
 
+/** Applies a patch where a `null` value removes the key instead of overwriting it. */
+function applyKeyedPatch<T>(
+  target: Record<string, T>,
+  patch: Record<string, T | null> | undefined
+): void {
+  if (!patch) return;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete target[key];
+    else target[key] = value;
+  }
+}
+
 /** Mutates live session config; takes effect on the next step executed in any lane. */
 export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
-  if (patch.env) Object.assign(session.config.envOverrides, patch.env);
-  if (patch.vars) Object.assign(session.config.vars, patch.vars);
-  if (patch.secrets) Object.assign(session.config.secrets, patch.secrets);
-  if (patch.inputs) Object.assign(session.config.workflowInputs, patch.inputs);
+  applyKeyedPatch(session.config.envOverrides, patch.env);
+  applyKeyedPatch(session.config.vars, patch.vars);
+  applyKeyedPatch(session.config.secrets, patch.secrets);
+  applyKeyedPatch(session.config.workflowInputs, patch.inputs);
   if (patch.event !== undefined) session.config.event = patch.event;
   if (patch.eventName !== undefined) session.config.eventName = patch.eventName;
   if (patch.ref !== undefined) session.config.ref = patch.ref;

@@ -301,6 +301,22 @@ jobs:
     const record = await controlStep(s, "build::default");
     expect(record.stdout).toContain("hello-whatif");
   });
+
+  it("removes an override when its key is patched to null instead of it being stuck forever", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "[$GREETING]"
+`);
+    applyWhatIf(s, { env: { GREETING: "hello-whatif" } });
+    expect(s.config.envOverrides.GREETING).toBe("hello-whatif");
+    applyWhatIf(s, { env: { GREETING: null } });
+    expect(s.config.envOverrides.GREETING).toBeUndefined();
+    const record = await controlStep(s, "build::default");
+    expect(record.stdout).toContain("[]");
+  });
 });
 
 describe("step outputs", () => {
