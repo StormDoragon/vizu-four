@@ -15,6 +15,7 @@ import { EngineError } from "./errors";
 import { defaultRunConfig } from "./defaults";
 import {
   breakpointKey,
+  mockOutputsKey,
   type DebugSession,
   type Lane,
   type LaneStatus,
@@ -55,6 +56,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     activeLaneId: null,
     cancelled: false,
     events: [],
+    mockOutputs: {},
   };
 
   for (const job of Object.values(opts.workflow.jobs)) {
@@ -257,7 +259,11 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     // registry username) that a workflow commonly sources from `secrets.*` -
     // mask it the same as every other client-visible surface.
     record.simulationNote = maskSecrets(simResult.note, session.config.secrets);
-    record.outputs = maskObjectStrings(simResult.outputs, session.config.secrets);
+
+    const mock = session.mockOutputs[mockOutputsKey(lane.jobId, step.key)];
+    const mergedOutputs = mock ? { ...simResult.outputs, ...mock } : simResult.outputs;
+    record.mockedOutputKeys = mock ? Object.keys(mock) : undefined;
+    record.outputs = maskObjectStrings(mergedOutputs, session.config.secrets);
     record.outcome = simResult.conclusion;
     record.exitCode = simResult.conclusion === "success" ? 0 : 1;
   } else {
@@ -364,6 +370,26 @@ export function setBreakpoint(
   const key = breakpointKey(jobId, stepKey);
   if (enabled) session.breakpoints.add(key);
   else session.breakpoints.delete(key);
+}
+
+/**
+ * Defines (or clears, with `outputs: null`) mocked outputs for a `uses:`
+ * step, scoped to job+step like breakpoints so it applies across every
+ * matrix lane of that job. Takes effect on the next execution of that step
+ * in any lane - like What-If, it never rewrites an already-recorded run.
+ */
+export function setMockOutputs(
+  session: DebugSession,
+  jobId: string,
+  stepKey: string,
+  outputs: Record<string, string> | null
+): void {
+  const key = mockOutputsKey(jobId, stepKey);
+  if (!outputs || Object.keys(outputs).length === 0) {
+    delete session.mockOutputs[key];
+  } else {
+    session.mockOutputs[key] = outputs;
+  }
 }
 
 export interface WhatIfPatch {

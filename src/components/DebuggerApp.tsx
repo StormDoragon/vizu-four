@@ -178,7 +178,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
       </div>
 
       <div className="h-72 border-t border-bg-border">
-        <StepDetailPanel session={session} selection={selection} />
+        <StepDetailPanel session={session} selection={selection} onSessionUpdate={setSession} />
       </div>
     </div>
   );

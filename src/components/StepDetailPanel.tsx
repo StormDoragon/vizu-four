@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { SessionView } from "@/lib/engine/serialize";
 import { explainFailure, type FailureExplanation } from "@/lib/apiClient";
+import { MockOutputsEditor } from "./MockOutputsEditor";
 import type { Selection } from "./types";
 
 const STATUS_TEXT_COLOR: Record<string, string> = {
@@ -16,9 +17,11 @@ const STATUS_TEXT_COLOR: Record<string, string> = {
 export function StepDetailPanel({
   session,
   selection,
+  onSessionUpdate,
 }: {
   session: SessionView;
   selection: Selection | null;
+  onSessionUpdate: (s: SessionView) => void;
 }) {
   const [explanation, setExplanation] = useState<FailureExplanation | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -64,6 +67,11 @@ export function StepDetailPanel({
           {record.durationMs !== undefined && <span>{record.durationMs}ms</span>}
           {record.continueOnError && <span className="rounded bg-gray-700/50 px-1.5 py-0.5">continue-on-error</span>}
           {record.simulated && <span className="rounded bg-gray-700/50 px-1.5 py-0.5">simulated</span>}
+          {record.mockedOutputKeys && record.mockedOutputKeys.length > 0 && (
+            <span className="rounded bg-status-breakpoint/20 px-1.5 py-0.5 text-status-breakpoint">
+              mocked: {record.mockedOutputKeys.join(", ")}
+            </span>
+          )}
         </div>
 
         {record.ifExpr !== undefined && (
@@ -106,7 +114,17 @@ export function StepDetailPanel({
         )}
       </div>
 
-      <div className="overflow-auto p-3">
+      <div className="space-y-4 overflow-auto p-3">
+        {step.uses && (
+          <MockOutputsEditor
+            key={`${lane.jobId}:${step.key}`}
+            session={session}
+            jobId={lane.jobId}
+            stepKey={step.key}
+            onUpdated={onSessionUpdate}
+          />
+        )}
+
         {record.conclusion === "failure" ? (
           <div>
             <button
@@ -137,7 +155,7 @@ export function StepDetailPanel({
             )}
           </div>
         ) : (
-          <p className="text-sm text-gray-600">No failure to explain for this step.</p>
+          !step.uses && <p className="text-sm text-gray-600">No failure to explain for this step.</p>
         )}
       </div>
     </div>

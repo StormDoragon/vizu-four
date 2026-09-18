@@ -80,6 +80,18 @@ export async function setBreakpoint(
   });
 }
 
+export async function setMockOutputs(
+  id: string,
+  jobId: string,
+  stepKey: string,
+  outputs: Record<string, string> | null
+): Promise<{ session: SessionView }> {
+  return request(`/api/sessions/${id}/mock-outputs`, {
+    method: "POST",
+    body: JSON.stringify({ jobId, stepKey, outputs }),
+  });
+}
+
 export async function applyWhatIf(id: string, patch: WhatIfPatch): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}/whatif`, {
     method: "POST",

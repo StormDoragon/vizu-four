@@ -25,6 +25,8 @@ export interface StepRunRecord {
   simulated?: boolean;
   simulationNote?: string;
   engineError?: string;
+  /** Output keys that came from a user-defined mock rather than the simulator itself. */
+  mockedOutputKeys?: string[];
 }
 
 export type LaneStatus =
@@ -78,8 +80,14 @@ export interface DebugSession {
   activeLaneId: string | null;
   cancelled: boolean;
   events: string[];
+  /** User-defined output stubs for `uses:` steps, keyed by mockOutputsKey(jobId, stepKey). */
+  mockOutputs: Record<string, Record<string, string>>;
 }
 
 export function breakpointKey(jobId: string, stepKey: string): string {
+  return `${jobId}:${stepKey}`;
+}
+
+export function mockOutputsKey(jobId: string, stepKey: string): string {
   return `${jobId}:${stepKey}`;
 }

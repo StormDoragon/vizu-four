@@ -10,6 +10,7 @@ import {
   controlStep,
   createSession,
   setBreakpoint,
+  setMockOutputs,
 } from "./session";
 import type { DebugSession } from "./types";
 
@@ -269,5 +270,101 @@ jobs:
     const record = await controlStep(s, "build::default");
     expect(record.simulationNote).not.toContain("totally-secret-node-version-value");
     expect(record.simulationNote).toContain("***");
+  });
+});
+
+describe("mock outputs for uses: steps", () => {
+  it("merges a mock on top of the simulated outputs and flags which keys were mocked", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+`);
+    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    const record = await controlStep(s, "build::default");
+    expect(record.outputs["cache-hit"]).toBe("true");
+    expect(record.mockedOutputKeys).toEqual(["cache-hit"]);
+  });
+
+  it("adds a mock key that the simulator never produces", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: login
+        uses: docker/login-action@v3
+`);
+    setMockOutputs(s, "build", "login", { "session-token": "fake-token" });
+    const record = await controlStep(s, "build::default");
+    expect(record.outputs["session-token"]).toBe("fake-token");
+  });
+
+  it("leaves unmocked steps and unmocked keys untouched", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.mockedOutputKeys).toBeUndefined();
+    expect(record.outputs["node-version"]).toBe("20");
+  });
+
+  it("flows a mocked output into a later step's expression", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+      - run: echo "hit=\${{ steps.cache.outputs['cache-hit'] }}"
+`);
+    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    await controlStep(s, "build::default");
+    const second = await controlStep(s, "build::default");
+    expect(second.stdout).toContain("hit=true");
+  });
+
+  it("clears a mock when set to null, reverting to the simulated output", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+`);
+    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    setMockOutputs(s, "build", "cache", null);
+    const record = await controlStep(s, "build::default");
+    expect(record.outputs["cache-hit"]).toBe("false");
+    expect(record.mockedOutputKeys).toBeUndefined();
+  });
+
+  it("masks a mock value that happens to equal a configured secret", async () => {
+    const s = session(
+      `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: login
+        uses: docker/login-action@v3
+`,
+      { secrets: { TOKEN: "shh-its-a-secret" } }
+    );
+    setMockOutputs(s, "build", "login", { token: "shh-its-a-secret" });
+    const record = await controlStep(s, "build::default");
+    expect(record.outputs.token).toBe("***");
   });
 });

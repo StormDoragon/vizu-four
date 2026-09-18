@@ -77,8 +77,9 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
           const record = lane?.steps[idx];
           const isNext = !!lane && lane.pointer === idx && lane.status !== "success" && lane.status !== "failure" && lane.status !== "skipped";
           const isSelected = !!lane && selection?.laneId === lane.id && selection.stepIndex === idx;
-          const bpKey = `${jobId}:${step.key}`;
-          const hasBreakpoint = session.breakpoints.includes(bpKey);
+          const stepScopeKey = `${jobId}:${step.key}`;
+          const hasBreakpoint = session.breakpoints.includes(stepScopeKey);
+          const hasMock = Object.keys(session.mockOutputs[stepScopeKey] ?? {}).length > 0;
           return (
             <div
               key={step.key}
@@ -99,7 +100,17 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
               />
               <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[record?.status ?? "pending"]}`} />
               <span className="truncate text-gray-200">{step.name ?? step.uses ?? step.key}</span>
-              {record?.simulated && <span className="ml-auto shrink-0 text-[10px] text-gray-500">sim</span>}
+              <span className="ml-auto flex shrink-0 items-center gap-1">
+                {hasMock && (
+                  <span
+                    className="text-[10px] text-status-breakpoint"
+                    title="Mock outputs configured for this step"
+                  >
+                    mock
+                  </span>
+                )}
+                {record?.simulated && <span className="text-[10px] text-gray-500">sim</span>}
+              </span>
             </div>
           );
         })}

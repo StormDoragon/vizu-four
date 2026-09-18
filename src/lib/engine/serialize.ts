@@ -50,6 +50,8 @@ export interface SessionView {
   activeLaneId: string | null;
   lanes: Record<string, Lane>;
   laneOrder: string[];
+  /** User-defined output stubs for `uses:` steps, keyed by `${jobId}:${stepKey}`. */
+  mockOutputs: Record<string, Record<string, string>>;
 }
 
 export function toSessionView(session: DebugSession): SessionView {
@@ -102,5 +104,6 @@ export function toSessionView(session: DebugSession): SessionView {
     activeLaneId: session.activeLaneId,
     lanes: session.lanes,
     laneOrder: session.laneOrder,
+    mockOutputs: session.mockOutputs,
   };
 }
