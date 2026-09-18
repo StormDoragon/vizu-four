@@ -90,6 +90,27 @@ describe("executeRunStep", () => {
     expect(result.stdout).toContain(process.env.PATH ?? "");
   });
 
+  it("lets a workflow's env: override CI/GITHUB_ACTIONS/GITHUB_WORKSPACE defaults", async () => {
+    const result = await executeRunStep({
+      script: "echo CI=$CI ACTIONS=$GITHUB_ACTIONS WS=$GITHUB_WORKSPACE",
+      cwd,
+      env: { CI: "false", GITHUB_ACTIONS: "false", GITHUB_WORKSPACE: "/custom/workspace" },
+      extraPath: [],
+    });
+    expect(result.stdout).toContain("CI=false ACTIONS=false WS=/custom/workspace");
+  });
+
+  it("never lets a workflow's env: redirect engine-owned GITHUB_OUTPUT/RUNNER_TEMP", async () => {
+    const result = await executeRunStep({
+      script: 'echo "x=1" >> "$GITHUB_OUTPUT"',
+      cwd,
+      env: { GITHUB_OUTPUT: "/nonexistent/wrong-path", RUNNER_TEMP: "/nonexistent/wrong-temp" },
+      extraPath: [],
+      runnerTempDir: cwd,
+    });
+    expect(result.outputs).toEqual({ x: "1" });
+  });
+
   it("captures a non-zero exit code and stderr", async () => {
     const result = await executeRunStep({
       script: "echo boom 1>&2\nexit 7",

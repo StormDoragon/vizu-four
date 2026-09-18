@@ -200,11 +200,19 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
 
   const childEnv: Record<string, string> = {
     ...baseHostEnv(),
-    ...opts.env,
-    PATH: mergedPath,
+    // Real Actions runners let a workflow override CI/GITHUB_ACTIONS/
+    // GITHUB_WORKSPACE via env: (e.g. env: { CI: 'false' } to make a tool
+    // behave as if running locally) - these are just defaults, so opts.env
+    // must be spread AFTER them, not before.
     CI: "true",
     GITHUB_ACTIONS: "true",
     GITHUB_WORKSPACE: opts.cwd,
+    ...opts.env,
+    // Engine-owned plumbing that a workflow's env: must never be able to
+    // redirect, since doing so would silently break $GITHUB_OUTPUT/$GITHUB_ENV
+    // capture, PATH resolution (which folds in prior steps' $GITHUB_PATH
+    // additions), or $RUNNER_TEMP - always forced last.
+    PATH: mergedPath,
     GITHUB_OUTPUT: outputFile,
     GITHUB_ENV: envFile,
     GITHUB_PATH: pathFile,
