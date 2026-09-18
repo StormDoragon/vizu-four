@@ -12,6 +12,7 @@ import {
   setBreakpoint,
   setMockOutputs,
 } from "./session";
+import { EngineError } from "./errors";
 import type { DebugSession } from "./types";
 
 let workspaceDir: string;
@@ -68,6 +69,30 @@ jobs:
 `);
     expect(s.lanes["b::default"].status).toBe("blocked");
   });
+
+  it("finalizes a zero-step job as an immediate success instead of deadlocking", async () => {
+    // Regression test: a lane with no steps never hit finishStepAdvance (the
+    // only place that marks a lane terminal), so it stayed "running" forever
+    // and every job that `needs:` it stayed "blocked" forever. Stepping such
+    // a lane also crashed with a 500 (lane.steps[0] was undefined).
+    const s = session(`
+jobs:
+  empty:
+    runs-on: ubuntu-latest
+    steps: []
+  after:
+    needs: empty
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo after-ran
+`);
+    expect(s.lanes["empty::default"].status).toBe("success");
+    expect(s.lanes["empty::default"].jobResult).toBe("success");
+    expect(s.lanes["after::default"].status).toBe("ready");
+
+    const record = await controlStep(s, "after::default");
+    expect(record.stdout).toContain("after-ran");
+  });
 });
 
 describe("controlStep", () => {
@@ -93,6 +118,31 @@ jobs:
     expect(second.name).toBe("two");
     expect(s.lanes["build::default"].status).toBe("success");
     expect(s.lanes["build::default"].jobResult).toBe("success");
+  });
+
+  it("rejects a second concurrent step on the same lane instead of double-executing it", async () => {
+    // Regression test: two overlapping controlStep() calls on one lane used
+    // to both pass the status guard (neither "blocked" nor terminal) and
+    // both execute the same step, silently double-running its side effects
+    // and leaving the pointer one step behind where it should be.
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo one
+      - run: echo two
+`);
+    const results = await Promise.allSettled([
+      controlStep(s, "build::default"),
+      controlStep(s, "build::default"),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(EngineError);
+    expect(s.lanes["build::default"].pointer).toBe(1);
   });
 });
 

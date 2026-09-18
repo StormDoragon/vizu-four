@@ -149,6 +149,11 @@ function parseJob(
       severity: "warning",
       message: `jobs.${jobId}.steps is missing or not a list; treating as empty`,
     });
+  } else if (stepsRaw.length === 0) {
+    issues.push({
+      severity: "warning",
+      message: `jobs.${jobId}.steps is empty; this job will be treated as an immediate success`,
+    });
   }
   const steps: WorkflowStep[] = [];
   stepsRaw.forEach((s, i) => {

@@ -98,4 +98,18 @@ jobs:
     expect(matrix.axes.node).toEqual([16, 18]);
     expect(matrix.exclude).toEqual([{ os: "windows-latest", node: 16 }]);
   });
+
+  it("warns when a job's steps list is empty", () => {
+    const src = `
+jobs:
+  empty:
+    runs-on: ubuntu-latest
+    steps: []
+`;
+    const { workflow, issues } = parseWorkflow(src);
+    expect(workflow!.jobs.empty.steps).toEqual([]);
+    expect(
+      issues.some((i) => i.severity === "warning" && i.message.includes("jobs.empty.steps is empty"))
+    ).toBe(true);
+  });
 });

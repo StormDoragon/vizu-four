@@ -143,6 +143,14 @@ function activateLane(session: DebugSession, lane: Lane): void {
     lane.status = "skipped";
     lane.jobIfWarning = "alwaysTruthyWarning" in cond ? cond.alwaysTruthyWarning : undefined;
     finalizeLaneOutputs(session, lane);
+  } else if (lane.steps.length === 0) {
+    // A job with no steps has nothing to pause on - finalize it immediately
+    // as successful instead of leaving it stuck in "running" forever (which
+    // also deadlocked every job that `needs:` it, since nothing ever marks
+    // this lane terminal).
+    lane.jobResult = "success";
+    lane.status = "success";
+    finalizeLaneOutputs(session, lane);
   } else {
     lane.status = "ready";
   }
@@ -291,6 +299,10 @@ function requireLane(session: DebugSession, laneId: string): Lane {
 export async function controlStep(session: DebugSession, laneId: string): Promise<StepRunRecord> {
   const lane = requireLane(session, laneId);
   if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
+  // Checked and flipped synchronously (no `await` between the check and the
+  // write below), so two requests racing to step the same lane can't both
+  // pass this guard - the JS event loop can't interleave them here.
+  if (lane.status === "running") throw new EngineError("Lane is already running");
   if (isTerminal(lane.status)) throw new EngineError("Lane has already finished");
   lane.status = "running";
   const record = await stepLane(session, laneId);
@@ -305,6 +317,8 @@ async function runLaneLoop(
 ): Promise<void> {
   const lane = requireLane(session, laneId);
   if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
+  // Same synchronous check-then-flip guard as controlStep - see comment there.
+  if (lane.status === "running") throw new EngineError("Lane is already running");
   if (isTerminal(lane.status)) return;
 
   const job = session.workflow.jobs[lane.jobId];
