@@ -423,6 +423,57 @@ jobs:
   });
 });
 
+describe("well-known context fields", () => {
+  it("seeds secrets.GITHUB_TOKEN and masks it like any other secret", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "token=\${{ secrets.GITHUB_TOKEN }}"
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.stdout).not.toContain("local-debug-github-token");
+    expect(record.stdout).toContain("***");
+  });
+
+  it("derives head_ref/base_ref from the pull_request event payload, empty otherwise", async () => {
+    const push = session(`
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "head=[\${{ github.head_ref }}] base=[\${{ github.base_ref }}]"
+`);
+    const pushRecord = await controlStep(push, "build::default");
+    expect(pushRecord.stdout).toContain("head=[] base=[]");
+
+    const pr = session(`
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "head=[\${{ github.head_ref }}] base=[\${{ github.base_ref }}]"
+`);
+    const prRecord = await controlStep(pr, "build::default");
+    expect(prRecord.stdout).toContain("head=[feature-branch] base=[main]");
+  });
+
+  it("derives repository_owner, ref_type, and triggering_actor instead of leaving them null", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "owner=\${{ github.repository_owner }} type=\${{ github.ref_type }} who=\${{ github.triggering_actor }}"
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.stdout).toContain("owner=local type=branch who=local-debugger");
+  });
+});
+
 describe("step outputs", () => {
   it("flows $GITHUB_OUTPUT into a later step's expression", async () => {
     const s = session(`

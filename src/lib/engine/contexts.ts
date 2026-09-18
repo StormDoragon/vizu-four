@@ -64,6 +64,15 @@ function aggregateJob(lanes: Lane[]): { result: Conclusion; outputs: Record<stri
   return { result, outputs };
 }
 
+function getNestedString(obj: JsonValue, path: string[]): string {
+  let cur: JsonValue = obj;
+  for (const key of path) {
+    if (cur === null || typeof cur !== "object" || Array.isArray(cur)) return "";
+    cur = (cur as Record<string, JsonValue>)[key] ?? null;
+  }
+  return typeof cur === "string" ? cur : "";
+}
+
 export interface BuildContextsOptions {
   /** Steps up to (not including) this index are visible in `steps.*`. */
   uptoStepIndex: number;
@@ -98,6 +107,12 @@ export function buildEvalContext(
     .slice(0, opts.uptoStepIndex)
     .some((s) => s.conclusion === "failure");
 
+  // GitHub only populates these for pull_request(_target)-triggered runs;
+  // every other event genuinely gets empty strings, not nulls.
+  const isPrEvent = cfg.eventName === "pull_request" || cfg.eventName === "pull_request_target";
+  const headRef = isPrEvent ? getNestedString(cfg.event, ["pull_request", "head", "ref"]) : "";
+  const baseRef = isPrEvent ? getNestedString(cfg.event, ["pull_request", "base", "ref"]) : "";
+
   const contexts: Record<string, JsonValue> = {
     github: {
       event_name: cfg.eventName,
@@ -106,6 +121,7 @@ export function buildEvalContext(
       sha: cfg.sha,
       actor: cfg.actor,
       repository: cfg.repository,
+      repository_owner: cfg.repository.split("/")[0] ?? "",
       run_id: cfg.runId,
       run_number: cfg.runNumber,
       run_attempt: "1",
@@ -115,6 +131,10 @@ export function buildEvalContext(
       server_url: "https://github.com",
       api_url: "https://api.github.com",
       ref_name: cfg.ref.replace(/^refs\/(heads|tags)\//, ""),
+      ref_type: cfg.ref.startsWith("refs/tags/") ? "tag" : cfg.ref.startsWith("refs/heads/") ? "branch" : "",
+      head_ref: headRef,
+      base_ref: baseRef,
+      triggering_actor: cfg.actor,
     },
     env: opts.effectiveEnv,
     vars: cfg.vars,

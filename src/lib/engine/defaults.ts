@@ -60,7 +60,11 @@ export function defaultRunConfig(workflow: WorkflowFile): RunConfig {
     runNumber: "1",
     workflowInputs: {},
     vars: {},
-    secrets: {},
+    // GitHub always provides GITHUB_TOKEN implicitly, even if a workflow
+    // never declares it - leaving it unseeded meant secrets.GITHUB_TOKEN
+    // silently evaluated to null instead of a usable (masked) value. Still
+    // overridable via What-If like any other secret.
+    secrets: { GITHUB_TOKEN: "local-debug-github-token" },
     envOverrides: {},
   };
 }
