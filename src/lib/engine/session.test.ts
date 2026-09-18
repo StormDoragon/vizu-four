@@ -246,4 +246,26 @@ jobs:
     expect(second.simulated).toBe(true);
     expect(second.simulationNote).toContain("isn't executed locally");
   });
+
+  it("masks secrets that a handler echoes back into its simulation note", async () => {
+    // Regression test: simulatedActions handlers can legitimately echo a
+    // `with:` input value into their note (e.g. a version string or a
+    // registry username) - if that input was sourced from `secrets.*`, the
+    // note must be masked exactly like stdout/stderr/outputs are.
+    const s = session(
+      `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: \${{ secrets.NODE_VERSION }}
+`,
+      { secrets: { NODE_VERSION: "totally-secret-node-version-value" } }
+    );
+    const record = await controlStep(s, "build::default");
+    expect(record.simulationNote).not.toContain("totally-secret-node-version-value");
+    expect(record.simulationNote).toContain("***");
+  });
 });
