@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/engine/store";
+import { getOwnedSession } from "@/lib/engine/ownership";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
 import { maskObjectStrings } from "@/lib/engine/masking";
 import { errorResponse } from "@/lib/http";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getOwnedSession(id);
   if (!session) return errorResponse(404, "Session not found");
 
   const url = new URL(req.url);

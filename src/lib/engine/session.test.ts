@@ -37,7 +37,7 @@ function session(yaml: string, config?: Parameters<typeof createSession>[0]["con
   if (!workflow || blocking.length > 0) {
     throw new Error(`fixture failed to parse: ${JSON.stringify(blocking)}`);
   }
-  const s = createSession({ workflow, workspaceDir, config });
+  const s = createSession({ workflow, workspaceDir, ownerId: "test-owner", config });
   createdSessionIds.push(s.id);
   return s;
 }
@@ -698,7 +698,7 @@ jobs:
     steps: []
 `);
     const issues = [{ severity: "warning" as const, message: "jobs.build.steps is empty" }];
-    const s = createSession({ workflow: workflow!, workspaceDir, parseIssues: issues });
+    const s = createSession({ workflow: workflow!, workspaceDir, ownerId: "test-owner", parseIssues: issues });
     createdSessionIds.push(s.id);
     expect(s.parseIssues).toEqual(issues);
   });

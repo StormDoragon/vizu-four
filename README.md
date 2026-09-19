@@ -159,14 +159,19 @@ belong to the debugger process itself rather than to the workflow — for
 example the `ANTHROPIC_API_KEY` used by the optional failure-explanation
 feature.
 
-Sessions live in one process-wide in-memory store with no user accounts and
-no per-session ownership check — any caller who knows a session's id can
-read or drive it. That's an acceptable trust model for `next dev`/`next
-start` on your own machine (nobody else can reach `localhost`), but this is
-**not safe to deploy as a shared/multi-tenant service** as-is: every visitor
-would share one process and could enumerate or hijack each other's sessions.
-Treat this as a single-user local tool unless real per-visitor authentication
-is added in front of it.
+Sessions are scoped to an anonymous per-visitor cookie. Every
+`/api/sessions/[id]` route checks it — as does the expression evaluator,
+which takes a session id in its request body — and answers `404` rather than
+`403` on a mismatch, so a probe can't use the response to confirm that an id
+exists. Knowing a session id is therefore not enough to read or drive it.
+
+**That is isolation, not authentication, and it does not make this safe to
+deploy publicly.** There are no accounts: the cookie is an anonymous bearer
+token, so whoever holds it is that visitor. More importantly, `run:` steps
+still execute with the server process's own shell privileges — on a shared
+host, any visitor could run code as the server. Deploying this beyond your
+own machine requires `run:` execution to be sandboxed or disabled first; see
+`ROADMAP.md`.
 
 ## Testing
 

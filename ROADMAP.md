@@ -17,7 +17,7 @@ This is the agreed order of work, not a suggestion. Where it disagrees with an i
 The delta is smaller than it sounds — `uses:` steps are already simulated today, so nothing changes there. Demo scope is:
 
 - disable the `run:` spawn path
-- cookie-scoped session ownership, checked in the `[id]` routes
+- ~~cookie-scoped session ownership, checked in the `[id]` routes~~ — **done**
 - per-visitor rate limits
 
 Still demonstrates the hardest, most demo-able parts: the expression engine, the `if:` always-truthy footgun detection, matrix expansion, context inspection, breakpoints.
@@ -30,7 +30,7 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 - [x] ~~[#5](https://github.com/StormDoragon/vizu-four/issues/5) **keyboard shortcuts**~~ — shipped. `S`/`C`/`E`/`A` with `F10`/`F8` aliases, a `?` overlay, and button tooltips.
 - [x] ~~[#6](https://github.com/StormDoragon/vizu-four/issues/6) **persist breakpoints + What-If**~~ — shipped. Keyed by workflow content hash (not session id, which is new every time), so it survives the server restart that drops the in-memory session. Secret *values* are deliberately excluded; only names are remembered, as empty rows to re-enter.
-- **Minimal session isolation** for the demo (see scope above). Untracked — folded in here rather than filed separately.
+- [x] ~~**Minimal session isolation** for the demo~~ — shipped. Sessions carry an owner id from an httpOnly `SameSite=Lax` cookie; all nine session-resolving routes (including `/api/expressions/evaluate`, which takes a session id in its body, and `DELETE`, which previously had no check at all) answer 404 on a mismatch. Isolation, not authentication — it does **not** by itself make a shared deployment safe; see the threat-model note above.
 
 ### 3. Real workflow + workspace access — [#29](https://github.com/StormDoragon/vizu-four/issues/29)
 

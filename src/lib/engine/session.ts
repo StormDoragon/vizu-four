@@ -40,6 +40,8 @@ function stepDisplayName(step: WorkflowStep): string {
 export interface CreateSessionOptions {
   workflow: WorkflowFile;
   workspaceDir: string;
+  /** Owner cookie value of the visitor creating this session. */
+  ownerId: string;
   config?: Partial<RunConfig>;
   /** Non-fatal warnings from the parse that produced `workflow`, carried
    * onto the session so they survive past the request that created it. */
@@ -50,6 +52,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
   const config: RunConfig = { ...defaultRunConfig(opts.workflow), ...opts.config };
   const session: DebugSession = {
     id: randomUUID(),
+    ownerId: opts.ownerId,
     createdAt: new Date().toISOString(),
     lastAccessedAt: new Date().toISOString(),
     workflow: opts.workflow,

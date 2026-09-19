@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/engine/store";
+import { getOwnedSession } from "@/lib/engine/ownership";
 import { toSessionView } from "@/lib/engine/serialize";
 import { setMockOutputs } from "@/lib/engine/session";
 import { errorResponse, readJsonBody } from "@/lib/http";
@@ -16,7 +16,7 @@ interface MockOutputsBody {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getOwnedSession(id);
   if (!session) return errorResponse(404, "Session not found");
 
   const body = await readJsonBody<MockOutputsBody>(req);

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { parseWorkflow } from "@/lib/workflow/parser";
 import { createSession } from "@/lib/engine/session";
 import { saveSession } from "@/lib/engine/store";
+import { ensureOwnerId } from "@/lib/engine/ownership";
 import { toSessionView } from "@/lib/engine/serialize";
 import type { RunConfig } from "@/lib/engine/types";
 import { MAX_WORKFLOW_YAML_LENGTH, validateRunConfigPatch } from "@/lib/engine/validateRequest";
@@ -46,8 +47,9 @@ export async function POST(req: Request) {
     return errorResponse(400, "Workflow failed to parse", { issues });
   }
 
+  const ownerId = await ensureOwnerId();
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-"));
-  const session = createSession({ workflow, workspaceDir, config, parseIssues: issues });
+  const session = createSession({ workflow, workspaceDir, ownerId, config, parseIssues: issues });
   saveSession(session);
 
   return NextResponse.json({ session: toSessionView(session), issues });

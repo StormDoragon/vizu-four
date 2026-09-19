@@ -80,6 +80,9 @@ export interface RunConfig {
 
 export interface DebugSession {
   id: string;
+  /** Opaque per-visitor id from the owner cookie. Every `[id]` route checks
+   * it, so knowing a session id is not by itself enough to reach a session. */
+  ownerId: string;
   createdAt: string;
   /** Bumped on every read/write via the store; drives idle-session reaping. */
   lastAccessedAt: string;

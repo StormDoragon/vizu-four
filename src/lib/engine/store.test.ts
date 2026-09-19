@@ -22,7 +22,7 @@ jobs:
 async function makeSession() {
   const { workflow } = parseWorkflow(MINIMAL_YAML);
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "store-test-"));
-  const session = createSession({ workflow: workflow!, workspaceDir });
+  const session = createSession({ workflow: workflow!, workspaceDir, ownerId: "test-owner" });
   saveSession(session);
   return session;
 }

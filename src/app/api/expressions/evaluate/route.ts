@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/engine/store";
+import { getOwnedSession } from "@/lib/engine/ownership";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
 import { maskObjectStrings } from "@/lib/engine/masking";
-import { evaluateExpression } from "@/lib/expressions/evaluator";
+import { evaluateExpression, type EvalContext } from "@/lib/expressions/evaluator";
 import { findExpressionSpans } from "@/lib/expressions/interpolate";
 import { sampleEvalContext } from "@/lib/expressions/sampleContext";
 import { errorResponse, readJsonBody } from "@/lib/http";
@@ -39,18 +39,21 @@ export async function POST(req: Request) {
   }
 
   let secrets: Record<string, string> = {};
-  const evalCtx = (() => {
-    if (body.sessionId && body.laneId) {
-      const session = getSession(body.sessionId);
-      const lane = session?.lanes[body.laneId];
-      if (session && lane) {
-        secrets = session.config.secrets;
-        const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, undefined);
-        return buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
-      }
+  let sessionCtx: EvalContext | null = null;
+  if (body.sessionId && body.laneId) {
+    // Ownership-gated like every `[id]` route: this endpoint takes a session
+    // id in its body and answers with that session's env, vars and masked
+    // secrets, so an unowned id has to fall through to the sample context
+    // rather than quietly evaluate against someone else's session.
+    const session = await getOwnedSession(body.sessionId);
+    const lane = session?.lanes[body.laneId];
+    if (session && lane) {
+      secrets = session.config.secrets;
+      const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, undefined);
+      sessionCtx = buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
     }
-    return sampleEvalContext(process.cwd());
-  })();
+  }
+  const evalCtx = sessionCtx ?? sampleEvalContext(process.cwd());
 
   try {
     const result = evaluateExpression(stripWrapper(body.expression), evalCtx);
