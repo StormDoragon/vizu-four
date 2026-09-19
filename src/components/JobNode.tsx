@@ -40,12 +40,12 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
       <Handle type="source" position={Position.Right} className="!bg-bg-border" />
 
       <div className="flex items-center justify-between gap-2 rounded-t-lg bg-bg-raised px-3 py-2">
-        <div className="truncate text-sm font-semibold text-white">{job.name ?? jobId}</div>
+        <div className="truncate text-sm font-semibold text-ink">{job.name ?? jobId}</div>
         {lane && <StatusDot status={lane.status} executing={laneExecuting} size="md" />}
       </div>
 
       {job.if && (
-        <div className="border-b border-bg-border px-2 py-1 text-[10px] text-gray-500">
+        <div className="border-b border-bg-border px-2 py-1 text-[10px] text-ink-500">
           if: <code>{job.if}</code>
           {lane?.jobIfWarning && <span className="ml-1 text-yellow-400">⚠</span>}
         </div>
@@ -55,7 +55,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
         <select
           value={laneId}
           onChange={(e) => onSelectLane(e.target.value)}
-          className="w-full border-b border-bg-border bg-bg-panel px-2 py-1 text-xs text-gray-300"
+          className="w-full border-b border-bg-border bg-bg-panel px-2 py-1 text-xs text-ink-300"
         >
           {lanesForJob.map((l) => (
             <option key={l.id} value={l.id}>
@@ -89,11 +89,11 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
                 }}
                 title="Toggle breakpoint"
                 className={`h-2.5 w-2.5 shrink-0 rounded-full border ${
-                  hasBreakpoint ? "border-status-breakpoint bg-status-breakpoint" : "border-gray-600"
+                  hasBreakpoint ? "border-status-breakpoint bg-status-breakpoint" : "border-ink-600"
                 }`}
               />
               <StatusDot status={record?.status ?? "pending"} executing={isNext && laneExecuting} />
-              <span className="truncate text-gray-200">{step.name ?? step.uses ?? step.key}</span>
+              <span className="truncate text-ink-200">{step.name ?? step.uses ?? step.key}</span>
               <span className="ml-auto flex shrink-0 items-center gap-1">
                 {hasMock && (
                   <span
@@ -103,7 +103,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
                     mock
                   </span>
                 )}
-                {record?.simulated && <span className="text-[10px] text-gray-500">sim</span>}
+                {record?.simulated && <span className="text-[10px] text-ink-500">sim</span>}
                 {/* Redundant, non-color signal for a finished step's
                     outcome (WCAG 1.4.1) - the dot to its left already
                     carries color + shape, this adds the glyph too. */}
@@ -117,7 +117,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
           );
         })}
         {job.steps.length === 0 && (
-          <div className="px-2 py-2 text-xs italic text-gray-600">no steps</div>
+          <div className="px-2 py-2 text-xs italic text-ink-600">no steps</div>
         )}
       </div>
     </div>

@@ -25,7 +25,7 @@ export function KeyValueEditor({
   return (
     <div data-testid={`kv-section-${testId}`}>
       <div className="mb-1 flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">{title}</h4>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-400">{title}</h4>
         <button
           onClick={() => setRows([...rows, { key: "", value: "" }])}
           data-testid={`kv-add-${testId}`}
@@ -42,24 +42,24 @@ export function KeyValueEditor({
               onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
               placeholder="KEY"
               data-testid={`kv-${testId}-key-${i}`}
-              className="w-1/3 rounded border border-bg-border bg-bg-panel px-2 py-1 text-xs text-gray-100 focus:border-status-running focus:outline-none"
+              className="w-1/3 rounded border border-bg-border bg-bg-panel px-2 py-1 text-xs text-ink-100 focus:border-status-running focus:outline-none"
             />
             <input
               value={row.value}
               onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
               placeholder="value"
               data-testid={`kv-${testId}-value-${i}`}
-              className="flex-1 rounded border border-bg-border bg-bg-panel px-2 py-1 text-xs text-gray-100 focus:border-status-running focus:outline-none"
+              className="flex-1 rounded border border-bg-border bg-bg-panel px-2 py-1 text-xs text-ink-100 focus:border-status-running focus:outline-none"
             />
             <button
               onClick={() => setRows(rows.filter((_, j) => j !== i))}
-              className="px-1 text-xs text-gray-500 hover:text-red-400"
+              className="px-1 text-xs text-ink-500 hover:text-red-400"
             >
               ✕
             </button>
           </div>
         ))}
-        {rows.length === 0 && <p className="text-xs italic text-gray-600">none</p>}
+        {rows.length === 0 && <p className="text-xs italic text-ink-600">none</p>}
       </div>
     </div>
   );

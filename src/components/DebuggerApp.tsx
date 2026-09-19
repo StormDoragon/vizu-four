@@ -305,7 +305,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   }
   if (!session) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-gray-500">
+      <div className="flex h-screen items-center justify-center text-sm text-ink-500">
         Loading session…
       </div>
     );
@@ -360,13 +360,13 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         </div>
       )}
       {restoredNote && (
-        <div className="flex items-start gap-2 border-b border-bg-border bg-bg-raised px-4 py-1.5 text-xs text-gray-400">
+        <div className="flex items-start gap-2 border-b border-bg-border bg-bg-raised px-4 py-1.5 text-xs text-ink-400">
           <span className="flex-1" data-testid="restored-note">
             {restoredNote}
           </span>
           <button
             onClick={() => setRestoredNote(null)}
-            className="shrink-0 text-gray-500 hover:text-gray-200"
+            className="shrink-0 text-ink-500 hover:text-ink-200"
             aria-label="Dismiss restore notice"
           >
             ✕
@@ -390,8 +390,8 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <div className="min-h-[280px] flex-1 overflow-hidden">
           <WorkflowGraph
             session={session}
             selection={selection}
@@ -402,7 +402,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           />
         </div>
 
-        <div className="flex w-[380px] flex-col overflow-hidden border-l border-bg-border">
+        <div className="flex h-72 w-full flex-col overflow-hidden border-t border-bg-border lg:h-auto lg:w-[380px] lg:border-l lg:border-t-0">
           <div className="flex border-b border-bg-border">
             {TABS.map((tab) => (
               <button
@@ -410,8 +410,8 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
                 onClick={() => setRightTab(tab.id)}
                 className={`flex-1 px-2 py-2 text-xs font-medium ${
                   rightTab === tab.id
-                    ? "border-b-2 border-status-running text-white"
-                    : "text-gray-500 hover:text-gray-300"
+                    ? "border-b-2 border-status-running text-ink"
+                    : "text-ink-500 hover:text-ink-300"
                 }`}
               >
                 {tab.label}
@@ -446,7 +446,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      <div className="flex h-80 flex-col border-t border-bg-border">
+      <div className="flex h-[28rem] flex-col border-t border-bg-border lg:h-80">
         <TimeTravelBar session={session} selection={selection} onSelect={setSelection} />
         <div className="flex-1 overflow-hidden">
           <StepDetailPanel session={session} selection={selection} onSessionUpdate={setSession} />

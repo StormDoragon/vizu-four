@@ -95,9 +95,9 @@ export function WhatIfPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-ink-500">
         Override env vars, vars, or provide local secret values without touching the workflow
-        file or pushing a commit. <strong className="text-gray-400">Secret values are never
+        file or pushing a commit. <strong className="text-ink-400">Secret values are never
         stored</strong> — they stay in the server process for this session only.
       </p>
       <KeyValueEditor testId="env" title="Env overrides" rows={envRows} setRows={setEnvRows} />
@@ -111,10 +111,10 @@ export function WhatIfPanel({
       >
         {applying ? "Applying…" : "Apply"}
       </button>
-      {message && <p className="text-xs text-gray-400">{message}</p>}
+      {message && <p className="text-xs text-ink-400">{message}</p>}
 
       <div className="border-t border-bg-border pt-3">
-        <label className="flex items-start gap-2 text-xs text-gray-400">
+        <label className="flex items-start gap-2 text-xs text-ink-400">
           <input
             type="checkbox"
             checked={persist}

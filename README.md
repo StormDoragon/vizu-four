@@ -75,6 +75,17 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   `ANTHROPIC_API_KEY` is set in the environment, it upgrades to a live
   Claude call instead (same interface, richer answer, graceful fallback on
   any error).
+- **Light/dark theme** — a toggle in the top bar (☾/☀) flips the whole app;
+  the choice persists per-browser (`localStorage`) and is applied by an
+  inline script before hydration, so a returning visitor never sees a flash
+  of the wrong theme. Every color is a CSS custom property, not a hardcoded
+  hex, so both themes share the same status-color semantics (success is
+  still green, failure still red) recalibrated for contrast against their
+  own background. Dark is unchanged from before this existed.
+- **Responsive down to tablet width** — the graph/right-panel row and the
+  step detail panel's two-column layout stack vertically (each independently
+  scrollable) below `lg`, instead of clipping a fixed-width panel against a
+  squeezed graph.
 
 ## Architecture
 

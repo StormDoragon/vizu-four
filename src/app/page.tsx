@@ -114,8 +114,8 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
       <header>
-        <h1 className="text-2xl font-semibold text-white">Actions Visual Debugger</h1>
-        <p className="mt-1 text-sm text-gray-400">
+        <h1 className="text-2xl font-semibold text-ink">Actions Visual Debugger</h1>
+        <p className="mt-1 text-sm text-ink-400">
           Paste a GitHub Actions workflow, then step through it locally with breakpoints, live
           context inspection, matrix exploration, and what-if editing.
         </p>
@@ -130,7 +130,7 @@ export default function HomePage() {
                 setYaml(ex.content);
                 setSelectedFile(null);
               }}
-              className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-sm text-gray-200 hover:border-status-running hover:text-white"
+              className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-sm text-ink-200 hover:border-status-running hover:text-ink"
             >
               {ex.name}
             </button>
@@ -145,19 +145,19 @@ export default function HomePage() {
           setSelectedFile(null);
         }}
         spellCheck={false}
-        className="h-[420px] w-full rounded-lg border border-bg-border bg-bg-panel p-4 font-mono text-sm text-gray-100 focus:border-status-running focus:outline-none"
+        className="h-[420px] w-full rounded-lg border border-bg-border bg-bg-panel p-4 font-mono text-sm text-ink-100 focus:border-status-running focus:outline-none"
       />
 
       <section className="rounded-lg border border-bg-border bg-bg-panel p-4">
-        <h2 className="text-sm font-semibold text-white">Open a workflow from the repo</h2>
+        <h2 className="text-sm font-semibold text-ink">Open a workflow from the repo</h2>
         {simulationOnly ? (
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-ink-500">
             Disabled in this deployment — real working-tree access is off along with{" "}
             <code>run:</code> execution.
           </p>
         ) : (
           <>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-ink-500">
               Enter a directory on this machine (relative paths resolve against the debugger&apos;s
               own working directory, so <code>.</code> means &ldquo;the repo this is running
               from&rdquo;). Lists <code>.github/workflows/*.yml</code> there.
@@ -168,13 +168,13 @@ export default function HomePage() {
                 onChange={(e) => setDirectory(e.target.value)}
                 placeholder="/path/to/repo or ."
                 data-testid="workspace-dir-input"
-                className="flex-1 rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 font-mono text-xs text-gray-200 focus:border-status-running focus:outline-none"
+                className="flex-1 rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 font-mono text-xs text-ink-200 focus:border-status-running focus:outline-none"
               />
               <button
                 onClick={browse}
                 disabled={browsing || directory.trim() === ""}
                 data-testid="workspace-browse"
-                className="rounded-md border border-bg-border px-3 py-1.5 text-xs text-gray-200 hover:border-status-running hover:text-white disabled:opacity-50"
+                className="rounded-md border border-bg-border px-3 py-1.5 text-xs text-ink-200 hover:border-status-running hover:text-ink disabled:opacity-50"
               >
                 {browsing ? "Listing…" : "List workflows"}
               </button>
@@ -189,10 +189,10 @@ export default function HomePage() {
                     <button
                       onClick={() => loadWorkspaceFile(f)}
                       data-testid="workspace-file"
-                      className={`w-full rounded-md border px-2 py-1.5 text-left text-xs hover:border-status-running hover:text-white ${
+                      className={`w-full rounded-md border px-2 py-1.5 text-left text-xs hover:border-status-running hover:text-ink ${
                         selectedFile === f.relativePath
-                          ? "border-status-running bg-status-running/10 text-white"
-                          : "border-bg-border bg-bg-raised text-gray-200"
+                          ? "border-status-running bg-status-running/10 text-ink"
+                          : "border-bg-border bg-bg-raised text-ink-200"
                       }`}
                     >
                       {f.relativePath}
@@ -204,7 +204,7 @@ export default function HomePage() {
 
             {browsedDir && (
               <div className="mt-3 border-t border-bg-border pt-3">
-                <label className="flex cursor-pointer items-start gap-2 text-xs text-gray-300">
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-ink-300">
                   <input
                     type="checkbox"
                     checked={runAgainstDir}
@@ -256,7 +256,7 @@ export default function HomePage() {
         </button>
       </div>
 
-      <footer className="mt-auto pt-8 text-xs text-gray-500">
+      <footer className="mt-auto pt-8 text-xs text-ink-500">
         Local-first MVP: <code>run:</code> steps execute for real in a scratch workspace on this
         machine; <code>uses:</code> actions are simulated. See the README for full scope.
       </footer>

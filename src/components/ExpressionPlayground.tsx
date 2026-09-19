@@ -36,7 +36,7 @@ export function ExpressionPlayground({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-ink-500">
         Evaluate an expression against the active lane&apos;s current context - paste one
         straight from a workflow file, <code>${"{{ }}"}</code> wrapper and all, or write a bare
         one. Secrets in the result are masked, same as everywhere else.
@@ -52,7 +52,7 @@ export function ExpressionPlayground({
         }}
         rows={3}
         spellCheck={false}
-        className="w-full rounded-md border border-bg-border bg-bg-panel p-2 font-mono text-xs text-gray-100 focus:border-status-running focus:outline-none"
+        className="w-full rounded-md border border-bg-border bg-bg-panel p-2 font-mono text-xs text-ink-100 focus:border-status-running focus:outline-none"
       />
       <div className="flex items-center gap-2">
         <button
@@ -63,7 +63,7 @@ export function ExpressionPlayground({
         >
           {loading ? "Evaluating…" : "Evaluate"}
         </button>
-        <span className="text-xs text-gray-600">⌘/Ctrl+Enter</span>
+        <span className="text-xs text-ink-600">⌘/Ctrl+Enter</span>
       </div>
       {error && (
         <pre className="whitespace-pre-wrap rounded-md border border-status-failure/40 bg-status-failure/10 p-2 text-xs text-red-300">

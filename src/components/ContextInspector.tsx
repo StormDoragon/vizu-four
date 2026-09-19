@@ -61,9 +61,9 @@ export function ContextInspector({
     };
   }, [sessionId, laneId, stepIndex, revision]);
 
-  if (!laneId) return <p className="text-sm text-gray-500">No active lane selected yet.</p>;
+  if (!laneId) return <p className="text-sm text-ink-500">No active lane selected yet.</p>;
   if (error) return <p className="text-sm text-red-400">{error}</p>;
-  if (!context) return <p className="text-sm text-gray-500">Loading…</p>;
+  if (!context) return <p className="text-sm text-ink-500">Loading…</p>;
 
   const keys = [
     ...SECTION_ORDER.filter((k) => k in context),
@@ -78,10 +78,10 @@ export function ContextInspector({
           open={OPEN_BY_DEFAULT.has(key)}
           className="rounded-md border border-bg-border bg-bg-panel"
         >
-          <summary className="cursor-pointer select-none px-2 py-1.5 text-sm font-medium text-gray-200">
+          <summary className="cursor-pointer select-none px-2 py-1.5 text-sm font-medium text-ink-200">
             {key}
           </summary>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words border-t border-bg-border px-2 py-2 text-xs text-gray-300">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words border-t border-bg-border px-2 py-2 text-xs text-ink-300">
             {JSON.stringify(context[key], null, 2)}
           </pre>
         </details>

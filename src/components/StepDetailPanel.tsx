@@ -67,7 +67,7 @@ export function StepDetailPanel({
 
   if (!selection || !effectLane) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-gray-600">
+      <div className="flex h-full items-center justify-center text-sm text-ink-600">
         Select a step in the graph to see its output.
       </div>
     );
@@ -92,10 +92,10 @@ export function StepDetailPanel({
   }
 
   return (
-    <div className="grid h-full grid-cols-2 divide-x divide-bg-border">
+    <div className="grid h-full grid-cols-1 divide-y divide-bg-border overflow-y-auto lg:grid-cols-2 lg:divide-x lg:divide-y-0 lg:overflow-hidden">
       <div className="overflow-auto p-3">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-          <span className="font-semibold text-white">{step.name ?? step.uses ?? step.key}</span>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+          <span className="font-semibold text-ink">{step.name ?? step.uses ?? step.key}</span>
           {record.status !== "pending" && (
             <span className={`font-semibold ${statusStyle(record.status).textClass}`}>
               {statusStyle(record.status).glyph} {record.status}
@@ -103,8 +103,8 @@ export function StepDetailPanel({
           )}
           {record.exitCode !== undefined && record.exitCode !== null && <span>exit {record.exitCode}</span>}
           {record.durationMs !== undefined && <span>{record.durationMs}ms</span>}
-          {record.continueOnError && <span className="rounded bg-gray-700/50 px-1.5 py-0.5">continue-on-error</span>}
-          {record.simulated && <span className="rounded bg-gray-700/50 px-1.5 py-0.5">simulated</span>}
+          {record.continueOnError && <span className="rounded bg-ink-700/50 px-1.5 py-0.5">continue-on-error</span>}
+          {record.simulated && <span className="rounded bg-ink-700/50 px-1.5 py-0.5">simulated</span>}
           {record.mockedOutputKeys && record.mockedOutputKeys.length > 0 && (
             <span className="rounded bg-status-breakpoint/20 px-1.5 py-0.5 text-status-breakpoint">
               mocked: {record.mockedOutputKeys.join(", ")}
@@ -113,9 +113,9 @@ export function StepDetailPanel({
         </div>
 
         {record.ifExpr !== undefined && (
-          <div className="mb-2 text-xs text-gray-500">
-            if: <code className="text-gray-400">{record.ifExpr}</code> →{" "}
-            <span className={record.ifResult ? "text-status-success" : "text-gray-500"}>
+          <div className="mb-2 text-xs text-ink-500">
+            if: <code className="text-ink-400">{record.ifExpr}</code> →{" "}
+            <span className={record.ifResult ? "text-status-success" : "text-ink-500"}>
               {String(record.ifResult)}
             </span>
             {record.ifWarning && <div className="mt-1 text-yellow-400">⚠ {record.ifWarning}</div>}
@@ -123,7 +123,7 @@ export function StepDetailPanel({
           </div>
         )}
 
-        {record.simulationNote && <p className="mb-2 text-xs italic text-gray-500">{record.simulationNote}</p>}
+        {record.simulationNote && <p className="mb-2 text-xs italic text-ink-500">{record.simulationNote}</p>}
         {record.engineError && (
           <p className="mb-2 rounded border border-status-failure/40 bg-status-failure/10 px-2 py-1 text-xs text-red-300">
             {record.engineError}
@@ -135,8 +135,8 @@ export function StepDetailPanel({
             ref={logRef}
             className={`max-h-64 overflow-auto whitespace-pre-wrap break-words rounded p-2 font-mono text-xs ${
               record.conclusion === "failure"
-                ? "border-l-4 border-status-failure bg-status-failure/5 text-gray-200"
-                : "text-gray-300"
+                ? "border-l-4 border-status-failure bg-status-failure/5 text-ink-200"
+                : "text-ink-300"
             }`}
           >
             {/* Interleaved in arrival order (not two separate stdout/stderr
@@ -153,20 +153,20 @@ export function StepDetailPanel({
             )}
           </pre>
         ) : (
-          <p className="text-xs italic text-gray-600">No output yet.</p>
+          <p className="text-xs italic text-ink-600">No output yet.</p>
         )}
 
         {record.summary && (
           <div className="mt-3 border-t border-bg-border pt-2">
-            <h4 className="mb-1 text-xs font-semibold text-gray-400">Step summary</h4>
-            <pre className="whitespace-pre-wrap text-xs text-gray-300">{record.summary}</pre>
+            <h4 className="mb-1 text-xs font-semibold text-ink-400">Step summary</h4>
+            <pre className="whitespace-pre-wrap text-xs text-ink-300">{record.summary}</pre>
           </div>
         )}
 
         {Object.keys(record.outputs).length > 0 && (
           <div className="mt-3 border-t border-bg-border pt-2">
-            <h4 className="mb-1 text-xs font-semibold text-gray-400">Outputs</h4>
-            <pre className="whitespace-pre-wrap text-xs text-gray-300">
+            <h4 className="mb-1 text-xs font-semibold text-ink-400">Outputs</h4>
+            <pre className="whitespace-pre-wrap text-xs text-ink-300">
               {JSON.stringify(record.outputs, null, 2)}
             </pre>
           </div>
@@ -197,17 +197,17 @@ export function StepDetailPanel({
             {explainError && <p className="text-xs text-red-400">{explainError}</p>}
             {explanation && (
               <div className="space-y-2">
-                <p className="text-xs text-gray-300">{explanation.summary}</p>
-                <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                <p className="text-xs text-ink-300">{explanation.summary}</p>
+                <p className="text-[10px] uppercase tracking-wide text-ink-600">
                   {explanation.source === "claude" ? "AI-generated (Claude)" : "Heuristic analysis"}
                 </p>
                 {explanation.causes.map((cause, i) => (
                   <div key={i} className="rounded-md border border-bg-border bg-bg-panel p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-gray-100">{cause.title}</span>
-                      <span className="shrink-0 text-[10px] uppercase text-gray-500">{cause.confidence}</span>
+                      <span className="text-xs font-semibold text-ink-100">{cause.title}</span>
+                      <span className="shrink-0 text-[10px] uppercase text-ink-500">{cause.confidence}</span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-400">{cause.detail}</p>
+                    <p className="mt-1 text-xs text-ink-400">{cause.detail}</p>
                     {cause.suggestion && <p className="mt-1 text-xs text-status-success">→ {cause.suggestion}</p>}
                   </div>
                 ))}
@@ -215,7 +215,7 @@ export function StepDetailPanel({
             )}
           </div>
         ) : (
-          !step.uses && <p className="text-sm text-gray-600">No failure to explain for this step.</p>
+          !step.uses && <p className="text-sm text-ink-600">No failure to explain for this step.</p>
         )}
       </div>
     </div>

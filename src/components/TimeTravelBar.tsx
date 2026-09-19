@@ -40,7 +40,7 @@ export function TimeTravelBar({
         disabled={!canGoBack(current)}
         title="Previous step"
         aria-label="Previous step"
-        className="rounded border border-bg-border px-1.5 py-0.5 text-gray-300 hover:border-status-running hover:text-white disabled:opacity-30"
+        className="rounded border border-bg-border px-1.5 py-0.5 text-ink-300 hover:border-status-running hover:text-ink disabled:opacity-30"
       >
         ◀
       </button>
@@ -49,7 +49,7 @@ export function TimeTravelBar({
         disabled={!canGoForward(lane, current)}
         title="Next step"
         aria-label="Next step"
-        className="rounded border border-bg-border px-1.5 py-0.5 text-gray-300 hover:border-status-running hover:text-white disabled:opacity-30"
+        className="rounded border border-bg-border px-1.5 py-0.5 text-ink-300 hover:border-status-running hover:text-ink disabled:opacity-30"
       >
         ▶
       </button>
@@ -63,9 +63,9 @@ export function TimeTravelBar({
         {live ? "live" : "history"}
       </span>
 
-      <span className="text-gray-400">
+      <span className="text-ink-400">
         step {current.stepIndex + 1} of {total}
-        {job && <span className="text-gray-600"> — {stepLabel}</span>}
+        {job && <span className="text-ink-600"> — {stepLabel}</span>}
       </span>
 
       {!live && target && (

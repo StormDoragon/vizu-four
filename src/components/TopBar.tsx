@@ -3,6 +3,7 @@
 import type { SessionView } from "@/lib/engine/serialize";
 import type { ControlAction } from "@/lib/apiClient";
 import { controlAvailability, shortcutHint } from "./keyboardShortcuts";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function TopBar({
   session,
@@ -27,14 +28,14 @@ export function TopBar({
   const can = controlAvailability(session, busy);
 
   return (
-    <div className="flex items-center gap-3 border-b border-bg-border bg-bg-panel px-4 py-2">
-      <button onClick={onNewSession} className="text-sm text-gray-400 hover:text-white">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-bg-border bg-bg-panel px-4 py-2">
+      <button onClick={onNewSession} className="text-sm text-ink-400 hover:text-ink">
         ← New session
       </button>
-      <div className="h-4 w-px bg-bg-border" />
-      <span className="text-sm font-semibold text-white">{session.workflow.name ?? "workflow"}</span>
-      <div className="h-4 w-px bg-bg-border" />
-      <span className="text-xs text-gray-500">
+      <div className="hidden h-4 w-px bg-bg-border sm:block" />
+      <span className="text-sm font-semibold text-ink">{session.workflow.name ?? "workflow"}</span>
+      <div className="hidden h-4 w-px bg-bg-border sm:block" />
+      <span className="hidden text-xs text-ink-500 sm:inline">
         active lane: {lane ? `${lane.id} (${lane.status})` : "none"}
       </span>
 
@@ -48,12 +49,12 @@ export function TopBar({
         </button>
       )}
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
         <button
           onClick={() => onControl("step")}
           disabled={!can.step}
           title={`Step (${shortcutHint("step")})`}
-          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-status-running disabled:opacity-40"
         >
           Step
         </button>
@@ -61,7 +62,7 @@ export function TopBar({
           onClick={() => onControl("continue")}
           disabled={!can.continue}
           title={`Continue (${shortcutHint("continue")})`}
-          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-status-running disabled:opacity-40"
         >
           Continue
         </button>
@@ -69,7 +70,7 @@ export function TopBar({
           onClick={() => onControl("runToEnd")}
           disabled={!can.runToEnd}
           title={`Run to end (${shortcutHint("runToEnd")})`}
-          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
+          className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-status-running disabled:opacity-40"
         >
           Run to end
         </button>
@@ -81,7 +82,7 @@ export function TopBar({
         >
           Run all
         </button>
-        <label className="ml-2 flex items-center gap-1.5 text-xs text-gray-400">
+        <label className="ml-2 flex items-center gap-1.5 text-xs text-ink-400">
           <input
             type="checkbox"
             checked={session.breakOnFailure}
@@ -94,10 +95,11 @@ export function TopBar({
           data-testid="shortcuts-help-toggle"
           title={`Keyboard shortcuts (${shortcutHint("toggleHelp")})`}
           aria-label="Keyboard shortcuts"
-          className="rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 text-xs font-medium text-gray-400 hover:border-status-running hover:text-gray-100"
+          className="rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 text-xs font-medium text-ink-400 hover:border-status-running hover:text-ink-100"
         >
           ?
         </button>
+        <ThemeToggle />
       </div>
     </div>
   );

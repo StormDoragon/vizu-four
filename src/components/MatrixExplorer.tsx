@@ -20,7 +20,7 @@ export function MatrixExplorer({
   const matrixJobs = Object.values(session.workflow.jobs).filter((j) => (j.matrix?.length ?? 0) > 0);
 
   if (matrixJobs.length === 0) {
-    return <p className="text-sm text-gray-500">No job in this workflow uses a build matrix.</p>;
+    return <p className="text-sm text-ink-500">No job in this workflow uses a build matrix.</p>;
   }
 
   return (
@@ -29,7 +29,7 @@ export function MatrixExplorer({
         const lanes = session.laneOrder.map((id) => session.lanes[id]).filter((l) => l.jobId === job.id);
         return (
           <div key={job.id}>
-            <h3 className="mb-1 text-sm font-semibold text-white">{job.name ?? job.id}</h3>
+            <h3 className="mb-1 text-sm font-semibold text-ink">{job.name ?? job.id}</h3>
             <div className="space-y-1">
               {lanes.map((lane) => (
                 <button
@@ -46,7 +46,7 @@ export function MatrixExplorer({
                       : "border-bg-border bg-bg-panel hover:bg-bg-raised"
                   }`}
                 >
-                  <span className="flex items-center gap-1.5 text-gray-200">
+                  <span className="flex items-center gap-1.5 text-ink-200">
                     {lane.id === session.activeLaneId && (
                       <span className="text-status-running" aria-label="steppable lane">
                         ●

@@ -87,14 +87,14 @@ export function MockOutputsEditor({
   return (
     <div className="rounded-md border border-bg-border bg-bg-panel p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-xs font-semibold text-gray-200">Mock this step</h4>
+        <h4 className="text-xs font-semibold text-ink-200">Mock this step</h4>
         {hasMocks && (
           <span className="rounded bg-status-breakpoint/20 px-1.5 py-0.5 text-[10px] uppercase text-status-breakpoint">
             active
           </span>
         )}
       </div>
-      <p className="mb-2 text-xs text-gray-500">
+      <p className="mb-2 text-xs text-ink-500">
         {isRunStep
           ? "A mocked step is not executed — the values below decide its result, so you can drive downstream steps and the failure paths without running anything."
           : "Stub this step's outputs so downstream steps see the values you choose instead of whatever the simulator produces."}
@@ -102,7 +102,7 @@ export function MockOutputsEditor({
       <KeyValueEditor testId="mock" title="Outputs" rows={rows} setRows={setRows} />
 
       <div className="mt-3 border-t border-bg-border pt-2">
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-300">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-ink-300">
           <input
             type="checkbox"
             checked={fails}
@@ -114,7 +114,7 @@ export function MockOutputsEditor({
         </label>
         {fails && (
           <div className="mt-2 space-y-2">
-            <label className="block text-[11px] text-gray-500">
+            <label className="block text-[11px] text-ink-500">
               Exit code
               <input
                 type="number"
@@ -123,10 +123,10 @@ export function MockOutputsEditor({
                 value={exitCode}
                 onChange={(e) => setExitCode(e.target.value)}
                 data-testid="mock-exit-code"
-                className="mt-1 block w-24 rounded border border-bg-border bg-bg-raised px-2 py-1 text-xs text-gray-200"
+                className="mt-1 block w-24 rounded border border-bg-border bg-bg-raised px-2 py-1 text-xs text-ink-200"
               />
             </label>
-            <label className="block text-[11px] text-gray-500">
+            <label className="block text-[11px] text-ink-500">
               stderr
               <textarea
                 value={stderr}
@@ -134,10 +134,10 @@ export function MockOutputsEditor({
                 rows={3}
                 placeholder="error: something went wrong"
                 data-testid="mock-stderr"
-                className="mt-1 block w-full rounded border border-bg-border bg-bg-raised px-2 py-1 font-mono text-xs text-gray-200"
+                className="mt-1 block w-full rounded border border-bg-border bg-bg-raised px-2 py-1 font-mono text-xs text-ink-200"
               />
             </label>
-            <p className="text-[11px] text-gray-600">
+            <p className="text-[11px] text-ink-600">
               A non-zero exit code is what exercises <code>continue-on-error</code>,{" "}
               <code>if: failure()</code> and the failure explanation panel.
             </p>
@@ -159,13 +159,13 @@ export function MockOutputsEditor({
             onClick={clearAll}
             disabled={applying}
             data-testid="mock-clear"
-            className="rounded-md border border-bg-border px-3 py-1.5 text-xs text-gray-300 hover:border-red-400 hover:text-red-400 disabled:opacity-50"
+            className="rounded-md border border-bg-border px-3 py-1.5 text-xs text-ink-300 hover:border-red-400 hover:text-red-400 disabled:opacity-50"
           >
             Clear
           </button>
         )}
       </div>
-      {message && <p className="mt-2 text-xs text-gray-400">{message}</p>}
+      {message && <p className="mt-2 text-xs text-ink-400">{message}</p>}
     </div>
   );
 }
