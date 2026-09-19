@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 272 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 296 tests passing.
 
 ---
 
@@ -48,7 +48,9 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 ### 6. Visual polish and the rest
 
-[#11](https://github.com/StormDoragon/vizu-four/issues/11)/[#12](https://github.com/StormDoragon/vizu-four/issues/12) visual + theme polish → [#10](https://github.com/StormDoragon/vizu-four/issues/10) matrix switcher → [#9](https://github.com/StormDoragon/vizu-four/issues/9) playground internals → [#8](https://github.com/StormDoragon/vizu-four/issues/8) share links → P3/P4 untouched.
+- [x] ~~[#11](https://github.com/StormDoragon/vizu-four/issues/11) **status colors, running indicator, graph layout**~~ — shipped. A single `statusStyles.ts` module (color + a redundant non-color glyph per status, WCAG 1.4.1) replaced three independently hand-copied color maps (JobNode, MatrixExplorer, StepDetailPanel) that had already quietly drifted - e.g. "pending" alone had three different colors across them, one of which (`#484f58`) contrast-checked at ~2.2:1 against every panel background, below even the 3:1 WCAG non-text minimum. Not-yet-run states now render as a hollow ring rather than a filled dot, so "pending" and "skipped" are told apart by shape as well as shade. The "currently executing" indicator is a real client-driven spinning ring, not the old `animate-pulse` on a server "running" status that (in this synchronous request/response engine) resolves and clears entirely within one HTTP round trip and was never actually observable from the browser. Graph layout moved from a fixed `level * 340, index * 280` grid to `@dagrejs/dagre`'s layered algorithm, sized per node from its actual step count/matrix selector - verified against a new 12-job example (`06-large-graph.yml`) with real fan-out/fan-in: zero overlapping boxes, confirmed both by a Playwright bounding-box check and by eye.
+- [ ] [#12](https://github.com/StormDoragon/vizu-four/issues/12) light theme + responsive layout
+- [ ] [#10](https://github.com/StormDoragon/vizu-four/issues/10) matrix switcher polish → [#9](https://github.com/StormDoragon/vizu-four/issues/9) playground internals → [#8](https://github.com/StormDoragon/vizu-four/issues/8) share links → P3/P4 untouched.
 
 ### Explicitly deferred
 
@@ -78,7 +80,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [ ] "Share session" link (serialize workflow + current debug state) ([#8](https://github.com/StormDoragon/vizu-four/issues/8))
 - [ ] Expression playground improvements: show intermediate evaluation steps ([#9](https://github.com/StormDoragon/vizu-four/issues/9))
 - [ ] Matrix lane switcher polish + "debug this combination only" ([#10](https://github.com/StormDoragon/vizu-four/issues/10))
-- [ ] Visual improvements: clearer status colors, running indicators, better graph layout ([#11](https://github.com/StormDoragon/vizu-four/issues/11))
+- [x] Visual improvements: clearer status colors, running indicators, better graph layout ([#11](https://github.com/StormDoragon/vizu-four/issues/11))
 - [ ] Dark/light theme polish + basic responsive layout ([#12](https://github.com/StormDoragon/vizu-four/issues/12))
 
 ### P2 — Real power features (months 1–2)

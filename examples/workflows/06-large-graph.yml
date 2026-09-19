@@ -1,0 +1,84 @@
+name: Large Graph
+on: [push]
+
+# A wider, deeper workflow than the other examples - fan-out from one job,
+# a matrix job, and fan-in through several levels - for exercising the
+# graph's automatic layout on something closer to a real-world pipeline
+# than a simple chain. 12 jobs.
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "resolving dependencies"
+
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linting"
+
+  unit-tests:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [16, 18, 20]
+    steps:
+      - run: echo "unit tests on node ${{ matrix.node }}"
+
+  build-linux:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "building for linux"
+
+  build-macos:
+    needs: setup
+    runs-on: macos-latest
+    steps:
+      - run: echo "building for macos"
+
+  build-windows:
+    needs: setup
+    runs-on: windows-latest
+    steps:
+      - run: echo "building for windows"
+
+  integration-tests:
+    needs: [lint, unit-tests, build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "running integration tests against all platform builds"
+
+  package:
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "packaging release artifacts"
+
+  deploy-docs:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "publishing docs site"
+
+  deploy-staging:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "deploying to staging"
+
+  smoke-test:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "smoke testing staging"
+
+  notify:
+    needs: [smoke-test, deploy-docs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify team
+        run: echo "pipeline finished"

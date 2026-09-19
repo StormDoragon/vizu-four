@@ -27,8 +27,14 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
 
 ## What you can do
 
-- **Visual workflow graph** — jobs laid out by `needs`, with each job's steps
-  listed inside it, colored by status, click any step to inspect it.
+- **Visual workflow graph** — jobs auto-laid-out left-to-right by `needs`
+  dependency level (via `@dagrejs/dagre`, sized per job from its actual step
+  count), with each job's steps listed inside it, click any step to inspect
+  it. Status is never color-only: every dot pairs a color with a shape
+  (a hollow ring for "hasn't run yet", filled for everything else) and a
+  glyph (✓/✕/–/▶), the same mapping used in the matrix tab and step detail
+  panel. A step actually executing right now gets a spinning ring, not just
+  a static dot.
 - **Breakpoints** — click the dot next to a step to break there; **Step**,
   **Continue**, **Run to end**, and **Run all** control execution like a
   normal debugger. "Continue" resumes and stops at the *next* breakpoint or

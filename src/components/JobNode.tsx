@@ -2,19 +2,11 @@
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { comboLabel } from "@/lib/workflow/matrix";
+import { StatusDot } from "./StatusDot";
+import { statusStyle } from "./statusStyles";
 import type { JobNodeData } from "./types";
 
-const STATUS_DOT: Record<string, string> = {
-  pending: "bg-status-pending",
-  running: "bg-status-running animate-pulse",
-  paused: "bg-status-breakpoint",
-  success: "bg-status-success",
-  failure: "bg-status-failure",
-  skipped: "bg-status-skipped",
-  cancelled: "bg-status-skipped",
-  blocked: "bg-status-pending",
-  ready: "bg-status-pending",
-};
+const TERMINAL_LANE = new Set(["success", "failure", "skipped", "cancelled"]);
 
 type JobFlowNode = Node<JobNodeData, "job">;
 
@@ -26,12 +18,17 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
     lanesForJob,
     isActiveLaneJob,
     selection,
+    busy,
     onSelectStep,
     onToggleBreakpoint,
     onSelectLane,
   } = data;
   const job = session.workflow.jobs[jobId];
   const lane = session.lanes[laneId];
+  // While a control request is in flight, this lane's own next step is the
+  // one actually executing - the only place that's ever true is client-
+  // side (see JobNodeData.busy).
+  const laneExecuting = busy && !!lane && !TERMINAL_LANE.has(lane.status) && lane.status !== "blocked";
 
   return (
     <div
@@ -44,12 +41,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
 
       <div className="flex items-center justify-between gap-2 rounded-t-lg bg-bg-raised px-3 py-2">
         <div className="truncate text-sm font-semibold text-white">{job.name ?? jobId}</div>
-        {lane && (
-          <span
-            className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[lane.status] ?? "bg-status-pending"}`}
-            title={lane.status}
-          />
-        )}
+        {lane && <StatusDot status={lane.status} executing={laneExecuting} size="md" />}
       </div>
 
       {job.if && (
@@ -76,17 +68,12 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
       <div className="max-h-56 overflow-y-auto">
         {job.steps.map((step, idx) => {
           const record = lane?.steps[idx];
-          const isNext =
-            !!lane &&
-            lane.pointer === idx &&
-            lane.status !== "success" &&
-            lane.status !== "failure" &&
-            lane.status !== "skipped" &&
-            lane.status !== "cancelled";
+          const isNext = !!lane && lane.pointer === idx && !TERMINAL_LANE.has(lane.status);
           const isSelected = !!lane && selection?.laneId === lane.id && selection.stepIndex === idx;
           const stepScopeKey = `${jobId}:${step.key}`;
           const hasBreakpoint = session.breakpoints.includes(stepScopeKey);
           const hasMock = !!session.mockOutputs[stepScopeKey];
+          const style = statusStyle(record?.status ?? "pending");
           return (
             <div
               key={step.key}
@@ -105,7 +92,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
                   hasBreakpoint ? "border-status-breakpoint bg-status-breakpoint" : "border-gray-600"
                 }`}
               />
-              <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[record?.status ?? "pending"]}`} />
+              <StatusDot status={record?.status ?? "pending"} executing={isNext && laneExecuting} />
               <span className="truncate text-gray-200">{step.name ?? step.uses ?? step.key}</span>
               <span className="ml-auto flex shrink-0 items-center gap-1">
                 {hasMock && (
@@ -117,6 +104,14 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
                   </span>
                 )}
                 {record?.simulated && <span className="text-[10px] text-gray-500">sim</span>}
+                {/* Redundant, non-color signal for a finished step's
+                    outcome (WCAG 1.4.1) - the dot to its left already
+                    carries color + shape, this adds the glyph too. */}
+                {record?.status && record.status !== "pending" && (
+                  <span className={`text-[10px] ${style.textClass}`} aria-hidden="true">
+                    {style.glyph}
+                  </span>
+                )}
               </span>
             </div>
           );

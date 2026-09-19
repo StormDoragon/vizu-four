@@ -25,6 +25,12 @@ export interface JobNodeData extends Record<string, unknown> {
   lanesForJob: Lane[];
   isActiveLaneJob: boolean;
   selection: Selection | null;
+  /** A control request is in flight. Combined with a lane's own pointer to
+   * animate whichever step is actually executing right now - the client's
+   * own "in flight" signal is the only place this is ever observable, since
+   * the engine resolves and clears a lane's "running" status entirely
+   * server-side within one request/response cycle. */
+  busy: boolean;
   onSelectStep: (s: Selection) => void;
   onToggleBreakpoint: (jobId: string, stepKey: string, enabled: boolean) => void;
   onSelectLane: (laneId: string) => void;

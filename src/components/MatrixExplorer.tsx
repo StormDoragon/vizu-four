@@ -2,24 +2,7 @@
 
 import type { SessionView } from "@/lib/engine/serialize";
 import { comboLabel } from "@/lib/workflow/matrix";
-
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "success":
-      return "bg-status-success/20 text-status-success";
-    case "failure":
-      return "bg-status-failure/20 text-status-failure";
-    case "skipped":
-    case "cancelled":
-      return "bg-status-skipped/20 text-status-skipped";
-    case "running":
-      return "bg-status-running/20 text-status-running";
-    case "paused":
-      return "bg-status-breakpoint/20 text-status-breakpoint";
-    default:
-      return "bg-gray-700/40 text-gray-400";
-  }
-}
+import { statusStyle } from "./statusStyles";
 
 export function MatrixExplorer({
   session,
@@ -71,8 +54,10 @@ export function MatrixExplorer({
                     )}
                     {comboLabel(lane.matrix)}
                   </span>
-                  <span className={`ml-2 shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase ${statusBadgeClass(lane.status)}`}>
-                    {lane.status}
+                  <span
+                    className={`ml-2 shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase ${statusStyle(lane.status).badgeClass}`}
+                  >
+                    {statusStyle(lane.status).glyph} {lane.status}
                   </span>
                 </button>
               ))}

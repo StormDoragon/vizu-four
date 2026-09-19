@@ -4,15 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { SessionView } from "@/lib/engine/serialize";
 import { explainFailure, type FailureExplanation } from "@/lib/apiClient";
 import { MockOutputsEditor } from "./MockOutputsEditor";
+import { statusStyle } from "./statusStyles";
 import type { Selection } from "./types";
-
-const STATUS_TEXT_COLOR: Record<string, string> = {
-  success: "text-status-success",
-  failure: "text-status-failure",
-  skipped: "text-status-skipped",
-  running: "text-status-running",
-  pending: "text-gray-500",
-};
 
 export function StepDetailPanel({
   session,
@@ -104,8 +97,8 @@ export function StepDetailPanel({
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
           <span className="font-semibold text-white">{step.name ?? step.uses ?? step.key}</span>
           {record.status !== "pending" && (
-            <span className={`font-semibold ${STATUS_TEXT_COLOR[record.status] ?? "text-gray-400"}`}>
-              {record.status}
+            <span className={`font-semibold ${statusStyle(record.status).textClass}`}>
+              {statusStyle(record.status).glyph} {record.status}
             </span>
           )}
           {record.exitCode !== undefined && record.exitCode !== null && <span>exit {record.exitCode}</span>}

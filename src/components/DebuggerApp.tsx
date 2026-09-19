@@ -395,6 +395,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           <WorkflowGraph
             session={session}
             selection={selection}
+            busy={busy}
             onSelectStep={setSelection}
             onToggleBreakpoint={onToggleBreakpoint}
             onSelectLane={onSelectLane}
