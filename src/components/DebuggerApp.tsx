@@ -19,6 +19,7 @@ import { MatrixExplorer } from "./MatrixExplorer";
 import { ExpressionPlayground } from "./ExpressionPlayground";
 import { WhatIfPanel } from "./WhatIfPanel";
 import { StepDetailPanel } from "./StepDetailPanel";
+import { TimeTravelBar } from "./TimeTravelBar";
 import { ShortcutsHelp } from "./ShortcutsHelp";
 import { controlAvailability, resolveShortcut } from "./keyboardShortcuts";
 import {
@@ -444,8 +445,11 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      <div className="h-72 border-t border-bg-border">
-        <StepDetailPanel session={session} selection={selection} onSessionUpdate={setSession} />
+      <div className="flex h-80 flex-col border-t border-bg-border">
+        <TimeTravelBar session={session} selection={selection} onSelect={setSelection} />
+        <div className="flex-1 overflow-hidden">
+          <StepDetailPanel session={session} selection={selection} onSessionUpdate={setSession} />
+        </div>
       </div>
     </div>
   );

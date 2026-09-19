@@ -57,6 +57,13 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   scratch workspace — the only way to debug a workflow that actually reads
   or writes repo files (`npm ci`, `pytest`, etc). Off by default; see
   [Real working-tree access](#real-working-tree-access) below.
+- **Time-travel** — a bar above the step detail panel shows a `LIVE`/
+  `HISTORY` badge and Prev/Next controls to scrub through any step a lane
+  has already reached, without disturbing what Step/Continue/Run actually
+  act on (always the active lane's live cursor). "History" covers browsing
+  an earlier step in the active lane *or* a different lane entirely — e.g.
+  after "Run all" fails a matrix lane that isn't the active one — with a
+  "Jump to live" button to snap back.
 - **Failure explanation** — a step that fails gets a heuristic root-cause
   analysis for free (pattern-matched against exit code/stdout/stderr); if
   `ANTHROPIC_API_KEY` is set in the environment, it upgrades to a live

@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 252 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 272 tests passing.
 
 ---
 
@@ -44,7 +44,7 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 ### 5. Time-travel — [#17](https://github.com/StormDoragon/vizu-four/issues/17)
 
-The `stepIndex`-aware `/api/sessions/[id]/context` endpoint built during the audit fixes is most of it already; `StepRunRecord` stores per-step data. Remaining work is mostly UI — which is why it lands *after* the test net in step 4 rather than before it. Relabelled P2 → P1: it is not months-out power-feature work when most of it is built.
+- [x] ~~Time-travel to any previously executed step~~ — shipped, as the "cheap version" the issue's notes anticipated: the `stepIndex`-aware `/api/sessions/[id]/context` endpoint and `StepRunRecord`'s per-step data already reconstructed history on demand, so this was UI, not an engine change. A time-travel bar above the step detail panel shows a `LIVE`/`HISTORY` badge, Prev/Next controls that scrub through a lane's executed steps (never past its live cursor - there's nothing to show for a step that hasn't run), and a "Jump to live" button. "Live" is defined precisely (`isLiveSelection`, unit-tested): the active lane at its live step index - a different lane, or an earlier step in the active lane, is always "history," so it can never be confused with what Step/Continue/Run actually act on (which is always `activeLaneId`, unchanged by browsing). Works per-lane, so it holds across matrix lanes without new per-lane state.
 
 ### 6. Visual polish and the rest
 
@@ -74,7 +74,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [x] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *was P1*
 
 ### P1 — Core experience polish (weeks 2–4)
-- [ ] Time-travel: jump to any previous step and inspect full state at that point ([#17](https://github.com/StormDoragon/vizu-four/issues/17)) — *was P2; mostly built already*
+- [x] Time-travel: jump to any previous step and inspect full state at that point ([#17](https://github.com/StormDoragon/vizu-four/issues/17)) — *was P2; mostly built already*
 - [ ] "Share session" link (serialize workflow + current debug state) ([#8](https://github.com/StormDoragon/vizu-four/issues/8))
 - [ ] Expression playground improvements: show intermediate evaluation steps ([#9](https://github.com/StormDoragon/vizu-four/issues/9))
 - [ ] Matrix lane switcher polish + "debug this combination only" ([#10](https://github.com/StormDoragon/vizu-four/issues/10))
