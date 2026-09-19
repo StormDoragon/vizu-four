@@ -30,6 +30,8 @@ export interface ParseIssue {
 
 export interface ExampleWorkflow {
   name: string;
+  /** Friendly label for the home-page picker (falls back to filename). */
+  label?: string;
   content: string;
 }
 

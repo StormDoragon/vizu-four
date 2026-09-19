@@ -77,7 +77,7 @@ export default function HomePage() {
               onClick={() => setYaml(ex.content)}
               className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-sm text-gray-200 hover:border-status-running hover:text-white"
             >
-              {ex.name}
+              {ex.label ?? ex.name}
             </button>
           ))}
         </div>
