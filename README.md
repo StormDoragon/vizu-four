@@ -19,7 +19,11 @@ npm run dev
 ```
 
 Open http://localhost:3000, paste a workflow (or click one of the bundled
-examples under `examples/workflows/`), and click **Start Debugging**.
+examples under `examples/workflows/`), and click **Start Debugging**. Or
+click **⚠ See a failure debugged (one click)** to skip straight to a real
+failed step with no setup — it works the same way in a `VIZU_DEMO_MODE=1`
+deployment as it does locally, since the failure is a mocked step result
+rather than something that depends on `run:` actually executing.
 
 Requires Node.js 20+ and a Unix-like shell (`bash`) on PATH — `run:` steps
 are executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's

@@ -3,15 +3,39 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  control,
   createSession,
   getDeploymentConfig,
   listExamples,
   listWorkspaceWorkflows,
+  setMockOutputs,
   type ExampleWorkflow,
   type ParseIssue,
   type WorkspaceWorkflowFile,
 } from "@/lib/apiClient";
 import { saveWorkflowSource } from "@/lib/workflowSourceCache";
+
+// A dedicated, minimal workflow for the one-click failure demo. Its "Run
+// tests" step is mocked to fail (see startFailureDemo) rather than relying
+// on its own `exit 1` actually running - a simulation-only deployment
+// (VIZU_DEMO_MODE=1, which any public deploy of this app requires) reports
+// every `run:` step as a success by default and never executes it, so the
+// literal exit code here would otherwise be silently ignored on exactly the
+// deployment this button exists for.
+const FAILURE_DEMO_YAML = `name: One-Click Failure Demo
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: echo "installing dependencies"
+      - name: Run tests
+        run: |
+          echo "running tests"
+          exit 1
+`;
 
 const PLACEHOLDER = `name: CI
 on: [push]
@@ -46,6 +70,7 @@ export default function HomePage() {
   const [issues, setIssues] = useState<ParseIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failureDemoLoading, setFailureDemoLoading] = useState(false);
 
   // "Open a workflow from the repo" - a directory path on the machine
   // running the debugger (this is local-first: browsers can't hand a server
@@ -117,14 +142,55 @@ export default function HomePage() {
     }
   }
 
+  async function startFailureDemo() {
+    setFailureDemoLoading(true);
+    setError(null);
+    setIssues([]);
+    try {
+      const { session, issues } = await createSession(FAILURE_DEMO_YAML);
+      setIssues(issues);
+      saveWorkflowSource(session.workflowHash, FAILURE_DEMO_YAML);
+      // Mocked instead of trusting the step's own `exit 1` to actually run -
+      // see the comment on FAILURE_DEMO_YAML for why that can't be relied on.
+      const failingStep = session.workflow.jobs.build.steps[1];
+      await setMockOutputs(session.id, "build", failingStep.key, {
+        outputs: {},
+        exitCode: 1,
+        stderr: "AssertionError: expected 2 to equal 3",
+      });
+      // Drives the whole graph to completion before navigating, so landing
+      // on the debugger already shows the failure - the point of "one
+      // click" is not having to also click Run all yourself.
+      await control(session.id, "runAll");
+      router.push(`/debug/${session.id}`);
+    } catch (err) {
+      const apiErr = err as { message?: string; body?: { issues?: ParseIssue[] } };
+      setError(apiErr.message ?? "Failed to start the failure demo");
+      setIssues(apiErr.body?.issues ?? []);
+    } finally {
+      setFailureDemoLoading(false);
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
-      <header>
-        <h1 className="text-2xl font-semibold text-ink">Actions Visual Debugger</h1>
-        <p className="mt-1 text-sm text-ink-400">
-          Paste a GitHub Actions workflow, then step through it locally with breakpoints, live
-          context inspection, matrix exploration, and what-if editing.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">Actions Visual Debugger</h1>
+          <p className="mt-1 text-sm text-ink-400">
+            Paste a GitHub Actions workflow, then step through it locally with breakpoints, live
+            context inspection, matrix exploration, and what-if editing.
+          </p>
+        </div>
+        <button
+          onClick={startFailureDemo}
+          disabled={failureDemoLoading}
+          data-testid="failure-demo"
+          title="Loads a workflow with a real failing step and jumps straight to it - no setup"
+          className="shrink-0 rounded-md border border-status-failure/50 bg-status-failure/10 px-4 py-2 text-sm font-medium text-status-failure hover:bg-status-failure/20 disabled:opacity-50"
+        >
+          {failureDemoLoading ? "Starting…" : "⚠ See a failure debugged (one click)"}
+        </button>
       </header>
 
       {examples.length > 0 && (
