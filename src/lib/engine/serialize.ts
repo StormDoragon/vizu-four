@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { JsonValue, ParseIssue } from "../workflow/types";
 import { buildJobGraph } from "../workflow/graph";
 import { expandMatrix, type MatrixCombo } from "../workflow/matrix";
@@ -57,6 +58,12 @@ export interface SessionView {
   revision: number;
   /** Non-fatal warnings from parsing this session's workflow. */
   parseIssues: ParseIssue[];
+  /** Content hash of the workflow source. Client-side persistence keys off
+   * this rather than the session id: a new session always gets a new id, so
+   * id-keyed storage could never restore anything. Editing the workflow
+   * yields a new hash and therefore a clean slate, which is the safe
+   * default given breakpoints reference step keys that may have moved. */
+  workflowHash: string;
 }
 
 export function toSessionView(session: DebugSession): SessionView {
@@ -112,5 +119,6 @@ export function toSessionView(session: DebugSession): SessionView {
     mockOutputs: session.mockOutputs,
     revision: session.revision,
     parseIssues: session.parseIssues,
+    workflowHash: createHash("sha256").update(session.workflow.raw).digest("hex").slice(0, 16),
   };
 }

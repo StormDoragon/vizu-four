@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   applyWhatIf,
@@ -21,6 +21,15 @@ import { WhatIfPanel } from "./WhatIfPanel";
 import { StepDetailPanel } from "./StepDetailPanel";
 import { ShortcutsHelp } from "./ShortcutsHelp";
 import { controlAvailability, resolveShortcut } from "./keyboardShortcuts";
+import {
+  clearPrefs,
+  isPristine,
+  loadPrefs,
+  prefsFromSession,
+  restorableBreakpoints,
+  savePrefs,
+  splitBreakpoint,
+} from "@/lib/debugPrefs";
 import { findFailures, type Selection } from "./types";
 
 type RightTab = "inspector" | "matrix" | "playground" | "whatif";
@@ -43,6 +52,14 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [failureCursor, setFailureCursor] = useState(0);
   const [parseIssuesDismissed, setParseIssuesDismissed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Persistence is only safe to write once a restore has been attempted -
+  // otherwise the pristine session that exists before restore would
+  // immediately overwrite the stored prefs with empties.
+  const [prefsReady, setPrefsReady] = useState(false);
+  const [persist, setPersist] = useState(true);
+  const [restoredSecretNames, setRestoredSecretNames] = useState<string[]>([]);
+  const [restoredNote, setRestoredNote] = useState<string | null>(null);
+  const restoreAttempted = useRef<string | null>(null);
 
   useEffect(() => {
     getSession(sessionId)
@@ -87,6 +104,101 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, busy]);
+
+  // Restore breakpoints and What-If overrides saved for this workflow. Keyed
+  // by workflow content rather than session id, so it survives the server
+  // restart that drops the in-memory session. Applied only to a pristine
+  // session, so a mid-debug reload keeps whatever the server already holds.
+  useEffect(() => {
+    if (!session) return;
+    if (restoreAttempted.current === session.id) return;
+    restoreAttempted.current = session.id; // set before any await - no re-entry
+    const active = session;
+
+    const prefs = isPristine(active) ? loadPrefs(active.workflowHash) : null;
+    if (!prefs) {
+      setPrefsReady(true);
+      return;
+    }
+
+    // Deliberately no "cancelled" guard here. The ref above already makes
+    // restore run at most once per session, and the server mutations below
+    // can't be undone by an unmount - bailing out on cleanup would drop the
+    // notice (and the secret names to re-enter) for work that already
+    // happened. React's StrictMode double-mount made that misfire every
+    // time in dev; setState on an unmounted component is a harmless no-op.
+    (async () => {
+      try {
+        let latest = active;
+        const breakpoints = restorableBreakpoints(prefs, active);
+        for (const breakpoint of breakpoints) {
+          const parts = splitBreakpoint(breakpoint);
+          if (!parts) continue;
+          latest = (await setBreakpoint(active.id, parts.jobId, parts.stepKey, true)).session;
+        }
+
+        const envCount = Object.keys(prefs.envOverrides).length;
+        const varCount = Object.keys(prefs.vars).length;
+        if (envCount > 0 || varCount > 0 || prefs.breakOnFailure !== active.breakOnFailure) {
+          latest = (
+            await applyWhatIf(active.id, {
+              env: prefs.envOverrides,
+              vars: prefs.vars,
+              breakOnFailure: prefs.breakOnFailure,
+            })
+          ).session;
+        }
+
+        setSession(latest);
+        setRestoredSecretNames(prefs.secretNames);
+
+        const restored: string[] = [];
+        if (breakpoints.length > 0) {
+          restored.push(`${breakpoints.length} breakpoint${breakpoints.length === 1 ? "" : "s"}`);
+        }
+        if (envCount > 0) restored.push(`${envCount} env override${envCount === 1 ? "" : "s"}`);
+        if (varCount > 0) restored.push(`${varCount} var${varCount === 1 ? "" : "s"}`);
+        if (restored.length > 0 || prefs.secretNames.length > 0) {
+          const secretNote =
+            prefs.secretNames.length > 0
+              ? ` Secret values are never saved — re-enter ${prefs.secretNames.join(", ")} in What-If.`
+              : "";
+          const head = restored.length > 0 ? `Restored ${restored.join(", ")}.` : "";
+          setRestoredNote(`${head}${secretNote}`.trim());
+        }
+      } catch {
+        // Best-effort: a failed restore must not block debugging.
+      } finally {
+        setPrefsReady(true);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // Mirror the server's state back into storage after every mutation.
+  useEffect(() => {
+    if (!session || !prefsReady || !persist) return;
+    savePrefs(session.workflowHash, prefsFromSession(session));
+  }, [session, prefsReady, persist]);
+
+  /**
+   * A plain "forget" button would be undone by the very next mutation, since
+   * the mirror above would just write the live state straight back. Making
+   * it a toggle keeps the contract honest: off means cleared *and* not
+   * recorded again.
+   */
+  function togglePersist(next: boolean) {
+    if (!session) return;
+    setPersist(next);
+    if (next) {
+      savePrefs(session.workflowHash, prefsFromSession(session));
+      setRestoredNote("Now remembering this workflow's breakpoints and What-If overrides.");
+    } else {
+      clearPrefs(session.workflowHash);
+      setRestoredSecretNames([]);
+      setRestoredNote("Saved state for this workflow cleared.");
+    }
+  }
 
   async function runControl(action: ControlAction) {
     if (!session) return;
@@ -228,6 +340,20 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           ⚠ {activeLane.jobIfWarning}
         </div>
       )}
+      {restoredNote && (
+        <div className="flex items-start gap-2 border-b border-bg-border bg-bg-raised px-4 py-1.5 text-xs text-gray-400">
+          <span className="flex-1" data-testid="restored-note">
+            {restoredNote}
+          </span>
+          <button
+            onClick={() => setRestoredNote(null)}
+            className="shrink-0 text-gray-500 hover:text-gray-200"
+            aria-label="Dismiss restore notice"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {!parseIssuesDismissed && session.parseIssues.length > 0 && (
         <div className="flex items-start gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-300">
           <ul className="flex-1 space-y-0.5">
@@ -287,7 +413,15 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
             {rightTab === "playground" && (
               <ExpressionPlayground sessionId={session.id} laneId={inspectorLaneId} />
             )}
-            {rightTab === "whatif" && <WhatIfPanel session={session} onApplied={setSession} />}
+            {rightTab === "whatif" && (
+              <WhatIfPanel
+                session={session}
+                onApplied={setSession}
+                suggestedSecretNames={restoredSecretNames}
+                persist={persist}
+                onTogglePersist={togglePersist}
+              />
+            )}
           </div>
         </div>
       </div>

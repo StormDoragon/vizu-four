@@ -140,6 +140,15 @@ debug a workflow you don't trust. Secrets you provide via What-If never
 leave the server process and are masked in every log/output/context sent to
 the browser; they're never written to disk.
 
+For convenience the debugger does remember some state per workflow in the
+browser's `localStorage`: your breakpoints, env overrides, `vars`, and the
+pause-on-failure setting, keyed by a hash of the workflow source. **Secret
+values are deliberately excluded** — the browser never receives them in the
+first place, so only a secret's *name* is remembered, and it comes back as
+an empty row for you to re-enter. Turn the whole thing off (and clear what's
+stored for that workflow) with the checkbox at the bottom of the What-If
+panel.
+
 A debugged step's process environment is **not** a copy of the debugger
 server's own `process.env` — only a small allowlist is passed through
 (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `LC_ALL`,

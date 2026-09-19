@@ -8,9 +8,18 @@ import { KeyValueEditor, rowsToRecord, type KeyValueRow } from "./KeyValueEditor
 export function WhatIfPanel({
   session,
   onApplied,
+  suggestedSecretNames,
+  persist,
+  onTogglePersist,
 }: {
   session: SessionView;
   onApplied: (s: SessionView) => void;
+  /** Secret names remembered from a previous session for this workflow.
+   * Their values were never stored, so these appear as empty rows to
+   * re-enter rather than as restored overrides. */
+  suggestedSecretNames: string[];
+  persist: boolean;
+  onTogglePersist: (next: boolean) => void;
 }) {
   const [envRows, setEnvRows] = useState<KeyValueRow[]>(
     Object.entries(session.config.envOverrides).map(([key, value]) => ({ key, value }))
@@ -18,9 +27,13 @@ export function WhatIfPanel({
   const [varRows, setVarRows] = useState<KeyValueRow[]>(
     Object.entries(session.config.vars).map(([key, value]) => ({ key, value }))
   );
-  const [secretRows, setSecretRows] = useState<KeyValueRow[]>(
-    session.config.secretNames.map((key) => ({ key, value: "" }))
-  );
+  const [secretRows, setSecretRows] = useState<KeyValueRow[]>(() => {
+    const names = [...session.config.secretNames];
+    for (const name of suggestedSecretNames) {
+      if (!names.includes(name)) names.push(name);
+    }
+    return names.map((key) => ({ key, value: "" }));
+  });
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -84,7 +97,8 @@ export function WhatIfPanel({
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
         Override env vars, vars, or provide local secret values without touching the workflow
-        file or pushing a commit. Nothing here is saved to disk.
+        file or pushing a commit. <strong className="text-gray-400">Secret values are never
+        stored</strong> — they stay in the server process for this session only.
       </p>
       <KeyValueEditor testId="env" title="Env overrides" rows={envRows} setRows={setEnvRows} />
       <KeyValueEditor testId="vars" title="Vars" rows={varRows} setRows={setVarRows} />
@@ -98,6 +112,23 @@ export function WhatIfPanel({
         {applying ? "Applying…" : "Apply"}
       </button>
       {message && <p className="text-xs text-gray-400">{message}</p>}
+
+      <div className="border-t border-bg-border pt-3">
+        <label className="flex items-start gap-2 text-xs text-gray-400">
+          <input
+            type="checkbox"
+            checked={persist}
+            onChange={(e) => onTogglePersist(e.target.checked)}
+            data-testid="persist-toggle"
+            className="mt-0.5"
+          />
+          <span>
+            Remember breakpoints, env overrides and vars for this workflow in this browser.
+            Unchecking clears what&apos;s stored. Secret values are never included — only their
+            names, so the rows come back for you to re-enter.
+          </span>
+        </label>
+      </div>
     </div>
   );
 }

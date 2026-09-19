@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 13 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 142 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 13 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 180 tests passing.
 
 ---
 
@@ -29,7 +29,7 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 ### 2. Cheap wins + demo isolation — [#5](https://github.com/StormDoragon/vizu-four/issues/5), [#6](https://github.com/StormDoragon/vizu-four/issues/6)
 
 - [x] ~~[#5](https://github.com/StormDoragon/vizu-four/issues/5) **keyboard shortcuts**~~ — shipped. `S`/`C`/`E`/`A` with `F10`/`F8` aliases, a `?` overlay, and button tooltips.
-- [#6](https://github.com/StormDoragon/vizu-four/issues/6) **persist breakpoints + What-If** (~1 day) — sessions are RAM-only, so a server restart loses all setup. The `session.revision` counter added during the audit fixes is the right invalidation primitive.
+- [x] ~~[#6](https://github.com/StormDoragon/vizu-four/issues/6) **persist breakpoints + What-If**~~ — shipped. Keyed by workflow content hash (not session id, which is new every time), so it survives the server restart that drops the in-memory session. Secret *values* are deliberately excluded; only names are remembered, as empty rows to re-enter.
 - **Minimal session isolation** for the demo (see scope above). Untracked — folded in here rather than filed separately.
 
 ### 3. Real workflow + workspace access — [#29](https://github.com/StormDoragon/vizu-four/issues/29)
@@ -67,7 +67,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [x] Add "Mock outputs" UI for any `uses:` step (so users can stub results without real containers) ([#3](https://github.com/StormDoragon/vizu-four/issues/3), shipped in [`ec110d8`](https://github.com/StormDoragon/vizu-four/commit/ec110d8))
 - [x] Better failure UX: auto-jump to failed step + prominent stdout/stderr + AI explanation panel ([#4](https://github.com/StormDoragon/vizu-four/issues/4), shipped in [`dd694b4`](https://github.com/StormDoragon/vizu-four/commit/dd694b4))
 - [x] Keyboard shortcuts for debugger controls (Step / Continue / Run to end) ([#5](https://github.com/StormDoragon/vizu-four/issues/5))
-- [ ] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))
+- [x] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))
 - [ ] Open a workflow from the repo + run against a real working tree (opt-in) ([#29](https://github.com/StormDoragon/vizu-four/issues/29))
 - [ ] UI regression test net + lint script ([#30](https://github.com/StormDoragon/vizu-four/issues/30))
 - [ ] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *was P1*
