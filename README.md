@@ -99,6 +99,17 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   step detail panel's two-column layout stack vertically (each independently
   scrollable) below `lg`, instead of clipping a fixed-width panel against a
   squeezed graph.
+- **Share this session** (🔗, top bar) — hands anyone a link that opens their
+  own independent copy of the workflow, breakpoints, mocked step outputs,
+  and What-If env/var overrides, at the same step you're on now. No server
+  storage: the link is a self-contained token, and the workflow text it
+  needs is cached in your browser (by content hash) the moment you start
+  debugging it — so sharing works for a pasted custom workflow the same as
+  a bundled example. A downstream job in a `needs` chain replays correctly
+  (it stays blocked until its dependencies actually finish, the same as
+  live execution). **Secret values are never included** — not even their
+  names; the recipient re-enters any they need. A banner marks a session
+  you're viewing this way as "shared" so it's never confused with your own.
 
 ## Architecture
 

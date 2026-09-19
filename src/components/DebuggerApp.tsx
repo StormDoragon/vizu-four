@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   applyWhatIf,
   control,
@@ -21,6 +21,7 @@ import { WhatIfPanel } from "./WhatIfPanel";
 import { StepDetailPanel } from "./StepDetailPanel";
 import { TimeTravelBar } from "./TimeTravelBar";
 import { ShortcutsHelp } from "./ShortcutsHelp";
+import { ShareDialog } from "./ShareDialog";
 import { controlAvailability, resolveShortcut } from "./keyboardShortcuts";
 import {
   clearPrefs,
@@ -31,6 +32,8 @@ import {
   savePrefs,
   splitBreakpoint,
 } from "@/lib/debugPrefs";
+import { loadWorkflowSource } from "@/lib/workflowSourceCache";
+import { buildSharePayload, encodeSharePayload } from "@/lib/share";
 import { findFailures, type Selection } from "./types";
 import { focusedLaneLabel } from "./focusLane";
 
@@ -45,6 +48,8 @@ const TABS: { id: RightTab; label: string }[] = [
 
 export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isSharedSession = searchParams.get("shared") === "1";
   const [session, setSession] = useState<SessionView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,6 +71,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   // (which matrix lane to highlight and steer everything else toward), not
   // engine state, so it isn't persisted and doesn't survive a reload.
   const [focusedLaneId, setFocusedLaneId] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
     getSession(sessionId)
@@ -319,6 +325,27 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     router.push("/");
   }
 
+  /**
+   * The server never keeps the raw workflow YAML once it's parsed - the
+   * only place it still exists client-side is workflowSourceCache, keyed by
+   * the same hash this session already carries. That's the one way this
+   * can fail: a session opened in a different browser than it was created
+   * in, or one whose cache entry got evicted/cleared.
+   */
+  function onShare() {
+    if (!session) return;
+    const yaml = loadWorkflowSource(session.workflowHash);
+    if (!yaml) {
+      setActionError(
+        "Can't share this session - its original workflow text isn't available in this browser (a different browser/tab, or cleared storage). Paste the workflow again to enable sharing."
+      );
+      return;
+    }
+    const payload = buildSharePayload(session, yaml);
+    const token = encodeSharePayload(payload);
+    setShareUrl(`${window.location.origin}/share/${token}`);
+  }
+
   if (loadError) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-red-400">
@@ -355,13 +382,25 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         onJumpToFailure={jumpToFailure}
         onNewSession={onNewSession}
         onToggleHelp={() => setHelpOpen((open) => !open)}
+        onShare={onShare}
         focusedLabel={focusedLabel}
         onClearFocus={() => setFocusedLaneId(null)}
       />
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+      {shareUrl && <ShareDialog url={shareUrl} onClose={() => setShareUrl(null)} />}
       {actionError && (
         <div className="border-b border-status-failure/40 bg-status-failure/10 px-4 py-1.5 text-xs text-red-300">
           {actionError}
+        </div>
+      )}
+      {isSharedSession && (
+        <div
+          data-testid="shared-session-banner"
+          className="border-b border-status-running/30 bg-status-running/10 px-4 py-1.5 text-xs text-blue-200"
+        >
+          <strong>Viewing a shared session.</strong> This is your own independent copy,
+          reconstructed from a link — nothing you do here affects whoever shared it, and vice
+          versa.
         </div>
       )}
       {activeLane?.jobIfWarning && (

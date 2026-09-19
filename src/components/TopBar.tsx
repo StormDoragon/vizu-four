@@ -14,6 +14,7 @@ export function TopBar({
   onJumpToFailure,
   onNewSession,
   onToggleHelp,
+  onShare,
   focusedLabel,
   onClearFocus,
 }: {
@@ -25,6 +26,7 @@ export function TopBar({
   onJumpToFailure: () => void;
   onNewSession: () => void;
   onToggleHelp: () => void;
+  onShare: () => void;
   /** "<job> — <combo>" for the lane "Debug this combination only" is
    * focused on, or null when nothing's focused - shown here so focus is
    * unambiguous without having to open the Matrix tab to check. */
@@ -108,6 +110,15 @@ export function TopBar({
           />
           pause on failure
         </label>
+        <button
+          onClick={onShare}
+          data-testid="share-toggle"
+          title="Share this session"
+          aria-label="Share this session"
+          className="rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 text-xs font-medium text-ink-400 hover:border-status-running hover:text-ink-100"
+        >
+          🔗
+        </button>
         <button
           onClick={onToggleHelp}
           data-testid="shortcuts-help-toggle"

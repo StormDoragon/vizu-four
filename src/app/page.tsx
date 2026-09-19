@@ -11,6 +11,7 @@ import {
   type ParseIssue,
   type WorkspaceWorkflowFile,
 } from "@/lib/apiClient";
+import { saveWorkflowSource } from "@/lib/workflowSourceCache";
 
 const PLACEHOLDER = `name: CI
 on: [push]
@@ -101,6 +102,11 @@ export default function HomePage() {
         workingTreeDir: runAgainstDir && browsedDir ? browsedDir : undefined,
       });
       setIssues(issues);
+      // The server discards the raw YAML once it's parsed - this is the
+      // only place the app ever sees it, so it's cached here (keyed by the
+      // same hash the session itself exposes) for "Share this session" to
+      // read back later, from inside the debugger.
+      saveWorkflowSource(session.workflowHash, yaml);
       router.push(`/debug/${session.id}`);
     } catch (err) {
       const apiErr = err as { message?: string; body?: { issues?: ParseIssue[] } };
