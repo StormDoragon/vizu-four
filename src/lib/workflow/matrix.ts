@@ -8,7 +8,6 @@ function valuesEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolea
   if (typeof a === "object" || typeof b === "object") {
     return JSON.stringify(a) === JSON.stringify(b);
   }
-  // eslint-disable-next-line eqeqeq
   return a == b;
 }
 

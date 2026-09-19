@@ -248,7 +248,16 @@ letting a visitor enumerate paths on the host, even with execution off.
 
 ```bash
 npm test        # vitest — expression engine, matrix expansion, workflow
-                 # parsing/graph, execution engine, failure heuristics
+                 # parsing/graph, execution engine, failure heuristics,
+                 # and React component tests (Testing Library + jsdom)
+npm run lint     # eslint (eslint-config-next); next lint was removed in Next 16
 npm run typecheck
 npm run build
 ```
+
+Component tests live alongside their component (`ContextInspector.test.tsx`
+next to `ContextInspector.tsx`) and opt into a DOM with a
+`// @vitest-environment jsdom` docblock at the top of the file - the default
+environment stays plain `node` for the much larger engine/lib suite, which
+is faster and closer to how that code actually runs (a server route, not a
+browser).

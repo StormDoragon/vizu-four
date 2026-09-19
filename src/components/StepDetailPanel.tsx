@@ -39,6 +39,10 @@ export function StepDetailPanel({
   // whatever step was previously selected, so switching between two
   // different failures never shows the wrong one.
   useEffect(() => {
+    // Resets stale explanation/error from whatever step was previously
+    // selected, before deciding whether this step even needs a fetch - not
+    // derived state, so it can't move to render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExplanation(null);
     setExplainError(null);
     if (!selection || !isFailure) return;

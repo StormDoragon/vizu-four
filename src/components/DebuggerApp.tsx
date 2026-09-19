@@ -117,6 +117,9 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
 
     const prefs = isPristine(active) ? loadPrefs(active.workflowHash) : null;
     if (!prefs) {
+      // Nothing to restore - the "ready to persist" gate below still needs
+      // flipping, and there's no async work to hang it off of here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrefsReady(true);
       return;
     }
@@ -172,7 +175,6 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         setPrefsReady(true);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   // Mirror the server's state back into storage after every mutation.

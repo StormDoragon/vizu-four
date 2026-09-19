@@ -39,6 +39,11 @@ export function ContextInspector({
 
   useEffect(() => {
     if (!laneId) {
+      // Resets stale data from a previously-selected lane so a later
+      // reselect doesn't briefly show the wrong lane's context while the
+      // fetch below is in flight - not derived state, so it can't move to
+      // render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setContext(null);
       return;
     }
@@ -54,7 +59,6 @@ export function ContextInspector({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, laneId, stepIndex, revision]);
 
   if (!laneId) return <p className="text-sm text-gray-500">No active lane selected yet.</p>;

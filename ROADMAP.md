@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 216 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 226 tests passing.
 
 ---
 
@@ -39,7 +39,7 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 ### 4. Test/lint net + expression parity — [#30](https://github.com/StormDoragon/vizu-four/issues/30), [#13](https://github.com/StormDoragon/vizu-four/issues/13)
 
-- [#30](https://github.com/StormDoragon/vizu-four/issues/30) **UI regression net + lint script** (~1 day) — zero React component tests exist, and `next build` type-checks without linting. The audit pass made ~12 UI-facing changes verified only by manual browser runs; that verification didn't survive the session.
+- [x] ~~[#30](https://github.com/StormDoragon/vizu-four/issues/30) **UI regression net + lint script**~~ — shipped. `npm run lint` (ESLint via `eslint-config-next`'s flat config - `next lint` was removed in Next 16) runs clean. Vitest gained React Testing Library + jsdom for component tests, opted into per-file via a `// @vitest-environment jsdom` docblock so the fast `node` default for engine/lib tests is untouched. 10 new component tests cover exactly the classes of regression the audit pass fixed by hand: `ContextInspector`'s stale-error-clearing and revision-triggered refetch, `MatrixExplorer`'s selected-lane highlight and steppable-lane marker, `DebuggerApp`'s parse-warning banner and dismissal, `StepDetailPanel`'s interleaved `combinedOutput` rendering.
 - [#13](https://github.com/StormDoragon/vizu-four/issues/13) **expression engine edge cases** — the audit found a real divergence from GitHub (relational operators coerce both operands to numbers; `'apple' < 'banana'` is `false` on a real runner) that was *locked in by a test asserting the wrong behavior*. Direct evidence that more parity gaps exist and current tests can't be trusted to catch them. Relabelled P1 → P0 to match this position.
 
 ### 5. Time-travel — [#17](https://github.com/StormDoragon/vizu-four/issues/17)
@@ -70,7 +70,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [x] Keyboard shortcuts for debugger controls (Step / Continue / Run to end) ([#5](https://github.com/StormDoragon/vizu-four/issues/5))
 - [x] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))
 - [x] Open a workflow from the repo + run against a real working tree (opt-in) ([#29](https://github.com/StormDoragon/vizu-four/issues/29))
-- [ ] UI regression test net + lint script ([#30](https://github.com/StormDoragon/vizu-four/issues/30))
+- [x] UI regression test net + lint script ([#30](https://github.com/StormDoragon/vizu-four/issues/30))
 - [ ] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *was P1*
 
 ### P1 — Core experience polish (weeks 2–4)

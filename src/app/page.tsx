@@ -158,7 +158,7 @@ export default function HomePage() {
         ) : (
           <>
             <p className="mt-1 text-xs text-gray-500">
-              Enter a directory on this machine (relative paths resolve against the debugger's
+              Enter a directory on this machine (relative paths resolve against the debugger&apos;s
               own working directory, so <code>.</code> means &ldquo;the repo this is running
               from&rdquo;). Lists <code>.github/workflows/*.yml</code> there.
             </p>
