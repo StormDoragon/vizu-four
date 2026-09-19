@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vizu-four
+    runtime: node
+    plan: free
+    branch: claude/intelligent-gauss-ddn9nu
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: VIZU_DEMO_MODE
+        value: "1"
+      - key: NODE_VERSION
+        value: "20"

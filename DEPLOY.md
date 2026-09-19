@@ -19,6 +19,31 @@ Because of that, **Vercel / Netlify serverless is a poor fit** (no sticky proces
 | [Render](https://render.com) | Web Service, Node environment |
 | Any VPS / Docker | `node server` or the Dockerfile below |
 
+## Render quickstart (recommended: free, one instance, no card)
+
+The in-memory session store (`src/lib/engine/store.ts`) lives in a single
+process's memory. Any host that runs **more than one instance** of that
+process — including Vercel's serverless model, where each request can land
+on a different Lambda with its own empty memory — will intermittently
+"lose" a session mid-debug. Render's free Web Service tier runs exactly
+**one** instance, so this class of bug can't happen there.
+
+1. Push this repo to GitHub (already done for this branch).
+2. In the Render dashboard: **New +** → **Blueprint**, connect this repo.
+   Render reads [`render.yaml`](./render.yaml) at the repo root and creates
+   the service pre-configured with `VIZU_DEMO_MODE=1`, `npm ci && npm run
+   build` as the build command, and `npm start` as the start command — no
+   manual field-filling needed.
+3. Wait for the first build to finish, then open the assigned
+   `https://<name>.onrender.com` URL and confirm demo mode is on (see
+   "After deploy" below) before sharing it.
+
+Free-tier tradeoff: the instance spins down after ~15 minutes idle, so the
+first request after a quiet period is slow to wake it back up. That's a
+latency cost, not a correctness one — the session-loss bug this section
+opened with only happens with *multiple concurrent* instances, which the
+free tier never runs.
+
 ## Requirements
 
 - Node.js **20+**
