@@ -140,10 +140,37 @@ doesn't have):
 - 100% expression-engine parity with GitHub's runner. The evaluator
   implements the documented grammar, precedence, and type-coercion rules
   faithfully (with tests against GitHub's own documented matrix
-  include/exclude example and the well-known "mixed `${{ }}` is always
-  truthy" `if:` footgun), but the blueprint itself correctly flags
-  "expression/runner fidelity gaps" as an ongoing investment area requiring
-  parity testing against real runners — that continues to be true here.
+  include/exclude example, the object-filter (`.*`) examples from GitHub's
+  own docs, expressions pulled from real, currently-running public
+  workflows (`actions/checkout`, `git/git`), and the well-known "mixed
+  `${{ }}` is always truthy" `if:` footgun), but the blueprint itself
+  correctly flags "expression/runner fidelity gaps" as an ongoing
+  investment area requiring parity testing against real runners — that
+  continues to be true here. See "Confirmed expression-engine divergences"
+  below for the one gap this pass found and deliberately left open, plus a
+  real hyphenated-identifier bug it found and fixed.
+
+### Confirmed expression-engine divergences
+
+- **Hyphenated job/step ids** (`needs.ci-config.outputs.x`,
+  `matrix.node-version`) previously threw a syntax error — the lexer's
+  identifier characters didn't include `-`, even though GitHub's own
+  property-dereference grammar does, specifically because job and step ids
+  are conventionally kebab-case. **Fixed**, not just documented: confirmed
+  against `git/git`'s own CI workflow, which relies on exactly this
+  pattern (`needs.ci-config.outputs.enabled == 'yes'`).
+- **Numeric string coercion is JavaScript's, not GitHub's.** GitHub's
+  documented type-coercion table specifies a string is "parsed from any
+  legal JSON number format, otherwise `NaN`." JSON's number grammar is
+  stricter than JavaScript's `Number()`: no hex literals, no leading `+`,
+  no leading zeros ahead of a nonzero digit. This engine's `toNumber()`
+  uses `Number()` directly, so `'0x10' == 16`, `'+5' == 5`, and
+  `'007' == 7` all evaluate `true` here, where a real runner would treat
+  each left-hand string as `NaN` and get `false`. Left as a documented,
+  test-locked divergence (see `evaluator.test.ts`) rather than fixed in
+  this pass — real workflows essentially never compare against a hex or
+  leading-zero string, and rewriting the coercion grammar is a bigger,
+  more deliberate change than this pass's scope of adding test breadth.
 
 ## Security note
 

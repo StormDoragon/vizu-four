@@ -35,7 +35,13 @@ export class ExpressionSyntaxError extends Error {
 }
 
 const IDENT_START = /[A-Za-z_]/;
-const IDENT_PART = /[A-Za-z0-9_]/;
+// GitHub's own property-name grammar allows hyphens mid-identifier (job and
+// step ids are conventionally kebab-case - `needs.ci-config`, `matrix.node-
+// version` - and forcing bracket syntax for every one of them would be
+// unusable). A leading hyphen stays excluded via IDENT_START, matching
+// GitHub's own id-naming rule and keeping a standalone `-` (which this
+// engine has no subtraction operator for) an unambiguous syntax error.
+const IDENT_PART = /[A-Za-z0-9_-]/;
 const DIGIT = /[0-9]/;
 
 /**

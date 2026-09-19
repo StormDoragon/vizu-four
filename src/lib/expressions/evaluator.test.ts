@@ -226,3 +226,242 @@ describe("evaluateCondition", () => {
     expect(cond.error).toBeDefined();
   });
 });
+
+// The blocks below close out #13: breadth from real-world usage rather than
+// the core grammar (already covered above). Sourced from GitHub's own
+// documented examples plus expressions pulled from real, currently-running
+// public workflows (actions/checkout, git/git), not invented approximations.
+
+describe("object filters - GitHub's own documented examples", () => {
+  it("filters an array of objects down to one property (docs' fruits.*.name example)", () => {
+    const c = ctx({
+      fruits: [
+        { name: "apple", quantity: 1 },
+        { name: "orange", quantity: 2 },
+        { name: "pear", quantity: 1 },
+      ],
+    });
+    expect(evaluateExpression("fruits.*.name", c)).toEqual(["apple", "orange", "pear"]);
+  });
+
+  it("does NOT flatten nested arrays produced by a filter (docs' vegetables.*.ediblePortions example)", () => {
+    // GitHub's docs are explicit that the result here is an array of
+    // arrays, not a flattened list, "since objects don't preserve order,
+    // the order of the output cannot be guaranteed" - fixed key order here
+    // (a JS object) makes the assertion deterministic either way.
+    const c = ctx({
+      vegetables: {
+        scallions: { ediblePortions: ["roots", "stalks"] },
+        beets: { ediblePortions: ["roots", "stems", "leaves"] },
+        artichokes: { ediblePortions: ["hearts", "stems", "leaves"] },
+      },
+    });
+    expect(evaluateExpression("vegetables.*.ediblePortions", c)).toEqual([
+      ["roots", "stalks"],
+      ["roots", "stems", "leaves"],
+      ["hearts", "stems", "leaves"],
+    ]);
+  });
+
+  it("chains a filter with a multi-level property path (github.event.commits.*.author.email)", () => {
+    const c = ctx({
+      github: {
+        event: {
+          commits: [
+            { author: { email: "a@example.com" } },
+            { author: { email: "b@example.com" } },
+          ],
+        },
+      },
+    });
+    expect(evaluateExpression("github.event.commits.*.author.email", c)).toEqual([
+      "a@example.com",
+      "b@example.com",
+    ]);
+  });
+
+  it("combines a filter with contains(), the documented issue-labels pattern", () => {
+    const c = ctx({ github: { event: { issue: { labels: [{ name: "bug" }, { name: "P1" }] } } } });
+    expect(evaluateExpression("contains(github.event.issue.labels.*.name, 'bug')", c)).toBe(true);
+    expect(evaluateExpression("contains(github.event.issue.labels.*.name, 'wontfix')", c)).toBe(false);
+  });
+});
+
+describe("deeply nested object/array indexing", () => {
+  it("indexes through several levels of parsed JSON", () => {
+    const c = ctx();
+    expect(
+      evaluateExpression('fromJSON(\'{"a":{"b":[{"c":1},{"c":2}]}}\').a.b[1].c', c)
+    ).toBe(2);
+  });
+
+  it("chains bracket indexing on a nested array", () => {
+    const c = ctx();
+    expect(evaluateExpression("fromJSON('[[1,2],[3,4]]')[1][0]", c)).toBe(3);
+  });
+
+  it("mixes dot and bracket access with a dynamic (expression-valued) index", () => {
+    const c = ctx({ matrix: { list: ["a", "b", "c"], i: 2 } });
+    expect(evaluateExpression("matrix.list[matrix.i]", c)).toBe("c");
+  });
+
+  it("returns null (not a throw) for an out-of-range index at the end of a long chain", () => {
+    const c = ctx({ matrix: { list: ["a", "b"] } });
+    expect(evaluateExpression("matrix.list[10]", c)).toBe(null);
+  });
+
+  it("returns null for a missing property in the middle of a long chain, instead of throwing", () => {
+    const c = ctx({ github: { event: { pull_request: null } } });
+    expect(evaluateExpression("github.event.pull_request.head.sha", c)).toBe(null);
+  });
+});
+
+describe("mixed-type comparisons (extended)", () => {
+  it("coerces null and empty-string both to 0, matching false", () => {
+    expect(evaluateExpression("null == false", ctx())).toBe(true);
+    expect(evaluateExpression("'' == false", ctx())).toBe(true);
+  });
+
+  it("coerces a non-numeric string to NaN, which never equals anything via ==", () => {
+    // Docs: string→number coercion parses a legal JSON number, else NaN -
+    // 'true' isn't a number in either JS's or GitHub's coercion, so this
+    // holds regardless of the divergence documented further below.
+    expect(evaluateExpression("'true' == true", ctx())).toBe(false);
+    expect(evaluateExpression("'yes' == true", ctx())).toBe(false);
+  });
+
+  it("coerces arrays and objects to NaN for cross-type comparisons", () => {
+    const c = ctx({ list: [1, 2], obj: { a: 1 } });
+    expect(evaluateExpression("list == false", c)).toBe(false);
+    expect(evaluateExpression("obj == 0", c)).toBe(false);
+  });
+
+  it("only considers two arrays/objects equal when they're the same instance, not deeply equal", () => {
+    const c = ctx({ a: [1, 2], b: [1, 2] });
+    expect(evaluateExpression("a == b", c)).toBe(false); // same contents, different instances
+    expect(evaluateExpression("a == a", c)).toBe(true); // same instance
+  });
+});
+
+describe("hyphenated identifiers (real job/step ids)", () => {
+  // Job and step ids are conventionally kebab-case in real workflows
+  // (git/git's CI uses `ci-config`, `windows-build`, ...); GitHub's
+  // property-dereference grammar allows hyphens mid-identifier for exactly
+  // this reason. `needs.ci-config...` previously threw a syntax error here
+  // (the lexer's identifier characters didn't include '-'), which would
+  // have broken on a large share of real-world workflows.
+  it("dereferences a hyphenated job id under needs.*", () => {
+    const c = ctx({ needs: { "ci-config": { outputs: { enabled: "yes" } } } });
+    expect(evaluateExpression("needs.ci-config.outputs.enabled == 'yes'", c)).toBe(true);
+  });
+
+  it("dereferences a hyphenated matrix key", () => {
+    const c = ctx({ matrix: { "node-version": 18 } });
+    expect(evaluateExpression("matrix.node-version", c)).toBe(18);
+  });
+
+  it("dereferences a hyphenated step id under steps.*", () => {
+    const c = ctx({ steps: { "build-and-test": { outcome: "success" } } });
+    expect(evaluateExpression("steps.build-and-test.outcome", c)).toBe("success");
+  });
+
+  it("still treats a standalone '-' as a syntax error - this engine has no subtraction operator", () => {
+    expect(() => evaluateExpression("foo - bar", ctx())).toThrow(ExpressionSyntaxError);
+  });
+});
+
+describe("real-world expressions from public workflows", () => {
+  // actions/checkout's own test workflow (.github/workflows/test.yml):
+  // `if: runner.os != 'windows'` relies on the documented case-insensitive
+  // string comparison, since this engine's runner.os is capitalized
+  // ("Windows") while the workflow compares against lowercase.
+  it("actions/checkout: runner.os comparison is case-insensitive even with !=", () => {
+    const c = ctx({ runner: { os: "Windows" } });
+    expect(evaluateExpression("runner.os == 'windows'", c)).toBe(true);
+    expect(evaluateExpression("runner.os != 'windows'", c)).toBe(false);
+  });
+
+  // git/git's CI (.github/workflows/main.yml) concurrency group:
+  // `github.event.pull_request.number || github.sha` - fall back to the
+  // commit sha outside of a pull_request event, where .number is absent.
+  it("git/git: falls back to github.sha when pull_request.number is absent", () => {
+    const c = ctx({ github: { event: {}, sha: "abc123" } });
+    expect(evaluateExpression("github.event.pull_request.number || github.sha", c)).toBe(
+      "abc123"
+    );
+  });
+  it("git/git: prefers pull_request.number when present", () => {
+    const c = ctx({ github: { event: { pull_request: { number: 42 } }, sha: "abc123" } });
+    expect(evaluateExpression("github.event.pull_request.number || github.sha", c)).toBe(42);
+  });
+
+  // git/git's ci-config job: `vars.CI_BRANCHES == '' || contains(vars.CI_BRANCHES, github.ref_name)`
+  it("git/git: empty-vars-means-all-branches pattern", () => {
+    const allBranches = ctx({ vars: { CI_BRANCHES: "" }, github: { ref_name: "some-topic" } });
+    expect(
+      evaluateExpression("vars.CI_BRANCHES == '' || contains(vars.CI_BRANCHES, github.ref_name)", allBranches)
+    ).toBe(true);
+
+    const restricted = ctx({ vars: { CI_BRANCHES: "main,maint" }, github: { ref_name: "some-topic" } });
+    expect(
+      evaluateExpression("vars.CI_BRANCHES == '' || contains(vars.CI_BRANCHES, github.ref_name)", restricted)
+    ).toBe(false);
+  });
+
+  // git/git's dockerized job: a common "conditional flag, else empty
+  // string" idiom built entirely out of &&/||, with no ternary operator.
+  it("common ternary-via-short-circuit idiom (condition && value || fallback)", () => {
+    const priv = ctx({ github: { repository_visibility: "private" } });
+    expect(
+      evaluateExpression("github.repository_visibility == 'private' && '--pids-limit 16384' || ''", priv)
+    ).toBe("--pids-limit 16384");
+
+    const pub = ctx({ github: { repository_visibility: "public" } });
+    expect(
+      evaluateExpression("github.repository_visibility == 'private' && '--pids-limit 16384' || ''", pub)
+    ).toBe("");
+  });
+
+  // GitHub's own format() doc example, including the escaped-brace case.
+  it("format(): docs' escaped-brace example", () => {
+    expect(
+      evaluateExpression("format('{{Hello {0} {1} {2}!}}', 'Mona', 'the', 'Octocat')", ctx())
+    ).toBe("{Hello Mona the Octocat!}");
+  });
+
+  it("common needs-gating pattern: all listed jobs succeeded", () => {
+    const c = ctx({
+      needs: { build: { result: "success" }, test: { result: "success" } },
+    });
+    expect(evaluateExpression("!contains(needs.*.result, 'failure')", c)).toBe(true);
+
+    const failed = ctx({
+      needs: { build: { result: "success" }, test: { result: "failure" } },
+    });
+    expect(evaluateExpression("!contains(needs.*.result, 'failure')", failed)).toBe(false);
+  });
+});
+
+describe("confirmed divergence: numeric string coercion", () => {
+  // GitHub's documented type-coercion table (reference/workflows-and-
+  // actions/expressions - "Type coercion for comparisons") specifies that a
+  // string is "parsed from any legal JSON number format, otherwise NaN."
+  // JSON's number grammar is stricter than JavaScript's `Number()`: no hex
+  // literals, no leading '+', no leading zeros ahead of a nonzero digit, no
+  // bare leading/trailing '.'. This engine's `toNumber()` uses `Number()`
+  // directly, so it accepts several string shapes a real runner would
+  // treat as NaN. Locked in here as documented, deliberate behavior (see
+  // the README's fidelity section) rather than silently drifting further -
+  // fixing it is a coercion-grammar change judged out of scope for this
+  // pass, which is about test breadth, not rewriting the core grammar.
+  it("accepts hex, leading '+', and leading-zero strings that a real runner would treat as NaN", () => {
+    expect(evaluateExpression("'0x10' == 16", ctx())).toBe(true); // real runner: NaN == 16 → false
+    expect(evaluateExpression("'+5' == 5", ctx())).toBe(true); // real runner: NaN == 5 → false
+    expect(evaluateExpression("'007' == 7", ctx())).toBe(true); // real runner: NaN == 7 → false
+  });
+
+  it("still treats non-numeric text and comma/underscore-grouped digits as NaN, matching a real runner", () => {
+    expect(evaluateExpression("'5,000' == 5000", ctx())).toBe(false);
+    expect(evaluateExpression("'1_000' == 1000", ctx())).toBe(false);
+  });
+});
