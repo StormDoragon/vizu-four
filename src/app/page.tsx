@@ -138,7 +138,7 @@ export default function HomePage() {
               }}
               className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-sm text-ink-200 hover:border-status-running hover:text-ink"
             >
-              {ex.name}
+              {ex.label ?? ex.name}
             </button>
           ))}
         </div>
