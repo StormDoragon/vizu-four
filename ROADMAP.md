@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 13 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 202 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 202 tests passing.
 
 ---
 
