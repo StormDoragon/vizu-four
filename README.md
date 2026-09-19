@@ -11,6 +11,14 @@ blueprint. See [Scope](#scope-what-this-is-and-isnt) below for exactly what's
 built versus what would come later, and [ROADMAP.md](./ROADMAP.md) for the
 prioritized checklist of what's next.
 
+## Live demo
+
+**[vizu-four.vercel.app](https://vizu-four.vercel.app)** — running in
+`VIZU_DEMO_MODE=1` (see [DEPLOY.md](./DEPLOY.md)), so `run:` steps are
+simulated rather than executed for real. Click **⚠ See a failure debugged
+(one click)** on the home page for the fastest way to see what the debugger
+actually does.
+
 ## Quick start
 
 ```bash
