@@ -2,8 +2,7 @@
 
 import type { SessionView } from "@/lib/engine/serialize";
 import type { ControlAction } from "@/lib/apiClient";
-
-const TERMINAL = new Set(["success", "failure", "skipped", "cancelled"]);
+import { controlAvailability, shortcutHint } from "./keyboardShortcuts";
 
 export function TopBar({
   session,
@@ -13,6 +12,7 @@ export function TopBar({
   onToggleBreakOnFailure,
   onJumpToFailure,
   onNewSession,
+  onToggleHelp,
 }: {
   session: SessionView;
   busy: boolean;
@@ -21,11 +21,10 @@ export function TopBar({
   onToggleBreakOnFailure: (v: boolean) => void;
   onJumpToFailure: () => void;
   onNewSession: () => void;
+  onToggleHelp: () => void;
 }) {
   const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
-  const terminal = !lane || TERMINAL.has(lane.status);
-  const blocked = !lane || lane.status === "blocked";
-  const canStep = !!lane && !terminal && !blocked && !busy;
+  const can = controlAvailability(session, busy);
 
   return (
     <div className="flex items-center gap-3 border-b border-bg-border bg-bg-panel px-4 py-2">
@@ -52,28 +51,32 @@ export function TopBar({
       <div className="ml-auto flex items-center gap-2">
         <button
           onClick={() => onControl("step")}
-          disabled={!canStep}
+          disabled={!can.step}
+          title={`Step (${shortcutHint("step")})`}
           className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
         >
           Step
         </button>
         <button
           onClick={() => onControl("continue")}
-          disabled={!canStep}
+          disabled={!can.continue}
+          title={`Continue (${shortcutHint("continue")})`}
           className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
         >
           Continue
         </button>
         <button
           onClick={() => onControl("runToEnd")}
-          disabled={!canStep}
+          disabled={!can.runToEnd}
+          title={`Run to end (${shortcutHint("runToEnd")})`}
           className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-medium text-gray-100 hover:border-status-running disabled:opacity-40"
         >
           Run to end
         </button>
         <button
           onClick={() => onControl("runAll")}
-          disabled={busy}
+          disabled={!can.runAll}
+          title={`Run all (${shortcutHint("runAll")})`}
           className="rounded-md bg-status-running px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40"
         >
           Run all
@@ -86,6 +89,15 @@ export function TopBar({
           />
           pause on failure
         </label>
+        <button
+          onClick={onToggleHelp}
+          data-testid="shortcuts-help-toggle"
+          title={`Keyboard shortcuts (${shortcutHint("toggleHelp")})`}
+          aria-label="Keyboard shortcuts"
+          className="rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 text-xs font-medium text-gray-400 hover:border-status-running hover:text-gray-100"
+        >
+          ?
+        </button>
       </div>
     </div>
   );

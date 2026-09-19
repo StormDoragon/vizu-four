@@ -19,6 +19,8 @@ import { MatrixExplorer } from "./MatrixExplorer";
 import { ExpressionPlayground } from "./ExpressionPlayground";
 import { WhatIfPanel } from "./WhatIfPanel";
 import { StepDetailPanel } from "./StepDetailPanel";
+import { ShortcutsHelp } from "./ShortcutsHelp";
+import { controlAvailability, resolveShortcut } from "./keyboardShortcuts";
 import { findFailures, type Selection } from "./types";
 
 type RightTab = "inspector" | "matrix" | "playground" | "whatif";
@@ -40,6 +42,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [rightTab, setRightTab] = useState<RightTab>("inspector");
   const [failureCursor, setFailureCursor] = useState(0);
   const [parseIssuesDismissed, setParseIssuesDismissed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     getSession(sessionId)
@@ -55,6 +58,35 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
       })
       .catch((err: Error) => setLoadError(err.message));
   }, [sessionId]);
+
+  // Bound to the window rather than a focused element so stepping works
+  // wherever the pointer happens to be, but only once a session has loaded.
+  // resolveShortcut suppresses anything typed into a field or combined with
+  // Ctrl/Cmd/Alt, so the browser's own shortcuts still behave normally.
+  useEffect(() => {
+    if (!session) return;
+    const active = session;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setHelpOpen(false);
+        return;
+      }
+      const command = resolveShortcut(event);
+      if (!command) return;
+      event.preventDefault();
+      if (command === "toggleHelp") {
+        setHelpOpen((open) => !open);
+        return;
+      }
+      // Same availability rules as the buttons, so a shortcut can never fire
+      // an action that would just come back as an engine error banner.
+      if (!controlAvailability(active, busy)[command]) return;
+      runControl(command);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, busy]);
 
   async function runControl(action: ControlAction) {
     if (!session) return;
@@ -183,7 +215,9 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         onToggleBreakOnFailure={onToggleBreakOnFailure}
         onJumpToFailure={jumpToFailure}
         onNewSession={onNewSession}
+        onToggleHelp={() => setHelpOpen((open) => !open)}
       />
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {actionError && (
         <div className="border-b border-status-failure/40 bg-status-failure/10 px-4 py-1.5 text-xs text-red-300">
           {actionError}
