@@ -86,7 +86,7 @@ export function JobNode({ data }: NodeProps<JobFlowNode>) {
           const isSelected = !!lane && selection?.laneId === lane.id && selection.stepIndex === idx;
           const stepScopeKey = `${jobId}:${step.key}`;
           const hasBreakpoint = session.breakpoints.includes(stepScopeKey);
-          const hasMock = Object.keys(session.mockOutputs[stepScopeKey] ?? {}).length > 0;
+          const hasMock = !!session.mockOutputs[stepScopeKey];
           return (
             <div
               key={step.key}

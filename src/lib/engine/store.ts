@@ -72,3 +72,12 @@ export async function deleteSessionAndWorkspace(id: string): Promise<boolean> {
 export function listSessions(): DebugSession[] {
   return [...getStore().values()];
 }
+
+/** How many live sessions this visitor currently holds, for the creation cap. */
+export function countSessionsByOwner(ownerId: string): number {
+  let count = 0;
+  for (const session of getStore().values()) {
+    if (session.ownerId === ownerId) count++;
+  }
+  return count;
+}

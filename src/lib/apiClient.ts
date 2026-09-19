@@ -1,5 +1,6 @@
 import type { JsonValue } from "./workflow/types";
 import type { SessionView } from "./engine/serialize";
+import type { StepMock } from "./engine/types";
 import type { WhatIfPatch } from "./engine/session";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -84,11 +85,11 @@ export async function setMockOutputs(
   id: string,
   jobId: string,
   stepKey: string,
-  outputs: Record<string, string> | null
+  mock: StepMock | null
 ): Promise<{ session: SessionView }> {
   return request(`/api/sessions/${id}/mock-outputs`, {
     method: "POST",
-    body: JSON.stringify({ jobId, stepKey, outputs }),
+    body: JSON.stringify({ jobId, stepKey, mock }),
   });
 }
 

@@ -43,6 +43,13 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   the active lane's real, current context.
 - **What-If** — override env vars, `vars`, or provide local secret values at
   any point; takes effect on the next step you run, no commit needed.
+- **Mock a step** — stub any step's outputs, and optionally give it a
+  non-zero exit code and canned stderr. Works on `uses:` steps (always
+  simulated anyway) and on `run:` steps, where **a mocked step is not
+  executed** — the mock decides its result outright. That's how you stub out
+  a slow or destructive command, and how you reach the failure paths
+  (`continue-on-error`, `if: failure()`, the explanation panel) without
+  having to write a workflow that genuinely breaks.
 - **Failure explanation** — a step that fails gets a heuristic root-cause
   analysis for free (pattern-matched against exit code/stdout/stderr); if
   `ANTHROPIC_API_KEY` is set in the environment, it upgrades to a live
@@ -170,8 +177,33 @@ deploy publicly.** There are no accounts: the cookie is an anonymous bearer
 token, so whoever holds it is that visitor. More importantly, `run:` steps
 still execute with the server process's own shell privileges — on a shared
 host, any visitor could run code as the server. Deploying this beyond your
-own machine requires `run:` execution to be sandboxed or disabled first; see
-`ROADMAP.md`.
+own machine requires `run:` execution to be sandboxed or disabled first; the
+next section is how to disable it.
+
+## Simulation-only mode (`VIZU_DEMO_MODE=1`)
+
+Set `VIZU_DEMO_MODE=1` and **no `run:` step is ever spawned**. Each one
+reports success without executing, showing the fully-interpolated command
+instead — which is most of what a debugger is for, since interpolation is
+where the expression engine does its work. Everything else behaves exactly
+as it does locally: expressions, matrix expansion, `if:` conditions,
+`needs`, breakpoints, the context inspector, What-If.
+
+This is the mode a shared deployment should run in. It's off by default, so
+running locally is unaffected; a production build with execution still on
+logs a warning at startup.
+
+Two things to know:
+
+- Mocks still apply, and are how a simulation-only demo shows a failure: mock
+  a `run:` step with a non-zero exit code and it fails for real as far as the
+  rest of the engine is concerned.
+- The UI says so. A banner marks the session and every simulated step is
+  badged, so a simulated success is never mistaken for a real one.
+
+Session creation is rate-limited per visitor regardless of mode (30 per 10
+minutes, 25 live sessions), since each session holds a workspace and a temp
+directory.
 
 ## Testing
 

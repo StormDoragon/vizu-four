@@ -94,8 +94,9 @@ export interface DebugSession {
   lanes: Record<string, Lane>;
   laneOrder: string[];
   activeLaneId: string | null;
-  /** User-defined output stubs for `uses:` steps, keyed by mockOutputsKey(jobId, stepKey). */
-  mockOutputs: Record<string, Record<string, string>>;
+  /** User-defined stubs keyed by mockOutputsKey(jobId, stepKey). A mocked
+   * step is never executed - the mock decides its result outright. */
+  mockOutputs: Record<string, StepMock>;
   /** Bumped on every session mutation (step execution, breakpoints, mock
    * outputs, What-If) - a cheap, always-correct "has anything changed"
    * signal for clients to key cache invalidation off, instead of trying to
@@ -106,6 +107,21 @@ export interface DebugSession {
    * outlives the create-and-navigate round trip that computed them, so
    * they're not lost the moment the create page unmounts. */
   parseIssues: ParseIssue[];
+}
+
+/**
+ * A stand-in for actually running a step. Applies to `uses:` steps (which
+ * are always simulated) and to `run:` steps (which a mock takes over from,
+ * rather than executing).
+ */
+export interface StepMock {
+  outputs: Record<string, string>;
+  /** Non-zero marks the step failed, which is what exercises
+   * `continue-on-error`, `if: failure()`, the failure panel and the
+   * explain endpoint. Omitted means "don't override the natural outcome". */
+  exitCode?: number;
+  /** Stderr for a mocked failure, so there's something to diagnose. */
+  stderr?: string;
 }
 
 export function breakpointKey(jobId: string, stepKey: string): string {

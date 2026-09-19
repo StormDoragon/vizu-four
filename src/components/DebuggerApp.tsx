@@ -340,6 +340,15 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           ⚠ {activeLane.jobIfWarning}
         </div>
       )}
+      {session.simulationOnly && (
+        <div className="border-b border-status-running/30 bg-status-running/10 px-4 py-1.5 text-xs text-blue-200">
+          <strong>Simulation-only.</strong> This deployment does not execute{" "}
+          <code>run:</code> steps — by default they report success without running, showing the
+          interpolated command instead. Mock a step to give it outputs or make it fail.
+          Everything else (expressions, matrix, <code>if:</code> conditions, breakpoints)
+          behaves normally. Run it locally to execute for real.
+        </div>
+      )}
       {restoredNote && (
         <div className="flex items-start gap-2 border-b border-bg-border bg-bg-raised px-4 py-1.5 text-xs text-gray-400">
           <span className="flex-1" data-testid="restored-note">

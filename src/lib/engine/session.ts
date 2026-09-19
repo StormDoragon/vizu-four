@@ -15,6 +15,7 @@ import { runSimulatedAction } from "./simulatedActions";
 import { maskObjectStrings, maskSecrets } from "./masking";
 import { EngineError } from "./errors";
 import { defaultRunConfig } from "./defaults";
+import { isSimulationOnly } from "../deployment";
 import {
   breakpointKey,
   mockOutputsKey,
@@ -22,12 +23,21 @@ import {
   type Lane,
   type LaneStatus,
   type RunConfig,
+  type StepMock,
   type StepRunRecord,
 } from "./types";
 
 const TERMINAL: ReadonlySet<LaneStatus> = new Set(["success", "failure", "skipped", "cancelled"]);
 function isTerminal(status: LaneStatus): boolean {
   return TERMINAL.has(status);
+}
+
+/** One-line, length-capped rendering of a possibly multi-line script. */
+function summarizeScript(script: string): string {
+  const lines = script.trim().split("\n");
+  const head = lines[0].slice(0, 200);
+  const suffix = lines.length > 1 ? ` (+${lines.length - 1} more line${lines.length === 2 ? "" : "s"})` : "";
+  return `${head}${head.length < lines[0].length ? "…" : ""}${suffix}`;
 }
 
 function stepDisplayName(step: WorkflowStep): string {
@@ -272,6 +282,9 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
 
   record.continueOnError = evaluateBooleanField(step["continue-on-error"], evalCtx);
 
+  const runMock =
+    step.run !== undefined ? session.mockOutputs[mockOutputsKey(lane.jobId, step.key)] : undefined;
+
   if (step.run !== undefined) {
     const { result: script, errors: scriptErrors } = interpolate(step.run, evalCtx);
     if (scriptErrors.length > 0) {
@@ -279,6 +292,24 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
         .map((e) => e.message)
         .join("; ")}`;
       record.outcome = "failure";
+    } else if (runMock || isSimulationOnly()) {
+      // Either the user mocked this step, or this deployment never spawns.
+      // Showing the fully-interpolated command is the useful part anyway:
+      // it's what the expression engine resolved, which is most of what a
+      // debugger is for. Masked, since interpolation may have pulled a
+      // secret into it.
+      record.simulated = true;
+      record.simulationNote = maskSecrets(
+        `${runMock ? "Mocked" : "Not executed"}: ${
+          runMock
+            ? "this step's result is stubbed, so it was not run."
+            : "this deployment runs in simulation-only mode."
+        } After interpolation the command would have been: ${summarizeScript(script)}`,
+        session.config.secrets
+      );
+      record.exitCode = 0;
+      record.outcome = "success";
+      if (runMock) applyStepMock(record, runMock, session.config.secrets);
     } else {
       const workDirRaw = step["working-directory"]
         ? interpolate(step["working-directory"], evalCtx).result
@@ -335,11 +366,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     record.simulationNote = maskSecrets(simResult.note, session.config.secrets);
 
     const mock = session.mockOutputs[mockOutputsKey(lane.jobId, step.key)];
-    const mergedOutputs = mock ? { ...simResult.outputs, ...mock } : simResult.outputs;
-    record.mockedOutputKeys = mock ? Object.keys(mock) : undefined;
-    record.outputs = maskObjectStrings(mergedOutputs, session.config.secrets);
+    record.outputs = maskObjectStrings(simResult.outputs, session.config.secrets);
     record.outcome = simResult.conclusion;
     record.exitCode = simResult.conclusion === "success" ? 0 : 1;
+    if (mock) applyStepMock(record, mock, session.config.secrets, simResult.outputs);
   } else {
     record.engineError = "Step has neither 'run' nor 'uses'";
     record.outcome = "failure";
@@ -468,15 +498,50 @@ export function setMockOutputs(
   session: DebugSession,
   jobId: string,
   stepKey: string,
-  outputs: Record<string, string> | null
+  mock: StepMock | null
 ): void {
   const key = mockOutputsKey(jobId, stepKey);
-  if (!outputs || Object.keys(outputs).length === 0) {
+  // A mock that changes nothing is the same as no mock - otherwise clearing
+  // the last row would leave an empty mock that still suppresses execution.
+  const changesNothing =
+    !mock ||
+    (Object.keys(mock.outputs ?? {}).length === 0 &&
+      (mock.exitCode === undefined || mock.exitCode === 0) &&
+      !mock.stderr);
+  if (changesNothing) {
     delete session.mockOutputs[key];
   } else {
-    session.mockOutputs[key] = outputs;
+    session.mockOutputs[key] = {
+      outputs: mock.outputs ?? {},
+      exitCode: mock.exitCode,
+      stderr: mock.stderr,
+    };
   }
   session.revision++;
+}
+
+/**
+ * Folds a mock into a step's record. Outputs merge over whatever the caller
+ * already produced; the outcome is only overridden when the mock states an
+ * exit code, so mocking outputs alone doesn't silently force success.
+ */
+function applyStepMock(
+  record: StepRunRecord,
+  mock: StepMock,
+  secrets: Record<string, string>,
+  baseOutputs: Record<string, string> = {}
+): void {
+  record.outputs = maskObjectStrings({ ...baseOutputs, ...mock.outputs }, secrets);
+  record.mockedOutputKeys = Object.keys(mock.outputs);
+  if (mock.stderr) {
+    const masked = maskSecrets(mock.stderr, secrets);
+    record.stderr = masked;
+    record.combinedOutput = [{ stream: "stderr", text: masked }];
+  }
+  if (mock.exitCode !== undefined) {
+    record.exitCode = mock.exitCode;
+    record.outcome = mock.exitCode === 0 ? "success" : "failure";
+  }
 }
 
 export interface WhatIfPatch {

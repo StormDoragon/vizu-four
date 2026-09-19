@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 13 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 180 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 13 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 202 tests passing.
 
 ---
 
@@ -16,15 +16,16 @@ This is the agreed order of work, not a suggestion. Where it disagrees with an i
 
 The delta is smaller than it sounds — `uses:` steps are already simulated today, so nothing changes there. Demo scope is:
 
-- disable the `run:` spawn path
+- ~~disable the `run:` spawn path~~ — **done** (`VIZU_DEMO_MODE=1`)
 - ~~cookie-scoped session ownership, checked in the `[id]` routes~~ — **done**
-- per-visitor rate limits
+- ~~per-visitor rate limits~~ — **done**
+- ~~mockable `run:` outcomes, so the demo can still show a failure~~ — **done**
 
 Still demonstrates the hardest, most demo-able parts: the expression engine, the `if:` always-truthy footgun detection, matrix expansion, context inspection, breakpoints.
 
 > **Threat model note.** "Minimal" isolation is only sufficient *because execution is off*. With `run:` disabled the risk drops from remote code execution to session data exposure (a pasted workflow, plus any secret values typed into What-If). A cookie-set owner id covers that. **If `run:` is ever re-enabled on a shared host, minimal isolation is no longer sufficient and [#14](https://github.com/StormDoragon/vizu-four/issues/14) becomes a hard prerequisite.**
 
-> **Open decision — mock failures.** Simulation-only means nothing ever fails, so the demo can't show the failure UX and AI explanation panel ([#4](https://github.com/StormDoragon/vizu-four/issues/4)) — arguably the most differentiating shipped feature. Cheapest fix reuses the Mock Outputs infrastructure from [#3](https://github.com/StormDoragon/vizu-four/issues/3): let a `run:` step be mocked with an exit code and canned stderr, not just outputs. A mocked non-zero exit would flow through the existing `continue-on-error` / `steps.*.outcome` / failure-panel / explain-endpoint path without new plumbing. **Decide this alongside the demo scope, not after the demo is up.**
+> **Resolved — mock failures.** Simulation-only would otherwise mean nothing ever fails, hiding the failure UX and AI explanation panel ([#4](https://github.com/StormDoragon/vizu-four/issues/4)) — arguably the most differentiating shipped feature. Resolved by extending the Mock Outputs infrastructure from [#3](https://github.com/StormDoragon/vizu-four/issues/3): a mock now carries an optional exit code and stderr, and applies to `run:` steps as well as `uses:` ones. A mocked non-zero exit flows through the existing `continue-on-error` / `steps.*.outcome` / failure-panel / explain-endpoint path with no new plumbing. The rule is the same in both modes: **a mocked step is not executed** — the mock decides its result outright, which is also what makes "stub out this slow step" work locally.
 
 ### 2. Cheap wins + demo isolation — [#5](https://github.com/StormDoragon/vizu-four/issues/5), [#6](https://github.com/StormDoragon/vizu-four/issues/6)
 
@@ -64,7 +65,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 ### P0 — Make it actually useful (next 1–2 weeks)
 - [ ] Deploy a public demo (Vercel or similar) with 4–5 preloaded example workflows ([#1](https://github.com/StormDoragon/vizu-four/issues/1)) — **scoped to simulation-only; see sequence step 1**
 - [x] Improve common `uses:` handlers (`actions/checkout`, `setup-node`, `setup-python`, `cache`, `upload/download-artifact`, `docker/login-action`) ([#2](https://github.com/StormDoragon/vizu-four/issues/2), merged via [#7](https://github.com/StormDoragon/vizu-four/pull/7))
-- [x] Add "Mock outputs" UI for any `uses:` step (so users can stub results without real containers) ([#3](https://github.com/StormDoragon/vizu-four/issues/3), shipped in [`ec110d8`](https://github.com/StormDoragon/vizu-four/commit/ec110d8))
+- [x] Add "Mock outputs" UI for any `uses:` step (so users can stub results without real containers) ([#3](https://github.com/StormDoragon/vizu-four/issues/3), shipped in [`ec110d8`](https://github.com/StormDoragon/vizu-four/commit/ec110d8)) — since extended to `run:` steps, with a mockable exit code and stderr
 - [x] Better failure UX: auto-jump to failed step + prominent stdout/stderr + AI explanation panel ([#4](https://github.com/StormDoragon/vizu-four/issues/4), shipped in [`dd694b4`](https://github.com/StormDoragon/vizu-four/commit/dd694b4))
 - [x] Keyboard shortcuts for debugger controls (Step / Continue / Run to end) ([#5](https://github.com/StormDoragon/vizu-four/issues/5))
 - [x] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))

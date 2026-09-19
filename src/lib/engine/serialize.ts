@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { isSimulationOnly } from "../deployment";
 import type { JsonValue, ParseIssue } from "../workflow/types";
 import { buildJobGraph } from "../workflow/graph";
 import { expandMatrix, type MatrixCombo } from "../workflow/matrix";
-import type { DebugSession, Lane } from "./types";
+import type { DebugSession, Lane, StepMock } from "./types";
 
 export interface SessionViewStep {
   key: string;
@@ -52,7 +53,7 @@ export interface SessionView {
   lanes: Record<string, Lane>;
   laneOrder: string[];
   /** User-defined output stubs for `uses:` steps, keyed by `${jobId}:${stepKey}`. */
-  mockOutputs: Record<string, Record<string, string>>;
+  mockOutputs: Record<string, StepMock>;
   /** Bumped on every session mutation - use as a cache-invalidation key
    * instead of an unrelated field like the active lane's pointer. */
   revision: number;
@@ -64,6 +65,9 @@ export interface SessionView {
    * yields a new hash and therefore a clean slate, which is the safe
    * default given breakpoints reference step keys that may have moved. */
   workflowHash: string;
+  /** True when this deployment never spawns `run:` steps, so the UI can say
+   * so rather than letting someone read simulated successes as real ones. */
+  simulationOnly: boolean;
 }
 
 export function toSessionView(session: DebugSession): SessionView {
@@ -120,5 +124,6 @@ export function toSessionView(session: DebugSession): SessionView {
     revision: session.revision,
     parseIssues: session.parseIssues,
     workflowHash: createHash("sha256").update(session.workflow.raw).digest("hex").slice(0, 16),
+    simulationOnly: isSimulationOnly(),
   };
 }

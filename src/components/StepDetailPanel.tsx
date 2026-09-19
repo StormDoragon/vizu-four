@@ -177,12 +177,13 @@ export function StepDetailPanel({
       </div>
 
       <div className="space-y-4 overflow-auto p-3">
-        {step.uses && (
+        {(step.uses || step.run !== undefined) && (
           <MockOutputsEditor
             key={`${lane.jobId}:${step.key}`}
             session={session}
             jobId={lane.jobId}
             stepKey={step.key}
+            isRunStep={step.run !== undefined}
             onUpdated={onSessionUpdate}
           />
         )}

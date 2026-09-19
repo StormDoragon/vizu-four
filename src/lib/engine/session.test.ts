@@ -603,7 +603,7 @@ jobs:
       - id: cache
         uses: actions/cache@v4
 `);
-    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    setMockOutputs(s, "build", "cache", { outputs: { "cache-hit": "true" } });
     const record = await controlStep(s, "build::default");
     expect(record.outputs["cache-hit"]).toBe("true");
     expect(record.mockedOutputKeys).toEqual(["cache-hit"]);
@@ -618,7 +618,7 @@ jobs:
       - id: login
         uses: docker/login-action@v3
 `);
-    setMockOutputs(s, "build", "login", { "session-token": "fake-token" });
+    setMockOutputs(s, "build", "login", { outputs: { "session-token": "fake-token" } });
     const record = await controlStep(s, "build::default");
     expect(record.outputs["session-token"]).toBe("fake-token");
   });
@@ -649,7 +649,7 @@ jobs:
         uses: actions/cache@v4
       - run: echo "hit=\${{ steps.cache.outputs['cache-hit'] }}"
 `);
-    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    setMockOutputs(s, "build", "cache", { outputs: { "cache-hit": "true" } });
     await controlStep(s, "build::default");
     const second = await controlStep(s, "build::default");
     expect(second.stdout).toContain("hit=true");
@@ -664,7 +664,7 @@ jobs:
       - id: cache
         uses: actions/cache@v4
 `);
-    setMockOutputs(s, "build", "cache", { "cache-hit": "true" });
+    setMockOutputs(s, "build", "cache", { outputs: { "cache-hit": "true" } });
     setMockOutputs(s, "build", "cache", null);
     const record = await controlStep(s, "build::default");
     expect(record.outputs["cache-hit"]).toBe("false");
@@ -683,9 +683,136 @@ jobs:
 `,
       { secrets: { TOKEN: "shh-its-a-secret" } }
     );
-    setMockOutputs(s, "build", "login", { token: "shh-its-a-secret" });
+    setMockOutputs(s, "build", "login", { outputs: { token: "shh-its-a-secret" } });
     const record = await controlStep(s, "build::default");
     expect(record.outputs.token).toBe("***");
+  });
+});
+
+describe("mocking a run: step's outcome", () => {
+  it("does not execute a mocked run: step", async () => {
+    const marker = path.join(workspaceDir, "should-not-exist");
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: touch
+        run: touch ${marker}
+`);
+    setMockOutputs(s, "build", "touch", { outputs: { done: "yes" } });
+    const record = await controlStep(s, "build::default");
+    await expect(fs.stat(marker)).rejects.toThrow();
+    expect(record.simulated).toBe(true);
+    expect(record.simulationNote).toContain("Mocked");
+    expect(record.outputs.done).toBe("yes");
+  });
+
+  it("turns a run: step into a failure with the given exit code and stderr", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: test
+        run: exit 0
+`);
+    setMockOutputs(s, "build", "test", { outputs: {}, exitCode: 2, stderr: "2 tests failed" });
+    const record = await controlStep(s, "build::default");
+    expect(record.exitCode).toBe(2);
+    expect(record.outcome).toBe("failure");
+    expect(record.conclusion).toBe("failure");
+    expect(record.stderr).toBe("2 tests failed");
+    expect(record.combinedOutput).toEqual([{ stream: "stderr", text: "2 tests failed" }]);
+  });
+
+  it("masks a secret that appears in mocked stderr", async () => {
+    const s = session(
+      `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: deploy
+        run: echo deploying
+`,
+      { secrets: { TOKEN: "hunter2" } }
+    );
+    setMockOutputs(s, "build", "deploy", { outputs: {}, exitCode: 1, stderr: "bad token hunter2" });
+    const record = await controlStep(s, "build::default");
+    expect(record.stderr).toBe("bad token ***");
+  });
+
+  it("lets continue-on-error absorb a mocked failure, as it would a real one", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: flaky
+        run: echo ok
+        continue-on-error: true
+`);
+    setMockOutputs(s, "build", "flaky", { outputs: {}, exitCode: 1 });
+    const record = await controlStep(s, "build::default");
+    expect(record.outcome).toBe("failure");
+    expect(record.conclusion).toBe("success");
+    expect(s.lanes["build::default"].status).not.toBe("failure");
+  });
+
+  it("drives a later 'if: failure()' step from a mocked failure", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: test
+        run: echo ok
+      - if: failure()
+        run: echo 'collecting logs'
+`);
+    setMockOutputs(s, "build", "test", { outputs: {}, exitCode: 1 });
+    s.breakOnFailure = false;
+    await controlStep(s, "build::default");
+    const cleanup = await controlStep(s, "build::default");
+    expect(cleanup.ifResult).toBe(true);
+    expect(cleanup.stdout).toContain("collecting logs");
+  });
+
+  it("mocks a run: step's outputs without forcing an outcome", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: version
+        run: echo "v=1.0.0" >> $GITHUB_OUTPUT
+`);
+    setMockOutputs(s, "build", "version", { outputs: { v: "9.9.9" } });
+    const record = await controlStep(s, "build::default");
+    expect(record.outputs.v).toBe("9.9.9");
+    expect(record.outcome).toBe("success");
+  });
+
+  it("treats a mock that changes nothing as no mock at all", async () => {
+    const marker = path.join(workspaceDir, "ran");
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: touch
+        run: touch ${marker}
+`);
+    setMockOutputs(s, "build", "touch", { outputs: { done: "yes" } });
+    // Emptying the last row is how the editor says "no mock" - an exit code
+    // of 0 with nothing else says the same thing, so neither may leave a
+    // husk of a mock behind that still suppresses execution.
+    setMockOutputs(s, "build", "touch", { outputs: {}, exitCode: 0 });
+    expect(s.mockOutputs["build:touch"]).toBeUndefined();
+    const record = await controlStep(s, "build::default");
+    await expect(fs.stat(marker)).resolves.toBeTruthy();
+    expect(record.simulated).toBeFalsy();
   });
 });
 
@@ -746,5 +873,81 @@ jobs:
     for (let i = 1; i < seen.length; i++) {
       expect(seen[i]).toBeGreaterThan(seen[i - 1]);
     }
+  });
+});
+
+describe("simulation-only mode", () => {
+  const original = process.env.VIZU_DEMO_MODE;
+  beforeEach(() => {
+    process.env.VIZU_DEMO_MODE = "1";
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.VIZU_DEMO_MODE;
+    else process.env.VIZU_DEMO_MODE = original;
+  });
+
+  it("never spawns a run: step, even one with an observable side effect", async () => {
+    // A real spawn would create this file; its absence is the proof that
+    // nothing ran, rather than just trusting the reported status.
+    const marker = path.join(workspaceDir, "proof-of-execution");
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: touch ${marker}
+`);
+    const record = await controlStep(s, "build::default");
+
+    await expect(fs.stat(marker)).rejects.toThrow();
+    expect(record.simulated).toBe(true);
+    expect(record.outcome).toBe("success");
+    expect(record.simulationNote).toContain("simulation-only");
+  });
+
+  it("shows the interpolated command, which is the part worth seeing", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18]
+    steps:
+      - run: echo "building on node \${{ matrix.node }}"
+`);
+    const record = await controlStep(s, "build::node:18");
+    expect(record.simulationNote).toContain("building on node 18");
+  });
+
+  it("masks secrets that interpolation pulled into the command", async () => {
+    const s = session(
+      `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: deploy --token \${{ secrets.TOKEN }}
+`,
+      { secrets: { TOKEN: "s3cret-token-value" } }
+    );
+    const record = await controlStep(s, "build::default");
+    expect(record.simulationNote).not.toContain("s3cret-token-value");
+    expect(record.simulationNote).toContain("***");
+  });
+
+  it("still evaluates if: conditions normally, so branches remain debuggable", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo always
+      - if: false
+        run: echo never
+`);
+    await controlStep(s, "build::default");
+    const skipped = await controlStep(s, "build::default");
+    expect(skipped.status).toBe("skipped");
   });
 });
