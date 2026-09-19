@@ -816,6 +816,64 @@ jobs:
   });
 });
 
+describe("real working-tree sessions", () => {
+  let realDir: string;
+
+  beforeEach(async () => {
+    realDir = await fs.mkdtemp(path.join(os.tmpdir(), "session-test-real-repo-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(realDir, { recursive: true, force: true });
+  });
+
+  function realSession(yaml: string): DebugSession {
+    const { workflow, issues } = parseWorkflow(yaml);
+    const blocking = issues.filter((i) => i.severity === "error");
+    if (!workflow || blocking.length > 0) {
+      throw new Error(`fixture failed to parse: ${JSON.stringify(blocking)}`);
+    }
+    const s = createSession({
+      workflow,
+      workspaceDir: realDir,
+      usesRealWorkspace: true,
+      ownerId: "test-owner",
+    });
+    createdSessionIds.push(s.id);
+    return s;
+  }
+
+  it("runs a run: step for real against the chosen directory, and github.workspace/$GITHUB_WORKSPACE reflect it", async () => {
+    const s = realSession(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "$GITHUB_WORKSPACE" > out.txt
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.simulated).toBeFalsy();
+    expect(await fs.readFile(path.join(realDir, "out.txt"), "utf8")).toBe(`${realDir}\n`);
+  });
+
+  it("keeps simulated-action artifact scratch space out of the real working tree", async () => {
+    const s = realSession(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: out.txt
+`);
+    await fs.writeFile(path.join(realDir, "out.txt"), "hi");
+    await controlStep(s, "build::default");
+    // The debugger must never create its own scratch dirs inside a real repo.
+    await expect(fs.stat(path.join(realDir, ".debugger"))).rejects.toThrow();
+  });
+});
+
 describe("session.parseIssues", () => {
   it("carries parse warnings onto the session instead of losing them after creation", () => {
     const { workflow } = parseWorkflow(`

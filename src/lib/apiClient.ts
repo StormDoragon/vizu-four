@@ -38,13 +38,43 @@ export async function listExamples(): Promise<ExampleWorkflow[]> {
   return data.examples;
 }
 
+export interface DeploymentConfig {
+  simulationOnly: boolean;
+}
+
+export async function getDeploymentConfig(): Promise<DeploymentConfig> {
+  return request("/api/config");
+}
+
+export interface WorkspaceWorkflowFile {
+  relativePath: string;
+  name: string;
+  content: string;
+}
+
+/** Lists `.github/workflows/*.yml` under a directory on the host running
+ * the debugger, for the "open a workflow from the repo" flow. Throws (via
+ * ApiError, status 403) if this deployment has real-workspace access
+ * disabled. */
+export async function listWorkspaceWorkflows(directory: string): Promise<WorkspaceWorkflowFile[]> {
+  const data = await request<{ files: WorkspaceWorkflowFile[] }>("/api/workspace/workflows", {
+    method: "POST",
+    body: JSON.stringify({ directory }),
+  });
+  return data.files;
+}
+
 export async function createSession(
   workflowYaml: string,
-  sourcePath?: string
+  options?: { sourcePath?: string; workingTreeDir?: string }
 ): Promise<{ session: SessionView; issues: ParseIssue[] }> {
   return request("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ workflowYaml, sourcePath }),
+    body: JSON.stringify({
+      workflowYaml,
+      sourcePath: options?.sourcePath,
+      workingTreeDir: options?.workingTreeDir,
+    }),
   });
 }
 

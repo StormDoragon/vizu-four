@@ -88,6 +88,13 @@ export interface DebugSession {
   lastAccessedAt: string;
   workflow: WorkflowFile;
   workspaceDir: string;
+  /** True when `workspaceDir` is a real directory on disk the user chose to
+   * debug against - an opt-in "run against this repo" session - rather than
+   * a disposable `mkdtemp` scratch dir. Session cleanup must never `rm` this
+   * directory, and it's why the artifact-simulation scratch space lives
+   * under the session's temp root instead of inside `workspaceDir`: this is
+   * someone's real working tree, not a throwaway copy. */
+  usesRealWorkspace: boolean;
   config: RunConfig;
   breakpoints: Set<string>;
   breakOnFailure: boolean;

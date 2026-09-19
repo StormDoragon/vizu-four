@@ -50,6 +50,10 @@ function stepDisplayName(step: WorkflowStep): string {
 export interface CreateSessionOptions {
   workflow: WorkflowFile;
   workspaceDir: string;
+  /** True when `workspaceDir` is a real directory the user opted into
+   * debugging against, rather than a disposable scratch dir. See the field
+   * of the same name on DebugSession. Defaults to false. */
+  usesRealWorkspace?: boolean;
   /** Owner cookie value of the visitor creating this session. */
   ownerId: string;
   config?: Partial<RunConfig>;
@@ -67,6 +71,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     lastAccessedAt: new Date().toISOString(),
     workflow: opts.workflow,
     workspaceDir: opts.workspaceDir,
+    usesRealWorkspace: opts.usesRealWorkspace ?? false,
     config,
     breakpoints: new Set(),
     breakOnFailure: true,
@@ -357,7 +362,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     for (const [k, v] of Object.entries(step.with ?? {})) {
       withInputs[k] = typeof v === "string" ? interpolate(v, evalCtx).result : v;
     }
-    const artifactsDir = path.join(session.workspaceDir, ".debugger", "artifacts");
+    // Always under the session's own temp root, never inside `workspaceDir`
+    // - when that's a real working tree, it's someone's actual repo, not a
+    // place for the debugger to drop a scratch `.debugger/` folder.
+    const artifactsDir = path.join(sessionTempRoot(session.id), "artifacts");
     const simResult = runSimulatedAction(step.uses, withInputs, session.workspaceDir, artifactsDir);
     record.simulated = true;
     // simResult.note can legitimately echo back `with:` input values (e.g. a

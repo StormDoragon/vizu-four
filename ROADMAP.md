@@ -2,7 +2,7 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 202 tests passing.
+**Status:** the codebase audit and hardening pass is complete — all 28 findings fixed across 17 commits (concurrency race, zero-step deadlock, `if:` coercion, skip propagation, `timeout-minutes`, What-If removal, the security trio, `fail-fast`, relational coercion, runner-context fidelity, log capture, `steps.*` keying, six UI papercuts, dead code, request validation, crash-safe cleanup). 216 tests passing.
 
 ---
 
@@ -35,7 +35,7 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 ### 3. Real workflow + workspace access — [#29](https://github.com/StormDoragon/vizu-four/issues/29)
 
-Today you paste text or pick a bundled example, and the run workspace is an **empty temp dir** — so a real workflow's `npm ci` fails regardless of how it was loaded. File picker and real-working-tree execution ship together, behind an explicit opt-in. Ranks above most of P1: it's the difference between a demo toy and a tool.
+- [x] ~~Load a workflow from the repo + run against a real working tree~~ — shipped. A directory browser lists `.github/workflows/*.yml` for one-click loading; a separate, explicit opt-in checkbox (shown only after a successful browse) makes that session's `run:` steps execute for real against that directory instead of a scratch workspace. Off by default - pasting YAML and bundled examples are unchanged. Disabled entirely in simulation-only deployments, alongside `run:` execution itself. Session cleanup never deletes a real working tree, only the disposable scratch path; the debugger's own artifact-simulation scratch space was moved off `workspaceDir` onto the session's temp root so it never lands inside a real repo either.
 
 ### 4. Test/lint net + expression parity — [#30](https://github.com/StormDoragon/vizu-four/issues/30), [#13](https://github.com/StormDoragon/vizu-four/issues/13)
 
@@ -69,7 +69,7 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [x] Better failure UX: auto-jump to failed step + prominent stdout/stderr + AI explanation panel ([#4](https://github.com/StormDoragon/vizu-four/issues/4), shipped in [`dd694b4`](https://github.com/StormDoragon/vizu-four/commit/dd694b4))
 - [x] Keyboard shortcuts for debugger controls (Step / Continue / Run to end) ([#5](https://github.com/StormDoragon/vizu-four/issues/5))
 - [x] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))
-- [ ] Open a workflow from the repo + run against a real working tree (opt-in) ([#29](https://github.com/StormDoragon/vizu-four/issues/29))
+- [x] Open a workflow from the repo + run against a real working tree (opt-in) ([#29](https://github.com/StormDoragon/vizu-four/issues/29))
 - [ ] UI regression test net + lint script ([#30](https://github.com/StormDoragon/vizu-four/issues/30))
 - [ ] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *was P1*
 

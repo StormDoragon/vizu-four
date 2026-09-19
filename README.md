@@ -50,6 +50,13 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   a slow or destructive command, and how you reach the failure paths
   (`continue-on-error`, `if: failure()`, the explanation panel) without
   having to write a workflow that genuinely breaks.
+- **Open a workflow from the repo** — enter a directory on the machine
+  running the debugger and list its `.github/workflows/*.yml` files with
+  one click to load. Separately, an **explicit opt-in** lets that session's
+  `run:` steps execute against that real directory instead of a disposable
+  scratch workspace — the only way to debug a workflow that actually reads
+  or writes repo files (`npm ci`, `pytest`, etc). Off by default; see
+  [Real working-tree access](#real-working-tree-access) below.
 - **Failure explanation** — a step that fails gets a heuristic root-cause
   analysis for free (pattern-matched against exit code/stdout/stderr); if
   `ANTHROPIC_API_KEY` is set in the environment, it upgrades to a live
@@ -204,6 +211,38 @@ Two things to know:
 Session creation is rate-limited per visitor regardless of mode (30 per 10
 minutes, 25 live sessions), since each session holds a workspace and a temp
 directory.
+
+## Real working-tree access
+
+By default every session's workspace is a disposable `mkdtemp` scratch
+directory — safe to throw away, but empty, so a real workflow's `npm ci`,
+`pytest`, or anything that touches repo files fails for reasons that have
+nothing to do with the workflow itself.
+
+From the home page, **"Open a workflow from the repo"** lets you enter a
+directory on the machine running the debugger and lists its
+`.github/workflows/*.yml` files for one-click loading. That alone changes
+nothing about execution — it's just a faster way to get YAML into the
+textarea, same as pasting it.
+
+A separate checkbox, shown only after a successful browse, is the actual
+opt-in: **"Run this session's `run:` steps against `<directory>` instead of
+a scratch workspace."** Checking it and starting a session means:
+
+- `workspaceDir`, `github.workspace`, and `$GITHUB_WORKSPACE` are that real
+  directory, not a temp copy.
+- Unmocked `run:` steps execute for real against the files there — this is
+  not a scratch copy, and there is no undo. The debugger's own scratch
+  space (simulated-action artifacts, `$RUNNER_TEMP`) still lives under a
+  temp dir, never inside your repo, but anything your workflow's own
+  commands do to that directory is real.
+- Ending the session **never** deletes that directory — only the disposable
+  scratch-workspace path is ever reclaimed.
+
+This is disabled entirely — both the directory browser and the opt-in — in
+[simulation-only deployments](#simulation-only-mode-vizu_demo_mode1),
+alongside `run:` execution itself: a shared deployment has no business
+letting a visitor enumerate paths on the host, even with execution off.
 
 ## Testing
 

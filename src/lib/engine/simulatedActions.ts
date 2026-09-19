@@ -145,7 +145,7 @@ const HANDLERS: Record<string, Handler> = {
         "artifact-url": `file://${dest}`,
       },
       conclusion: "success",
-      note: `Simulated: copied ${count} file(s) into the local artifact store (.debugger/artifacts/${name}). Retention: ${retentionDays} days (ignored locally).`,
+      note: `Simulated: copied ${count} file(s) into the debugger's local artifact store (name=${name}). Retention: ${retentionDays} days (ignored locally).`,
     };
   },
 

@@ -19,10 +19,15 @@ jobs:
       - run: echo hi
 `;
 
-async function makeSession() {
+async function makeSession(opts: { usesRealWorkspace?: boolean } = {}) {
   const { workflow } = parseWorkflow(MINIMAL_YAML);
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "store-test-"));
-  const session = createSession({ workflow: workflow!, workspaceDir, ownerId: "test-owner" });
+  const session = createSession({
+    workflow: workflow!,
+    workspaceDir,
+    ownerId: "test-owner",
+    usesRealWorkspace: opts.usesRealWorkspace,
+  });
   saveSession(session);
   return session;
 }
@@ -51,6 +56,27 @@ describe("session store", () => {
     expect(removed).toBe(true);
     expect(getSession(session.id)).toBeUndefined();
     await expect(fs.stat(session.workspaceDir)).rejects.toThrow();
+  });
+
+  it("never deletes a real working-tree directory the user opted into, only the session's own temp root", async () => {
+    const realDir = await fs.mkdtemp(path.join(os.tmpdir(), "store-test-real-repo-"));
+    createdDirs.push(realDir);
+    await fs.writeFile(path.join(realDir, "keep-me.txt"), "do not delete");
+
+    const { workflow } = parseWorkflow(MINIMAL_YAML);
+    const session = createSession({
+      workflow: workflow!,
+      workspaceDir: realDir,
+      ownerId: "test-owner",
+      usesRealWorkspace: true,
+    });
+    saveSession(session);
+
+    const removed = await deleteSessionAndWorkspace(session.id);
+    expect(removed).toBe(true);
+    expect(getSession(session.id)).toBeUndefined();
+    // The real directory - and the file in it - must survive.
+    await expect(fs.stat(path.join(realDir, "keep-me.txt"))).resolves.toBeDefined();
   });
 
   it("reapStaleSessions only deletes sessions idle past the TTL", async () => {

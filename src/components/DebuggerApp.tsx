@@ -349,6 +349,13 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           behaves normally. Run it locally to execute for real.
         </div>
       )}
+      {session.usesRealWorkspace && (
+        <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-200">
+          <strong>Real working tree.</strong> Unmocked <code>run:</code> steps in this session
+          execute for real against files on this machine — not a disposable scratch copy. Ending
+          this session will not delete that directory, but the steps you run against it can.
+        </div>
+      )}
       {restoredNote && (
         <div className="flex items-start gap-2 border-b border-bg-border bg-bg-raised px-4 py-1.5 text-xs text-gray-400">
           <span className="flex-1" data-testid="restored-note">

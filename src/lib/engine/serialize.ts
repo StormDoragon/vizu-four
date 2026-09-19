@@ -68,6 +68,10 @@ export interface SessionView {
   /** True when this deployment never spawns `run:` steps, so the UI can say
    * so rather than letting someone read simulated successes as real ones. */
   simulationOnly: boolean;
+  /** True when `run:` steps in this session execute against a real
+   * directory on disk the user opted into, not a disposable scratch dir -
+   * the UI shows this so a real write is never mistaken for a throwaway one. */
+  usesRealWorkspace: boolean;
 }
 
 export function toSessionView(session: DebugSession): SessionView {
@@ -125,5 +129,6 @@ export function toSessionView(session: DebugSession): SessionView {
     parseIssues: session.parseIssues,
     workflowHash: createHash("sha256").update(session.workflow.raw).digest("hex").slice(0, 16),
     simulationOnly: isSimulationOnly(),
+    usesRealWorkspace: session.usesRealWorkspace,
   };
 }

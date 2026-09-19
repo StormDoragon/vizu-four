@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSession, listExamples, type ExampleWorkflow, type ParseIssue } from "@/lib/apiClient";
+import {
+  createSession,
+  getDeploymentConfig,
+  listExamples,
+  listWorkspaceWorkflows,
+  type ExampleWorkflow,
+  type ParseIssue,
+  type WorkspaceWorkflowFile,
+} from "@/lib/apiClient";
 
 const PLACEHOLDER = `name: CI
 on: [push]
@@ -38,16 +46,60 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // "Open a workflow from the repo" - a directory path on the machine
+  // running the debugger (this is local-first: browsers can't hand a server
+  // a real filesystem path from a file picker, so a text field is the
+  // honest UI for what's actually happening).
+  const [simulationOnly, setSimulationOnly] = useState(false);
+  const [directory, setDirectory] = useState("");
+  const [browsedDir, setBrowsedDir] = useState<string | null>(null);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceWorkflowFile[]>([]);
+  const [browsing, setBrowsing] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  // The opt-in proper: loading a file above never flips this on by itself.
+  const [runAgainstDir, setRunAgainstDir] = useState(false);
+
   useEffect(() => {
     listExamples().then(setExamples).catch(() => setExamples([]));
+    getDeploymentConfig()
+      .then((c) => setSimulationOnly(c.simulationOnly))
+      .catch(() => setSimulationOnly(false));
   }, []);
+
+  async function browse() {
+    setBrowsing(true);
+    setBrowseError(null);
+    setWorkspaceFiles([]);
+    setBrowsedDir(null);
+    try {
+      const files = await listWorkspaceWorkflows(directory);
+      setWorkspaceFiles(files);
+      setBrowsedDir(directory);
+      if (files.length === 0) {
+        setBrowseError(`No .yml/.yaml files found under ${directory}/.github/workflows`);
+      }
+    } catch (err) {
+      setBrowseError((err as Error).message);
+    } finally {
+      setBrowsing(false);
+    }
+  }
+
+  function loadWorkspaceFile(file: WorkspaceWorkflowFile) {
+    setYaml(file.content);
+    setSelectedFile(file.relativePath);
+  }
 
   async function start() {
     setLoading(true);
     setError(null);
     setIssues([]);
     try {
-      const { session, issues } = await createSession(yaml);
+      const { session, issues } = await createSession(yaml, {
+        sourcePath: selectedFile ?? undefined,
+        workingTreeDir: runAgainstDir && browsedDir ? browsedDir : undefined,
+      });
       setIssues(issues);
       router.push(`/debug/${session.id}`);
     } catch (err) {
@@ -74,7 +126,10 @@ export default function HomePage() {
           {examples.map((ex) => (
             <button
               key={ex.name}
-              onClick={() => setYaml(ex.content)}
+              onClick={() => {
+                setYaml(ex.content);
+                setSelectedFile(null);
+              }}
               className="rounded-md border border-bg-border bg-bg-raised px-3 py-1.5 text-sm text-gray-200 hover:border-status-running hover:text-white"
             >
               {ex.name}
@@ -85,10 +140,92 @@ export default function HomePage() {
 
       <textarea
         value={yaml}
-        onChange={(e) => setYaml(e.target.value)}
+        onChange={(e) => {
+          setYaml(e.target.value);
+          setSelectedFile(null);
+        }}
         spellCheck={false}
         className="h-[420px] w-full rounded-lg border border-bg-border bg-bg-panel p-4 font-mono text-sm text-gray-100 focus:border-status-running focus:outline-none"
       />
+
+      <section className="rounded-lg border border-bg-border bg-bg-panel p-4">
+        <h2 className="text-sm font-semibold text-white">Open a workflow from the repo</h2>
+        {simulationOnly ? (
+          <p className="mt-1 text-xs text-gray-500">
+            Disabled in this deployment — real working-tree access is off along with{" "}
+            <code>run:</code> execution.
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-xs text-gray-500">
+              Enter a directory on this machine (relative paths resolve against the debugger's
+              own working directory, so <code>.</code> means &ldquo;the repo this is running
+              from&rdquo;). Lists <code>.github/workflows/*.yml</code> there.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={directory}
+                onChange={(e) => setDirectory(e.target.value)}
+                placeholder="/path/to/repo or ."
+                data-testid="workspace-dir-input"
+                className="flex-1 rounded-md border border-bg-border bg-bg-raised px-2 py-1.5 font-mono text-xs text-gray-200 focus:border-status-running focus:outline-none"
+              />
+              <button
+                onClick={browse}
+                disabled={browsing || directory.trim() === ""}
+                data-testid="workspace-browse"
+                className="rounded-md border border-bg-border px-3 py-1.5 text-xs text-gray-200 hover:border-status-running hover:text-white disabled:opacity-50"
+              >
+                {browsing ? "Listing…" : "List workflows"}
+              </button>
+            </div>
+
+            {browseError && <p className="mt-2 text-xs text-red-300">{browseError}</p>}
+
+            {workspaceFiles.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {workspaceFiles.map((f) => (
+                  <li key={f.relativePath}>
+                    <button
+                      onClick={() => loadWorkspaceFile(f)}
+                      data-testid="workspace-file"
+                      className={`w-full rounded-md border px-2 py-1.5 text-left text-xs hover:border-status-running hover:text-white ${
+                        selectedFile === f.relativePath
+                          ? "border-status-running bg-status-running/10 text-white"
+                          : "border-bg-border bg-bg-raised text-gray-200"
+                      }`}
+                    >
+                      {f.relativePath}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {browsedDir && (
+              <div className="mt-3 border-t border-bg-border pt-3">
+                <label className="flex cursor-pointer items-start gap-2 text-xs text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={runAgainstDir}
+                    onChange={(e) => setRunAgainstDir(e.target.checked)}
+                    data-testid="run-against-dir"
+                    className="mt-0.5 accent-status-running"
+                  />
+                  <span>
+                    Run this session&apos;s <code>run:</code> steps against{" "}
+                    <code>{browsedDir}</code> instead of a scratch workspace.{" "}
+                    <strong className="text-yellow-300">
+                      This is not a copy — steps execute for real against the files in that
+                      directory.
+                    </strong>
+                  </span>
+                </label>
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {error && (
         <div className="rounded-md border border-status-failure/40 bg-status-failure/10 p-3 text-sm text-red-300">

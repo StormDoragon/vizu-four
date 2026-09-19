@@ -14,6 +14,7 @@ import { warnIfUnsafeDeployment } from "@/lib/deployment";
 import { toSessionView } from "@/lib/engine/serialize";
 import type { RunConfig } from "@/lib/engine/types";
 import { MAX_WORKFLOW_YAML_LENGTH, validateRunConfigPatch } from "@/lib/engine/validateRequest";
+import { assertRealWorkspaceAllowed, resolveWorkingTree, WorkspaceError } from "@/lib/engine/workspaceBrowse";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -23,6 +24,11 @@ interface CreateSessionBody {
   workflowYaml?: string;
   sourcePath?: string;
   config?: Partial<RunConfig>;
+  /** Opt-in: run this session's `run:` steps against a real directory on
+   * disk instead of a disposable scratch workspace. Never inferred - the
+   * client must explicitly send this, separate from `sourcePath`, which is
+   * purely cosmetic (used in parse-error messages). */
+  workingTreeDir?: string;
 }
 
 // There is intentionally no GET here. Every session lives in one process-
@@ -35,7 +41,7 @@ export async function POST(req: Request) {
   warnIfUnsafeDeployment();
   const body = await readJsonBody<CreateSessionBody>(req);
   if (!body) return errorResponse(400, "Invalid JSON body");
-  const { workflowYaml, sourcePath, config } = body;
+  const { workflowYaml, sourcePath, config, workingTreeDir } = body;
   if (typeof workflowYaml !== "string" || workflowYaml.trim() === "") {
     return errorResponse(400, "'workflowYaml' is required");
   }
@@ -45,8 +51,22 @@ export async function POST(req: Request) {
   if (sourcePath !== undefined && typeof sourcePath !== "string") {
     return errorResponse(400, "'sourcePath' must be a string");
   }
+  if (workingTreeDir !== undefined && (typeof workingTreeDir !== "string" || workingTreeDir.trim() === "")) {
+    return errorResponse(400, "'workingTreeDir' must be a non-empty string");
+  }
   const configError = validateRunConfigPatch(config);
   if (configError) return errorResponse(400, configError);
+
+  let realWorkspaceDir: string | undefined;
+  if (workingTreeDir !== undefined) {
+    try {
+      assertRealWorkspaceAllowed();
+      realWorkspaceDir = await resolveWorkingTree(workingTreeDir);
+    } catch (err) {
+      if (err instanceof WorkspaceError) return errorResponse(err.status, err.message);
+      throw err;
+    }
+  }
 
   const { workflow, issues } = parseWorkflow(workflowYaml, sourcePath);
   if (!workflow) {
@@ -70,8 +90,16 @@ export async function POST(req: Request) {
     );
   }
 
-  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-"));
-  const session = createSession({ workflow, workspaceDir, ownerId, config, parseIssues: issues });
+  const workspaceDir =
+    realWorkspaceDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-")));
+  const session = createSession({
+    workflow,
+    workspaceDir,
+    usesRealWorkspace: realWorkspaceDir !== undefined,
+    ownerId,
+    config,
+    parseIssues: issues,
+  });
   saveSession(session);
 
   return NextResponse.json({ session: toSessionView(session), issues });

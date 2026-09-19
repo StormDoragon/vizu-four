@@ -24,9 +24,14 @@ function getStore(): Map<string, DebugSession> {
 }
 
 async function removeSession(session: DebugSession): Promise<void> {
-  await fs.rm(session.workspaceDir, { recursive: true, force: true }).catch(() => {});
-  // Reclaims every lane's $RUNNER_TEMP dir and the shared tool_cache dir in
-  // one shot, since they all live under this session's temp root.
+  // A real working tree the user opted into debugging against is never
+  // ours to delete - only the disposable mkdtemp scratch dir is.
+  if (!session.usesRealWorkspace) {
+    await fs.rm(session.workspaceDir, { recursive: true, force: true }).catch(() => {});
+  }
+  // Reclaims every lane's $RUNNER_TEMP dir, the shared tool_cache dir, and
+  // the artifact-simulation scratch space in one shot, since they all live
+  // under this session's temp root regardless of workspace mode.
   await fs.rm(sessionTempRoot(session.id), { recursive: true, force: true }).catch(() => {});
   getStore().delete(session.id);
 }
