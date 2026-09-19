@@ -2,6 +2,7 @@ import type { JsonValue } from "./workflow/types";
 import type { SessionView } from "./engine/serialize";
 import type { StepMock } from "./engine/types";
 import type { WhatIfPatch } from "./engine/session";
+import type { TraceNode } from "./expressions/trace";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -164,7 +165,7 @@ export async function evaluateExpression(
   expression: string,
   sessionId?: string,
   laneId?: string
-): Promise<{ result?: JsonValue; error?: string }> {
+): Promise<{ result?: JsonValue; error?: string; errorPosition?: number; trace?: TraceNode }> {
   return request("/api/expressions/evaluate", {
     method: "POST",
     body: JSON.stringify({ expression, sessionId, laneId }),

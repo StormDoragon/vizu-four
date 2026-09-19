@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getOwnedSession } from "@/lib/engine/ownership";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
 import { maskObjectStrings } from "@/lib/engine/masking";
-import { evaluateExpression, type EvalContext } from "@/lib/expressions/evaluator";
+import type { EvalContext } from "@/lib/expressions/evaluator";
+import { evaluateExpressionTraced } from "@/lib/expressions/trace";
 import { findExpressionSpans } from "@/lib/expressions/interpolate";
 import { sampleEvalContext } from "@/lib/expressions/sampleContext";
 import { errorResponse, readJsonBody } from "@/lib/http";
@@ -55,11 +56,17 @@ export async function POST(req: Request) {
   }
   const evalCtx = sessionCtx ?? sampleEvalContext(process.cwd());
 
-  try {
-    const result = evaluateExpression(stripWrapper(body.expression), evalCtx);
-    return NextResponse.json({ result: maskObjectStrings(result, secrets) });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message });
-  }
+  const { trace, result, error, errorPosition } = evaluateExpressionTraced(
+    stripWrapper(body.expression),
+    evalCtx
+  );
+  return NextResponse.json({
+    result: result !== undefined ? maskObjectStrings(result, secrets) : undefined,
+    error,
+    errorPosition,
+    // The trace can surface a secret's own value at the node that reads it
+    // (e.g. `secrets.TOKEN` itself), same as `result` above - masked the
+    // same way rather than trusting every node along the way to be safe.
+    trace: trace ? maskObjectStrings(trace, secrets) : undefined,
+  });
 }

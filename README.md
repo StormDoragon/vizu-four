@@ -52,7 +52,14 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   a dismissible top-bar badge — no engine change, purely a client-side view
   preference.
 - **Expression playground** — evaluate any `${{ }}`-free expression against
-  the active lane's real, current context.
+  the active lane's real, current context, with a full evaluation-steps
+  breakdown below the result: every sub-expression's own value, in
+  evaluation order; which context values it referenced (e.g.
+  `steps.*.outputs.result`); a note when `==`/`!=`/a relational comparison
+  coerced mismatched types; the untaken side of `&&`/`||` shown as
+  short-circuited rather than a fabricated result; and, for a nested call
+  like `contains(fromJSON(x), y)`, the failure pinned to the exact call that
+  caused it, not just a whole-expression error.
 - **What-If** — override env vars, `vars`, or provide local secret values at
   any point; takes effect on the next step you run, no commit needed.
 - **Mock a step** — stub any step's outputs, and optionally give it a
