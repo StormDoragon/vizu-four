@@ -36,14 +36,14 @@ Still demonstrates the hardest, most demo-able parts: the expression engine, the
 
 Today you paste text or pick a bundled example, and the run workspace is an **empty temp dir** — so a real workflow's `npm ci` fails regardless of how it was loaded. File picker and real-working-tree execution ship together, behind an explicit opt-in. Ranks above most of P1: it's the difference between a demo toy and a tool.
 
-### 4. Test/lint net + expression parity — [#13](https://github.com/StormDoragon/vizu-four/issues/13)
+### 4. Test/lint net + expression parity — [#30](https://github.com/StormDoragon/vizu-four/issues/30), [#13](https://github.com/StormDoragon/vizu-four/issues/13)
 
-- **Untracked debt:** zero React component tests, no lint script (`next build` type-checks but never lints). The audit pass made ~12 UI-facing changes verified only by manual browser runs. One regression net plus `npm run lint` (~1 day). *Not yet filed as an issue.*
-- [#13](https://github.com/StormDoragon/vizu-four/issues/13) **expression engine edge cases** — **promoted.** The audit found a real divergence from GitHub (relational operators coerce both operands to numbers; `'apple' < 'banana'` is `false` on a real runner) that was *locked in by a test asserting the wrong behavior*. Direct evidence that more parity gaps exist and current tests can't be trusted to catch them.
+- [#30](https://github.com/StormDoragon/vizu-four/issues/30) **UI regression net + lint script** (~1 day) — zero React component tests exist, and `next build` type-checks without linting. The audit pass made ~12 UI-facing changes verified only by manual browser runs; that verification didn't survive the session.
+- [#13](https://github.com/StormDoragon/vizu-four/issues/13) **expression engine edge cases** — the audit found a real divergence from GitHub (relational operators coerce both operands to numbers; `'apple' < 'banana'` is `false` on a real runner) that was *locked in by a test asserting the wrong behavior*. Direct evidence that more parity gaps exist and current tests can't be trusted to catch them. Relabelled P1 → P0 to match this position.
 
 ### 5. Time-travel — [#17](https://github.com/StormDoragon/vizu-four/issues/17)
 
-**Labelled P2, promoted to here.** The `stepIndex`-aware `/api/sessions/[id]/context` endpoint built during the audit fixes is most of it already; `StepRunRecord` stores per-step data. Remaining work is mostly UI — which is why it lands *after* the test net in step 4 rather than before it.
+The `stepIndex`-aware `/api/sessions/[id]/context` endpoint built during the audit fixes is most of it already; `StepRunRecord` stores per-step data. Remaining work is mostly UI — which is why it lands *after* the test net in step 4 rather than before it. Relabelled P2 → P1: it is not months-out power-feature work when most of it is built.
 
 ### 6. Visual polish and the rest
 
@@ -69,20 +69,21 @@ Sections below mirror the `priority:*` labels on GitHub and are the canonical li
 - [ ] Keyboard shortcuts for debugger controls (Step / Continue / Run to end) ([#5](https://github.com/StormDoragon/vizu-four/issues/5))
 - [ ] Persist breakpoints + What-If overrides (localStorage) ([#6](https://github.com/StormDoragon/vizu-four/issues/6))
 - [ ] Open a workflow from the repo + run against a real working tree (opt-in) ([#29](https://github.com/StormDoragon/vizu-four/issues/29))
+- [ ] UI regression test net + lint script ([#30](https://github.com/StormDoragon/vizu-four/issues/30))
+- [ ] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *was P1*
 
 ### P1 — Core experience polish (weeks 2–4)
+- [ ] Time-travel: jump to any previous step and inspect full state at that point ([#17](https://github.com/StormDoragon/vizu-four/issues/17)) — *was P2; mostly built already*
 - [ ] "Share session" link (serialize workflow + current debug state) ([#8](https://github.com/StormDoragon/vizu-four/issues/8))
 - [ ] Expression playground improvements: show intermediate evaluation steps ([#9](https://github.com/StormDoragon/vizu-four/issues/9))
 - [ ] Matrix lane switcher polish + "debug this combination only" ([#10](https://github.com/StormDoragon/vizu-four/issues/10))
 - [ ] Visual improvements: clearer status colors, running indicators, better graph layout ([#11](https://github.com/StormDoragon/vizu-four/issues/11))
 - [ ] Dark/light theme polish + basic responsive layout ([#12](https://github.com/StormDoragon/vizu-four/issues/12))
-- [ ] Harden expression engine with more real-world edge-case tests ([#13](https://github.com/StormDoragon/vizu-four/issues/13)) — *promoted to sequence step 4*
 
 ### P2 — Real power features (months 1–2)
 - [ ] Real container / Docker execution for `uses:` steps (biggest technical leap) ([#14](https://github.com/StormDoragon/vizu-four/issues/14)) — **deferred until after demo feedback**
 - [ ] GitHub App / PAT integration: import a real failed run + reconstruct context ([#15](https://github.com/StormDoragon/vizu-four/issues/15)) — **deferred until after demo feedback**
 - [ ] "Create Fix PR" from AI suggestion ([#16](https://github.com/StormDoragon/vizu-four/issues/16))
-- [ ] Time-travel: jump to any previous step and inspect full state at that point ([#17](https://github.com/StormDoragon/vizu-four/issues/17)) — *promoted to sequence step 5*
 - [ ] Support for reusable workflows and composite actions with better fidelity ([#18](https://github.com/StormDoragon/vizu-four/issues/18))
 
 ### P3 — Productization (months 2–4)
