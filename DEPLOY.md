@@ -1,5 +1,10 @@
 # Deploying the public demo
 
+> **Before you deploy anywhere shared or public: set `VIZU_DEMO_MODE=1`.**
+> `run:` steps otherwise execute real shell commands as this process — see
+> [Security note for public demos](#security-note-for-public-demos) below
+> for exactly why this isn't optional.
+
 This app is a **long-running Node process**, not a pure serverless function:
 
 - Debug sessions live in an in-memory store (`src/lib/engine/store.ts`)
@@ -35,6 +40,7 @@ npm start
 |----------|----------|---------|
 | `PORT` | No | Listen port (default `3000`) |
 | `ANTHROPIC_API_KEY` | No | Enables live Claude upgrades for failure explanations; heuristic fallback always works |
+| `VIZU_DEMO_MODE` | **Yes, on any shared or publicly-reachable host** | Set to `1` to disable real `run:` execution (simulation-only). See the security note below — this is not optional once anyone but you can reach the instance. |
 
 ## Docker (optional)
 
@@ -53,15 +59,42 @@ CMD ["npm", "start"]
 
 ## After deploy
 
-1. Open the public URL and confirm the five example buttons load.
-2. Start **Needs Chain** or **Matrix Build**, step through a failure, confirm the graph + inspector work.
-3. Paste the live URL into the README **Live demo** section and close issue #1.
+1. Confirm the instance is actually running in demo mode (see the security
+   note below) **before** sharing the URL with anyone.
+2. Open the public URL and confirm the five example buttons load.
+3. Start **Needs Chain** or **Matrix Build**, step through a failure, confirm the graph + inspector work.
+4. Paste the live URL into the README **Live demo** section and close issue #1.
 
 ## Security note for public demos
 
-Anyone who can reach the instance can execute arbitrary `run:` scripts as the process user. For a public demo:
+`run:` steps execute as real child processes with this server's own shell
+privileges. Anyone who can reach the instance can execute arbitrary shell
+commands as that process user — including reading environment variables,
+the filesystem, and anything else that process can reach. Railway/Fly/
+Render's free and shared tiers, and any VPS you don't fully control
+end-to-end, all count as **shared hosts** for this purpose: the workload is
+either multi-tenant at the infrastructure layer, or reachable by anyone on
+the internet, which is the same exposure either way.
+
+**On a shared or publicly-reachable host, `VIZU_DEMO_MODE=1` is required, not
+optional.** This is what actually removes the risk — it disables `run:`
+execution entirely (see `src/lib/deployment.ts`), rather than merely
+containing the blast radius of code that's still running. Everything else
+in the debugger (expressions, matrix expansion, `if:` conditions,
+breakpoints, `uses:` simulation) behaves identically in demo mode; only real
+shell execution is turned off. The server itself only *warns* on startup if
+you forget (`warnIfUnsafeDeployment()` — check your deploy logs for it), it
+can't enforce this from inside the process, so setting the variable is on
+you.
+
+The rest of these are worth doing in addition, never instead:
 
 - Run as a non-root user
 - Prefer an isolated VM / container with tight network egress
 - Do not attach real production secrets or privileged cloud credentials
 - Consider IP allowlisting or basic auth if abuse becomes a problem
+
+Running with real `run:` execution enabled (`VIZU_DEMO_MODE` unset) is only
+appropriate for a single-user local install, or a host you're certain
+nobody else can reach — the local-first, single-user use case this app was
+originally built for.
