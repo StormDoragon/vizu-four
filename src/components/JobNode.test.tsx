@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ReactFlowProvider } from "@xyflow/react";
 import { describe, expect, it, vi } from "vitest";
 import { JobNode } from "./JobNode";
@@ -30,9 +31,11 @@ function renderJobNode(data: Partial<JobNodeData> & { jobId: string; laneId: str
     isActiveLaneJob: false,
     selection: null,
     busy: false,
+    focusedLaneId: null,
     onSelectStep: vi.fn(),
     onToggleBreakpoint: vi.fn(),
     onSelectLane: vi.fn(),
+    onToggleFocus: vi.fn(),
     ...data,
   };
   return render(
@@ -151,5 +154,79 @@ describe("JobNode", () => {
     });
     renderJobNode({ session, jobId: "build", laneId: l.id });
     expect(screen.getByText("✓")).toBeInTheDocument();
+  });
+
+  it("marks the node as focused and reports the toggle when 🎯 is clicked", async () => {
+    const user = userEvent.setup();
+    const laneA = lane({ id: "build::node-18", matrix: { node: 18 } });
+    const laneB = lane({ id: "build::node-20", matrix: { node: 20 } });
+    const session = makeSessionView({
+      lanes: { [laneA.id]: laneA, [laneB.id]: laneB },
+      laneOrder: [laneA.id, laneB.id],
+      workflow: {
+        name: "w",
+        on: "push",
+        jobs: { build: { id: "build", needs: [], matrix: [{ node: 18 }, { node: 20 }], steps: [] } },
+      },
+    });
+    const onToggleFocus = vi.fn();
+    renderJobNode({
+      session,
+      jobId: "build",
+      laneId: laneA.id,
+      lanesForJob: [laneA, laneB],
+      onToggleFocus,
+    });
+
+    expect(screen.queryByText("focused")).not.toBeInTheDocument();
+    await user.click(screen.getByTitle("Debug this combination only"));
+    expect(onToggleFocus).toHaveBeenCalledWith(laneA.id);
+  });
+
+  it("shows the focused badge when this node's displayed lane is the focused one", () => {
+    const l = lane();
+    const session = makeSessionView({ lanes: { [l.id]: l }, laneOrder: [l.id] });
+    renderJobNode({ session, jobId: "build", laneId: l.id, focusedLaneId: l.id });
+    expect(screen.getByText("focused")).toBeInTheDocument();
+  });
+
+  it("shows a filter box only once a job has enough combinations to need one", () => {
+    const manyLanes = Array.from({ length: 9 }, (_, i) =>
+      lane({ id: `build::node-${i}`, matrix: { node: i } })
+    );
+    const session = makeSessionView({
+      lanes: Object.fromEntries(manyLanes.map((l) => [l.id, l])),
+      laneOrder: manyLanes.map((l) => l.id),
+      workflow: {
+        name: "w",
+        on: "push",
+        jobs: {
+          build: {
+            id: "build",
+            needs: [],
+            matrix: manyLanes.map((l) => l.matrix),
+            steps: [],
+          },
+        },
+      },
+    });
+    renderJobNode({ session, jobId: "build", laneId: manyLanes[0].id, lanesForJob: manyLanes });
+    expect(screen.getByTestId("lane-filter")).toBeInTheDocument();
+  });
+
+  it("does not show a filter box for a small matrix", () => {
+    const laneA = lane({ id: "build::node-18", matrix: { node: 18 } });
+    const laneB = lane({ id: "build::node-20", matrix: { node: 20 } });
+    const session = makeSessionView({
+      lanes: { [laneA.id]: laneA, [laneB.id]: laneB },
+      laneOrder: [laneA.id, laneB.id],
+      workflow: {
+        name: "w",
+        on: "push",
+        jobs: { build: { id: "build", needs: [], matrix: [{ node: 18 }, { node: 20 }], steps: [] } },
+      },
+    });
+    renderJobNode({ session, jobId: "build", laneId: laneA.id, lanesForJob: [laneA, laneB] });
+    expect(screen.queryByTestId("lane-filter")).not.toBeInTheDocument();
   });
 });

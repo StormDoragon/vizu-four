@@ -32,6 +32,7 @@ import {
   splitBreakpoint,
 } from "@/lib/debugPrefs";
 import { findFailures, type Selection } from "./types";
+import { focusedLaneLabel } from "./focusLane";
 
 type RightTab = "inspector" | "matrix" | "playground" | "whatif";
 
@@ -61,6 +62,10 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [restoredSecretNames, setRestoredSecretNames] = useState<string[]>([]);
   const [restoredNote, setRestoredNote] = useState<string | null>(null);
   const restoreAttempted = useRef<string | null>(null);
+  // "Debug this combination only" - purely a client-side view preference
+  // (which matrix lane to highlight and steer everything else toward), not
+  // engine state, so it isn't persisted and doesn't survive a reload.
+  const [focusedLaneId, setFocusedLaneId] = useState<string | null>(null);
 
   useEffect(() => {
     getSession(sessionId)
@@ -273,6 +278,24 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     }
   }
 
+  /**
+   * "Debug this combination only": pressing it a second time on the same
+   * lane clears focus rather than re-focusing it, so the same control
+   * doubles as the "Show all combinations" action. Focusing a lane also
+   * makes it the steppable one, since focus without switching Step/Continue
+   * onto that lane wouldn't actually let you debug it.
+   */
+  async function onToggleFocus(laneId: string) {
+    if (focusedLaneId === laneId) {
+      setFocusedLaneId(null);
+      return;
+    }
+    setFocusedLaneId(laneId);
+    if (session?.activeLaneId !== laneId) {
+      await onSelectLane(laneId);
+    }
+  }
+
   async function onToggleBreakpoint(jobId: string, stepKey: string, enabled: boolean) {
     if (!session) return;
     try {
@@ -319,6 +342,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const inspectorStepIndex = selection
     ? selection.stepIndex + 1
     : (inspectorLaneId ? session.lanes[inspectorLaneId]?.pointer : undefined);
+  const focusedLabel = focusedLaneId ? focusedLaneLabel(session, focusedLaneId) : null;
 
   return (
     <div className="flex h-screen flex-col">
@@ -331,6 +355,8 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
         onJumpToFailure={jumpToFailure}
         onNewSession={onNewSession}
         onToggleHelp={() => setHelpOpen((open) => !open)}
+        focusedLabel={focusedLabel}
+        onClearFocus={() => setFocusedLaneId(null)}
       />
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {actionError && (
@@ -396,9 +422,11 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
             session={session}
             selection={selection}
             busy={busy}
+            focusedLaneId={focusedLaneId}
             onSelectStep={setSelection}
             onToggleBreakpoint={onToggleBreakpoint}
             onSelectLane={onSelectLane}
+            onToggleFocus={onToggleFocus}
           />
         </div>
 
@@ -428,7 +456,13 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
               />
             )}
             {rightTab === "matrix" && (
-              <MatrixExplorer session={session} selectedLaneId={inspectorLaneId} onSelectLane={onSelectLane} />
+              <MatrixExplorer
+                session={session}
+                selectedLaneId={inspectorLaneId}
+                onSelectLane={onSelectLane}
+                focusedLaneId={focusedLaneId}
+                onToggleFocus={onToggleFocus}
+              />
             )}
             {rightTab === "playground" && (
               <ExpressionPlayground sessionId={session.id} laneId={inspectorLaneId} />

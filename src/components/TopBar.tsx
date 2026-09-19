@@ -14,6 +14,8 @@ export function TopBar({
   onJumpToFailure,
   onNewSession,
   onToggleHelp,
+  focusedLabel,
+  onClearFocus,
 }: {
   session: SessionView;
   busy: boolean;
@@ -23,6 +25,11 @@ export function TopBar({
   onJumpToFailure: () => void;
   onNewSession: () => void;
   onToggleHelp: () => void;
+  /** "<job> — <combo>" for the lane "Debug this combination only" is
+   * focused on, or null when nothing's focused - shown here so focus is
+   * unambiguous without having to open the Matrix tab to check. */
+  focusedLabel: string | null;
+  onClearFocus: () => void;
 }) {
   const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const can = controlAvailability(session, busy);
@@ -38,6 +45,17 @@ export function TopBar({
       <span className="hidden text-xs text-ink-500 sm:inline">
         active lane: {lane ? `${lane.id} (${lane.status})` : "none"}
       </span>
+
+      {focusedLabel && (
+        <button
+          onClick={onClearFocus}
+          data-testid="focused-lane-badge"
+          title="Debugging this combination only - click to show all combinations"
+          className="flex max-w-[16rem] items-center gap-1 rounded-md border border-status-breakpoint/50 bg-status-breakpoint/10 px-3 py-1.5 text-xs font-medium text-status-breakpoint hover:bg-status-breakpoint/20"
+        >
+          🎯 <span className="truncate">{focusedLabel}</span> ✕
+        </button>
+      )}
 
       {failureCount > 0 && (
         <button

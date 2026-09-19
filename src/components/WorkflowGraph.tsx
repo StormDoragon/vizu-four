@@ -14,18 +14,23 @@ export function WorkflowGraph({
   session,
   selection,
   busy,
+  focusedLaneId,
   onSelectStep,
   onToggleBreakpoint,
   onSelectLane,
+  onToggleFocus,
 }: {
   session: SessionView;
   selection: Selection | null;
   /** A control request is in flight - passed through to JobNode so it can
    * animate whichever step is actually executing right now. */
   busy: boolean;
+  /** The lane "Debug this combination only" is currently focused on, if any. */
+  focusedLaneId: string | null;
   onSelectStep: (s: Selection) => void;
   onToggleBreakpoint: (jobId: string, stepKey: string, enabled: boolean) => void;
   onSelectLane: (laneId: string) => void;
+  onToggleFocus: (laneId: string) => void;
 }) {
   const { nodes, edges } = useMemo(() => {
     const nodes: Node<JobNodeData, "job">[] = [];
@@ -74,9 +79,11 @@ export function WorkflowGraph({
             isActiveLaneJob,
             selection,
             busy,
+            focusedLaneId,
             onSelectStep,
             onToggleBreakpoint,
             onSelectLane,
+            onToggleFocus,
           },
           draggable: false,
         });
@@ -114,9 +121,11 @@ export function WorkflowGraph({
           isActiveLaneJob: false,
           selection,
           busy,
+          focusedLaneId,
           onSelectStep,
           onToggleBreakpoint,
           onSelectLane,
+          onToggleFocus,
         },
         draggable: false,
       });
@@ -126,7 +135,7 @@ export function WorkflowGraph({
     }
 
     return { nodes, edges };
-  }, [session, selection, busy, onSelectStep, onToggleBreakpoint, onSelectLane]);
+  }, [session, selection, busy, focusedLaneId, onSelectStep, onToggleBreakpoint, onSelectLane, onToggleFocus]);
 
   return (
     <ReactFlow

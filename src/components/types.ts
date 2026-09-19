@@ -31,7 +31,12 @@ export interface JobNodeData extends Record<string, unknown> {
    * the engine resolves and clears a lane's "running" status entirely
    * server-side within one request/response cycle. */
   busy: boolean;
+  /** The lane "Debug this combination only" was pressed on, if any - purely
+   * client-side view state (see focusLane.ts), not persisted or sent to the
+   * engine. */
+  focusedLaneId: string | null;
   onSelectStep: (s: Selection) => void;
   onToggleBreakpoint: (jobId: string, stepKey: string, enabled: boolean) => void;
   onSelectLane: (laneId: string) => void;
+  onToggleFocus: (laneId: string) => void;
 }

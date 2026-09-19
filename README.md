@@ -44,7 +44,13 @@ own default. Windows/macOS runner emulation isn't implemented (see Scope).
   the step at the current position.
 - **Matrix explorer** — every `strategy.matrix` combination (after
   `include`/`exclude` expansion) is its own independent, independently
-  steppable lane; pick one to focus and debug.
+  steppable lane; pick one to focus and debug. A search box appears once a
+  matrix has enough combinations to need one. **"Debug this combination
+  only"** (🎯, on every lane row in the job node and the Matrix tab) makes
+  that lane the steppable one and dims every sibling combination, with the
+  focus visible at a glance from the job node's border, the Matrix tab, and
+  a dismissible top-bar badge — no engine change, purely a client-side view
+  preference.
 - **Expression playground** — evaluate any `${{ }}`-free expression against
   the active lane's real, current context.
 - **What-If** — override env vars, `vars`, or provide local secret values at
