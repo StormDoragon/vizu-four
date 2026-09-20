@@ -9,6 +9,7 @@ import {
   controlRunAll,
   controlStep,
   createSession,
+  grantExecutionConsent,
   setBreakpoint,
   setMockOutputs,
 } from "./session";
@@ -1409,5 +1410,57 @@ jobs:
     const second = await controlStep(s, s.laneOrder[0]);
     expect(second.stdout).toContain("***");
     expect(second.stdout).not.toContain(SECRET);
+  });
+});
+
+describe("shared sessions need consent before executing", () => {
+  function sharedSession() {
+    const { workflow } = parseWorkflow(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    const s = createSession({
+      workflow: workflow!,
+      workspaceDir,
+      ownerId: "test-owner",
+      awaitingExecutionConsent: true,
+    });
+    createdSessionIds.push(s.id);
+    return s;
+  }
+
+  it("refuses every control path until consent is given", async () => {
+    const s = sharedSession();
+    const lane = s.laneOrder[0];
+    await expect(controlStep(s, lane)).rejects.toThrow(EngineError);
+    await expect(controlContinue(s, lane)).rejects.toThrow(/hasn't been allowed to run/);
+    await expect(controlRunAll(s)).rejects.toThrow(/hasn't been allowed to run/);
+    expect(s.lanes[lane].steps[0].status).toBe("pending");
+  });
+
+  it("runs once consent is granted", async () => {
+    const s = sharedSession();
+    grantExecutionConsent(s);
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.conclusion).toBe("success");
+  });
+
+  it("does not gate a session the visitor created themselves", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    expect(s.awaitingExecutionConsent).toBe(false);
+    await expect(controlStep(s, s.laneOrder[0])).resolves.toBeTruthy();
   });
 });

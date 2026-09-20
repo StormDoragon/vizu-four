@@ -32,6 +32,9 @@ interface CreateSessionBody {
    * client must explicitly send this, separate from `sourcePath`, which is
    * purely cosmetic (used in parse-error messages). */
   workingTreeDir?: string;
+  /** Set by the share-link opener: the session is created but may not run
+   * until the visitor consents. */
+  fromSharedLink?: boolean;
 }
 
 // There is intentionally no GET here. Every session lives in one process-
@@ -44,12 +47,15 @@ export async function POST(req: Request) {
   warnIfUnsafeDeployment();
   const body = await readJsonBody<CreateSessionBody>(req);
   if (!body) return errorResponse(400, "Invalid JSON body");
-  const { workflowYaml, sourcePath, config, workingTreeDir } = body;
+  const { workflowYaml, sourcePath, config, workingTreeDir, fromSharedLink } = body;
   if (typeof workflowYaml !== "string" || workflowYaml.trim() === "") {
     return errorResponse(400, "'workflowYaml' is required");
   }
   if (workflowYaml.length > MAX_WORKFLOW_YAML_LENGTH) {
     return errorResponse(400, `'workflowYaml' exceeds the ${MAX_WORKFLOW_YAML_LENGTH}-character limit`);
+  }
+  if (fromSharedLink !== undefined && typeof fromSharedLink !== "boolean") {
+    return errorResponse(400, "'fromSharedLink' must be a boolean");
   }
   if (sourcePath !== undefined && typeof sourcePath !== "string") {
     return errorResponse(400, "'sourcePath' must be a string");
@@ -123,6 +129,7 @@ export async function POST(req: Request) {
         workflow,
         workspaceDir,
         usesRealWorkspace: realWorkspaceDir !== undefined,
+        awaitingExecutionConsent: fromSharedLink === true,
         ownerId,
         config,
         parseIssues: issues,

@@ -81,6 +81,41 @@ describe("expandMatrix", () => {
     expect(combos).not.toContainEqual({ os: "windows-latest", node: 16 });
   });
 
+  it("lets include add back a combination exclude removed", () => {
+    // GitHub: "All include combinations are processed after exclude. This
+    // allows you to use include to add back combinations that were
+    // previously excluded." Running include first produced nothing here.
+    const combos = expandMatrix({
+      axes: { os: ["ubuntu-latest"] },
+      exclude: [{ os: "ubuntu-latest" }],
+      include: [{ os: "ubuntu-latest" }],
+    });
+    expect(combos).toEqual([{ os: "ubuntu-latest" }]);
+  });
+
+  it("excludes before include decides what it matches", () => {
+    // `node: 18` is removed, so the include entry naming it matches nothing
+    // and is added as its own row rather than merging into a dropped combo.
+    const combos = expandMatrix({
+      axes: { os: ["ubuntu-latest", "windows-latest"], node: [18, 20] },
+      exclude: [{ node: 18 }],
+      include: [{ node: 18, extra: "restored" }],
+    });
+    expect(combos).toHaveLength(3);
+    expect(combos).toContainEqual({ os: "ubuntu-latest", node: 20 });
+    expect(combos).toContainEqual({ os: "windows-latest", node: 20 });
+    expect(combos).toContainEqual({ node: 18, extra: "restored" });
+  });
+
+  it("still merges an include into combinations that survived exclusion", () => {
+    const combos = expandMatrix({
+      axes: { os: ["ubuntu-latest", "windows-latest"] },
+      exclude: [{ os: "windows-latest" }],
+      include: [{ os: "ubuntu-latest", extra: "flag" }],
+    });
+    expect(combos).toEqual([{ os: "ubuntu-latest", extra: "flag" }]);
+  });
+
   it("matches GitHub's documented fruit/animal include example", () => {
     // From GitHub Actions docs: "Expanding configurations" example.
     const def: MatrixDefinition = {

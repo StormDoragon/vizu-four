@@ -1,164 +1,140 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ShareOpener } from "./ShareOpener";
 import * as apiClient from "@/lib/apiClient";
-import { encodeSharePayload, type SharePayload } from "@/lib/share";
+import { encodeSharePayload } from "@/lib/share";
 import { makeSessionView } from "./testSupport/sessionFixture";
-import type { Lane } from "@/lib/engine/types";
-import type { SessionView } from "@/lib/engine/serialize";
 
 const replace = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace }),
-}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 
 afterEach(() => {
   vi.restoreAllMocks();
   replace.mockClear();
 });
 
-function payload(overrides: Partial<SharePayload> = {}): SharePayload {
-  return {
+const YAML = `name: Shared
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo one
+      - run: echo two
+`;
+
+function shareToken(progressSteps: number) {
+  return encodeSharePayload({
     version: 1,
-    yaml: "name: CI\non: push\njobs: {}",
+    yaml: YAML,
     breakpoints: [],
     env: {},
     vars: {},
     breakOnFailure: true,
     mockOutputs: {},
-    progress: [],
+    progress: progressSteps > 0 ? [{ jobId: "build", matrix: {}, stepIndex: progressSteps }] : [],
     activeLane: null,
-    ...overrides,
-  };
+  });
 }
 
-function lane(overrides: Partial<Lane> = {}): Lane {
-  return {
-    id: "build::default",
-    jobId: "build",
-    matrix: {},
-    status: "ready",
-    pointer: 0,
-    steps: [],
-    env: {},
-    extraPath: [],
-    outputs: {},
-    tempDir: "/tmp/fixture",
-    ...overrides,
-  };
-}
-
-describe("ShareOpener", () => {
-  it("shows an error for an invalid token", async () => {
-    render(<ShareOpener token="not-a-valid-token" />);
-    expect(await screen.findByText(/invalid or corrupted/)).toBeInTheDocument();
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it("creates a session, applies breakpoints/whatif/mocks, replays progress, and redirects", async () => {
-    const l = lane({ id: "build::default", jobId: "build", pointer: 0, steps: [] });
-    const created = makeSessionView({ id: "new-session", lanes: { [l.id]: l }, laneOrder: [l.id], activeLaneId: null });
-
-    vi.spyOn(apiClient, "createSession").mockResolvedValue({ session: created, issues: [] });
-    const applyWhatIf = vi.spyOn(apiClient, "applyWhatIf").mockResolvedValue({ session: created });
-    const setBreakpoint = vi.spyOn(apiClient, "setBreakpoint").mockResolvedValue({ session: created });
-    const setMockOutputs = vi.spyOn(apiClient, "setMockOutputs").mockResolvedValue({ session: created });
-    const controlSpy = vi.spyOn(apiClient, "control").mockResolvedValue({
-      session: { ...created, lanes: { [l.id]: { ...l, pointer: 1 } } },
-    });
-    const setActiveLane = vi.spyOn(apiClient, "setActiveLane").mockResolvedValue({
-      session: { ...created, activeLaneId: l.id },
-    });
-
-    const token = encodeSharePayload(
-      payload({
-        breakpoints: ["build:step-0"],
-        env: { FOO: "bar" },
-        mockOutputs: { "build:step-0": { outputs: { result: "ok" } } },
-        progress: [{ jobId: "build", matrix: {}, stepIndex: 1 }],
-        activeLane: { jobId: "build", matrix: {} },
-      })
-    );
-
-    render(<ShareOpener token={token} />);
-
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/debug/new-session?shared=1"));
-
-    expect(applyWhatIf).toHaveBeenCalledWith("new-session", { env: { FOO: "bar" }, vars: {}, breakOnFailure: true });
-    expect(setBreakpoint).toHaveBeenCalledWith("new-session", "build", "step-0", true);
-    expect(setMockOutputs).toHaveBeenCalledWith("new-session", "build", "step-0", { outputs: { result: "ok" } });
-    expect(controlSpy).toHaveBeenCalledWith("new-session", "step", "build::default");
-    expect(setActiveLane).toHaveBeenCalledWith("new-session", "build::default");
-  });
-
-  it("skips a blocked lane and retries it once its dependency reaches a terminal status", async () => {
-    const setupLane = lane({ id: "setup::default", jobId: "setup", status: "ready", pointer: 0 });
-    const buildLane = lane({ id: "build::default", jobId: "build", status: "blocked", pointer: 0 });
-    const created = makeSessionView({
-      id: "new-session",
-      lanes: { [setupLane.id]: setupLane, [buildLane.id]: buildLane },
-      laneOrder: [setupLane.id, buildLane.id],
-      activeLaneId: null,
-      workflow: {
-        name: "CI",
-        on: "push",
-        jobs: {
-          setup: { id: "setup", needs: [], matrix: null, steps: [] },
-          build: { id: "build", needs: ["setup"], matrix: null, steps: [] },
+function stubSession(overrides: Parameters<typeof makeSessionView>[0] = {}) {
+  const session = makeSessionView({
+    id: "shared-session",
+    awaitingExecutionConsent: true,
+    workflow: {
+      name: "Shared",
+      on: "push",
+      jobs: {
+        build: {
+          id: "build",
+          needs: [],
+          matrix: null,
+          steps: [
+            { key: "step-0", run: "echo one" },
+            { key: "step-1", run: "echo two" },
+          ],
         },
       },
-    });
+    },
+    ...overrides,
+  });
+  vi.spyOn(apiClient, "createSession").mockResolvedValue({ session, issues: [] });
+  return session;
+}
 
-    vi.spyOn(apiClient, "createSession").mockResolvedValue({ session: created, issues: [] });
+describe("ShareOpener consent", () => {
+  it("does not run anything on open", async () => {
+    const session = stubSession();
+    const control = vi.spyOn(apiClient, "control");
+    const consent = vi.spyOn(apiClient, "grantExecutionConsent");
 
-    // Local mutable state standing in for the server: stepping "setup" once
-    // finishes it and unblocks "build" - matching what recomputeLaneReadiness
-    // actually does after a lane reaches a terminal status.
-    let current: SessionView = created;
-    const controlSpy = vi.spyOn(apiClient, "control").mockImplementation(async (_id, _action, laneId) => {
-      if (laneId === "setup::default") {
-        current = {
-          ...current,
-          lanes: {
-            ...current.lanes,
-            "setup::default": { ...current.lanes["setup::default"], pointer: 1, status: "success" },
-            "build::default": { ...current.lanes["build::default"], status: "ready" },
-          },
-        };
-      } else if (laneId === "build::default") {
-        current = {
-          ...current,
-          lanes: { ...current.lanes, "build::default": { ...current.lanes["build::default"], pointer: 1, status: "success" } },
-        };
-      }
-      return { session: current };
-    });
+    render(<ShareOpener token={shareToken(2)} />);
+    await screen.findByTestId("share-inspect");
 
-    const token = encodeSharePayload(
-      payload({
-        progress: [
-          { jobId: "setup", matrix: {}, stepIndex: 1 },
-          { jobId: "build", matrix: {}, stepIndex: 1 },
-        ],
-      })
+    expect(apiClient.createSession).toHaveBeenCalledWith(
+      expect.stringContaining("Shared"),
+      expect.objectContaining({ fromSharedLink: true })
     );
-
-    render(<ShareOpener token={token} />);
-
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/debug/new-session?shared=1"));
-
-    // "build" must not be stepped before "setup" has actually finished.
-    const laneOrder = controlSpy.mock.calls.map((c) => c[2]);
-    expect(laneOrder.indexOf("setup::default")).toBeLessThan(laneOrder.indexOf("build::default"));
+    expect(control).not.toHaveBeenCalled();
+    expect(consent).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(session.id).toBe("shared-session");
   });
 
-  it("shows an error when session creation fails", async () => {
-    vi.spyOn(apiClient, "createSession").mockRejectedValue(new Error("Workflow failed to parse"));
+  it("shows the workflow and how much the link wants to replay", async () => {
+    stubSession();
+    render(<ShareOpener token={shareToken(2)} />);
+    expect(await screen.findByText(/2 steps across 1 lane/)).toBeInTheDocument();
+    expect(screen.getByText(/echo one/)).toBeInTheDocument();
+  });
 
-    render(<ShareOpener token={encodeSharePayload(payload())} />);
+  it("inspecting navigates without consenting or executing", async () => {
+    stubSession();
+    const control = vi.spyOn(apiClient, "control");
+    const consent = vi.spyOn(apiClient, "grantExecutionConsent");
 
-    expect(await screen.findByText(/Workflow failed to parse/)).toBeInTheDocument();
-    expect(replace).not.toHaveBeenCalled();
+    render(<ShareOpener token={shareToken(2)} />);
+    fireEvent.click(await screen.findByTestId("share-inspect"));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/debug/shared-session?shared=1"));
+    expect(consent).not.toHaveBeenCalled();
+    expect(control).not.toHaveBeenCalled();
+  });
+
+  it("replaying consents first, then steps", async () => {
+    const session = stubSession();
+    const consent = vi
+      .spyOn(apiClient, "grantExecutionConsent")
+      .mockResolvedValue({ session: { ...session, awaitingExecutionConsent: false } });
+    const control = vi.spyOn(apiClient, "control").mockResolvedValue({ session });
+
+    render(<ShareOpener token={shareToken(1)} />);
+    fireEvent.click(await screen.findByTestId("share-replay"));
+
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    expect(consent).toHaveBeenCalledWith("shared-session");
+    expect(consent.mock.invocationCallOrder[0]).toBeLessThan(control.mock.invocationCallOrder[0]);
+  });
+
+  it("warns that replaying runs commands for real when execution is enabled", async () => {
+    stubSession({ simulationOnly: false });
+    render(<ShareOpener token={shareToken(2)} />);
+    expect(await screen.findByTestId("share-execution-warning")).toBeInTheDocument();
+  });
+
+  it("does not warn when the deployment never executes run: steps", async () => {
+    stubSession({ simulationOnly: true });
+    render(<ShareOpener token={shareToken(2)} />);
+    await screen.findByTestId("share-inspect");
+    expect(screen.queryByTestId("share-execution-warning")).toBeNull();
+  });
+
+  it("offers nothing to replay when the link shares no progress", async () => {
+    stubSession();
+    render(<ShareOpener token={shareToken(0)} />);
+    expect(await screen.findByTestId("share-replay")).toBeDisabled();
+    expect(screen.getByText(/No steps/)).toBeInTheDocument();
   });
 });

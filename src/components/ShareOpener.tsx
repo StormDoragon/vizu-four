@@ -7,6 +7,7 @@ import {
   applyWhatIf,
   control,
   createSession,
+  grantExecutionConsent,
   setActiveLane,
   setBreakpoint,
   setMockOutputs,
@@ -35,7 +36,12 @@ function findLane(session: SessionView, jobId: string, matrix: MatrixCombo) {
  * shared - `needs`-blocked lanes are skipped and retried each pass, since
  * they can only unblock once their own dependency lanes reach a terminal
  * status (same as normal execution; see comment on SharePayload.progress). */
-async function reconstruct(payload: SharePayload, session: SessionView): Promise<SessionView> {
+/** Everything a link carries that does not run anything: overrides,
+ * breakpoints and mocked step results. Safe to apply on open. */
+async function applyShareConfig(
+  payload: SharePayload,
+  session: SessionView
+): Promise<SessionView> {
   let latest = session;
 
   const hasWhatIf =
@@ -59,6 +65,22 @@ async function reconstruct(payload: SharePayload, session: SessionView): Promise
     latest = (await setMockOutputs(latest.id, parts.jobId, parts.stepKey, mock)).session;
   }
 
+  return latest;
+}
+
+/** Focuses the lane the link was shared from. Selecting a lane runs nothing. */
+async function focusSharedLane(
+  payload: SharePayload,
+  session: SessionView
+): Promise<SessionView> {
+  if (!payload.activeLane) return session;
+  const lane = findLane(session, payload.activeLane.jobId, payload.activeLane.matrix);
+  return lane ? (await setActiveLane(session.id, lane.id)).session : session;
+}
+
+async function reconstruct(payload: SharePayload, session: SessionView): Promise<SessionView> {
+  let latest = await applyShareConfig(payload, session);
+
   const targets = payload.progress
     .map((p) => ({ ...p, laneId: findLane(latest, p.jobId, p.matrix)?.id }))
     .filter((t): t is typeof t & { laneId: string } => t.laneId !== undefined);
@@ -77,19 +99,24 @@ async function reconstruct(payload: SharePayload, session: SessionView): Promise
     }
   }
 
-  if (payload.activeLane) {
-    const lane = findLane(latest, payload.activeLane.jobId, payload.activeLane.matrix);
-    if (lane) latest = (await setActiveLane(latest.id, lane.id)).session;
-  }
-
-  return latest;
+  return focusSharedLane(payload, latest);
 }
 
 export function ShareOpener({ token }: { token: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [parseIssues, setParseIssues] = useState<ParseIssue[]>([]);
+  const [prepared, setPrepared] = useState<{
+    payload: SharePayload;
+    session: SessionView;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
 
+  // Creating the session parses the workflow and applies the link's
+  // breakpoints, overrides and mocks - none of which execute anything. The
+  // replay is what runs steps, and it waits for an explicit choice: the
+  // link's author is not necessarily someone the recipient trusts with
+  // shell commands on their own machine.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -99,12 +126,11 @@ export function ShareOpener({ token }: { token: string }) {
         return;
       }
       try {
-        const { session, issues } = await createSession(payload.yaml);
+        const { session, issues } = await createSession(payload.yaml, { fromSharedLink: true });
         if (cancelled) return;
         saveWorkflowSource(session.workflowHash, payload.yaml);
         setParseIssues(issues);
-        const reconstructed = await reconstruct(payload, session);
-        if (!cancelled) router.replace(`/debug/${reconstructed.id}?shared=1`);
+        setPrepared({ payload, session });
       } catch (err) {
         if (!cancelled) setError((err as Error).message || "Failed to open the shared session.");
       }
@@ -112,8 +138,30 @@ export function ShareOpener({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  async function open(replay: boolean) {
+    if (!prepared) return;
+    setBusy(true);
+    try {
+      let session = prepared.session;
+      if (replay) {
+        // Server-side too: the engine refuses to run an unconsented shared
+        // session, so skipping this UI does not skip the decision.
+        session = (await grantExecutionConsent(session.id)).session;
+        session = await reconstruct(prepared.payload, session);
+      } else {
+        session = await focusSharedLane(
+          prepared.payload,
+          await applyShareConfig(prepared.payload, session)
+        );
+      }
+      router.replace(`/debug/${session.id}?shared=1`);
+    } catch (err) {
+      setError((err as Error).message || "Failed to open the shared session.");
+      setBusy(false);
+    }
+  }
 
   if (error) {
     return (
@@ -133,9 +181,94 @@ export function ShareOpener({ token }: { token: string }) {
     );
   }
 
+  if (!prepared) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-ink-500">
+        Opening shared session…
+      </div>
+    );
+  }
+
+  const { payload, session } = prepared;
+  const stepsToReplay = payload.progress.reduce((n, p) => n + p.stepIndex, 0);
+  const lanesToReplay = payload.progress.filter((p) => p.stepIndex > 0).length;
+  const runsForReal = !session.simulationOnly;
+
   return (
-    <div className="flex h-screen items-center justify-center text-sm text-ink-500">
-      Reconstructing shared session…
-    </div>
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-5 px-6 py-10">
+      <div>
+        <h1 className="text-xl font-semibold text-ink">
+          {session.workflow.name ?? "Shared workflow"}
+        </h1>
+        <p className="mt-1 text-sm text-ink-400">
+          Someone shared this workflow with you. Nothing has run yet.
+        </p>
+      </div>
+
+      {parseIssues.length > 0 && (
+        <ul className="space-y-1 rounded-md border border-bg-border bg-bg-panel p-3 text-sm">
+          {parseIssues.map((issue, i) => (
+            <li key={i} className={issue.severity === "error" ? "text-red-300" : "text-yellow-300"}>
+              [{issue.severity}] {issue.message}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <section className="rounded-lg border border-bg-border bg-bg-panel p-4 text-sm">
+        <h2 className="text-sm font-semibold text-ink">What this link asks to replay</h2>
+        <p className="mt-1 text-ink-300">
+          {stepsToReplay === 0
+            ? "No steps - the link shares the workflow and its setup only."
+            : `${stepsToReplay} step${stepsToReplay === 1 ? "" : "s"} across ${lanesToReplay} lane${
+                lanesToReplay === 1 ? "" : "s"
+              }.`}
+        </p>
+        <p className="mt-2 text-xs text-ink-500">
+          Breakpoints, What-If overrides and mocked step results from the link are applied either
+          way - none of them execute anything.
+        </p>
+      </section>
+
+      <pre className="max-h-72 overflow-auto rounded-lg border border-bg-border bg-bg-raised p-3 font-mono text-xs text-ink-200">
+        {payload.yaml}
+      </pre>
+
+      {runsForReal && stepsToReplay > 0 && (
+        <div
+          data-testid="share-execution-warning"
+          className="rounded-md border border-status-failure/50 bg-status-failure/10 p-3 text-sm text-red-300"
+        >
+          <strong>Replaying runs this workflow&apos;s <code>run:</code> steps for real</strong> on
+          this machine, as this process, because real execution is enabled here. Read the workflow
+          above before choosing to replay it.
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          onClick={() => open(false)}
+          disabled={busy}
+          data-testid="share-inspect"
+          className="rounded-md bg-status-running px-5 py-2.5 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        >
+          Inspect without running
+        </button>
+        <button
+          onClick={() => open(true)}
+          disabled={busy || stepsToReplay === 0}
+          data-testid="share-replay"
+          className="rounded-md border border-bg-border px-5 py-2.5 font-medium text-ink-200 hover:border-status-running hover:text-ink disabled:opacity-50"
+        >
+          {busy ? "Working…" : "Replay steps"}
+        </button>
+        <Link
+          href="/"
+          className="self-center text-sm text-status-running hover:underline"
+        >
+          ← Back home
+        </Link>
+      </div>
+    </main>
   );
 }

@@ -95,6 +95,13 @@ export interface DebugSession {
    * under the session's temp root instead of inside `workspaceDir`: this is
    * someone's real working tree, not a throwaway copy. */
   usesRealWorkspace: boolean;
+  /** True while a session created from a share link has not been given
+   * permission to execute. A link carries someone else's workflow and the
+   * progress to replay, and opening one used to run both immediately - on a
+   * local install with real execution on, that is a stranger's shell
+   * commands on a click. Enforced in the control route, not just the UI,
+   * because a confirmation the client can skip is not a control. */
+  awaitingExecutionConsent: boolean;
   config: RunConfig;
   breakpoints: Set<string>;
   breakOnFailure: boolean;

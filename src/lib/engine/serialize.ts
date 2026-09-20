@@ -73,6 +73,9 @@ export interface SessionView {
    * directory on disk the user opted into, not a disposable scratch dir -
    * the UI shows this so a real write is never mistaken for a throwaway one. */
   usesRealWorkspace: boolean;
+  /** True when this session came from a share link and has not been allowed
+   * to execute yet - the UI offers inspecting it without running. */
+  awaitingExecutionConsent: boolean;
 }
 
 /**
@@ -155,5 +158,6 @@ export function toSessionView(session: DebugSession): SessionView {
     workflowHash: createHash("sha256").update(session.workflow.raw).digest("hex").slice(0, 16),
     simulationOnly: isSimulationOnly(),
     usesRealWorkspace: session.usesRealWorkspace,
+    awaitingExecutionConsent: session.awaitingExecutionConsent,
   };
 }

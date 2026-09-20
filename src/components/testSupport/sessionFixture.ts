@@ -87,6 +87,7 @@ export function makeSessionView(overrides: Partial<SessionView> = {}): SessionVi
     workflowHash: "fixture-hash",
     simulationOnly: false,
     usesRealWorkspace: false,
+    awaitingExecutionConsent: false,
     ...overrides,
   };
 }

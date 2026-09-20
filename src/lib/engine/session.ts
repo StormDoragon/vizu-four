@@ -99,6 +99,9 @@ export interface CreateSessionOptions {
   usesRealWorkspace?: boolean;
   /** Owner cookie value of the visitor creating this session. */
   ownerId: string;
+  /** True when this session came from a share link, so it must not execute
+   * anything until the visitor says so. */
+  awaitingExecutionConsent?: boolean;
   config?: Partial<RunConfig>;
   /** Non-fatal warnings from the parse that produced `workflow`, carried
    * onto the session so they survive past the request that created it. */
@@ -167,6 +170,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     workflow: opts.workflow,
     workspaceDir: opts.workspaceDir,
     usesRealWorkspace: opts.usesRealWorkspace ?? false,
+    awaitingExecutionConsent: opts.awaitingExecutionConsent ?? false,
     config,
     breakpoints: new Set(),
     breakOnFailure: true,
@@ -539,6 +543,22 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
   return record;
 }
 
+/** Nothing executes while a shared session is unconsented - checked here so
+ * every control path is covered by construction rather than by each route
+ * remembering to ask. */
+function requireExecutionConsent(session: DebugSession): void {
+  if (session.awaitingExecutionConsent) {
+    throw new EngineError(
+      "This session came from a share link and hasn't been allowed to run yet. Choose \"Replay steps\" to run it."
+    );
+  }
+}
+
+export function grantExecutionConsent(session: DebugSession): void {
+  session.awaitingExecutionConsent = false;
+  session.revision++;
+}
+
 function requireLane(session: DebugSession, laneId: string): Lane {
   const lane = session.lanes[laneId];
   if (!lane) throw new EngineError(`Unknown lane '${laneId}'`);
@@ -546,6 +566,7 @@ function requireLane(session: DebugSession, laneId: string): Lane {
 }
 
 export async function controlStep(session: DebugSession, laneId: string): Promise<StepRunRecord> {
+  requireExecutionConsent(session);
   const lane = requireLane(session, laneId);
   if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
   // Checked and flipped synchronously (no `await` between the check and the
@@ -571,6 +592,7 @@ async function runLaneLoop(
   laneId: string,
   opts: { respectBreakpoints: boolean; respectFailureStop: boolean }
 ): Promise<void> {
+  requireExecutionConsent(session);
   const lane = requireLane(session, laneId);
   if (lane.status === "blocked") throw new EngineError("Lane is blocked on 'needs'");
   // Same synchronous check-then-flip guard as controlStep - see comment there.
@@ -623,6 +645,7 @@ export function controlRunToEnd(session: DebugSession, laneId: string): Promise<
 
 /** Drives every lane in the graph to completion, ignoring breakpoints entirely. */
 export async function controlRunAll(session: DebugSession): Promise<void> {
+  requireExecutionConsent(session);
   recomputeLaneReadiness(session);
   let progressed = true;
   while (progressed) {

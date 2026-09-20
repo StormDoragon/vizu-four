@@ -67,15 +67,21 @@ function cartesianProduct(axes: Record<string, JsonValue[]>): MatrixCombo[] {
  * include/exclude semantics:
  *
  *  1. Build the cross product of the plain axes.
- *  2. Apply `include` entries in order: an entry is merged into every base
- *     combo whose *original axis keys* it doesn't contradict; if it matches
- *     none, it becomes a new standalone combination. Include entries only
- *     ever match against the original cross-product, never against other
- *     include-created standalone combos (this is what allows two separate
- *     include entries that share a key to produce two distinct rows rather
- *     than merging into each other).
- *  3. Apply `exclude` entries against the *resulting* list: any combo whose
- *     keys are all present and equal to an exclude entry's keys is dropped.
+ *  2. Apply `exclude` entries to it: any combo whose keys are all present
+ *     and equal to an exclude entry's keys is dropped.
+ *  3. Apply `include` entries in order, matched against what survived: an
+ *     entry is merged into every remaining combo whose *original axis keys*
+ *     it doesn't contradict; if it matches none, it becomes a new standalone
+ *     combination. Include entries only ever match against that post-exclude
+ *     snapshot, never against combos other include entries created, which is
+ *     what allows two include entries sharing a key to produce two distinct
+ *     rows rather than the second overwriting the first.
+ *
+ * The order matters and is the one GitHub documents - "all include
+ * combinations are processed after exclude" - because it is what lets an
+ * include add back a combination exclude removed. Running include first
+ * instead made `exclude: [os: X]` followed by `include: [os: X]` produce
+ * nothing, where GitHub produces one row.
  */
 export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
   if (!def) return [];
@@ -86,19 +92,35 @@ export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
     throw new Error(`Matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations`);
   }
   const originalKeys = new Set(Object.keys(def.axes));
+
+  const base = cartesianProduct(def.axes);
   // Pristine snapshot used ONLY to decide which combos an include entry
-  // matches. Include entries never match combos created by other include
-  // entries (only the original cross product), which is what allows two
-  // include entries sharing a key to produce two distinct rows instead of
-  // the second silently overwriting the first (see the include-only test).
-  const originalBase = cartesianProduct(def.axes);
-  const combos: MatrixCombo[] = originalBase.map((c) => ({ ...c }));
+  // matches: what the cross product left after exclusion. Include entries
+  // never match combos created by other include entries, which is what
+  // allows two include entries sharing a key to produce two distinct rows
+  // instead of the second silently overwriting the first (see the
+  // include-only test). An entry matching nothing here - because exclude
+  // removed what it would have matched - is added back as its own row.
+  const afterExclude =
+    (def.exclude ?? []).length === 0
+      ? base
+      : base.filter(
+          (combo) =>
+            !(def.exclude ?? []).some((excludeEntry) => {
+              const keys = Object.keys(excludeEntry);
+              if (keys.length === 0) return false;
+              return keys.every(
+                (k) => k in combo && valuesEqual(combo[k], excludeEntry[k])
+              );
+            })
+        );
+  const combos: MatrixCombo[] = afterExclude.map((c) => ({ ...c }));
 
   for (const includeEntry of def.include ?? []) {
     const relevantKeys = Object.keys(includeEntry).filter((k) =>
       originalKeys.has(k)
     );
-    const matchIndexes = originalBase.reduce<number[]>((acc, combo, i) => {
+    const matchIndexes = afterExclude.reduce<number[]>((acc, combo, i) => {
       if (relevantKeys.every((k) => valuesEqual(combo[k], includeEntry[k]))) {
         acc.push(i);
       }
@@ -113,19 +135,7 @@ export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
     }
   }
 
-  const excluded = (def.exclude ?? []).length === 0
-    ? combos
-    : combos.filter((combo) => {
-        return !(def.exclude ?? []).some((excludeEntry) => {
-          const keys = Object.keys(excludeEntry);
-          if (keys.length === 0) return false;
-          return keys.every(
-            (k) => k in combo && valuesEqual(combo[k], excludeEntry[k])
-          );
-        });
-      });
-
-  return excluded;
+  return combos;
 }
 
 /** Short, stable, human-readable label for a combo, e.g. `os=ubuntu-latest, node=18`. */

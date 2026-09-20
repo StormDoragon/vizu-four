@@ -69,7 +69,7 @@ export async function listWorkspaceWorkflows(directory: string): Promise<Workspa
 
 export async function createSession(
   workflowYaml: string,
-  options?: { sourcePath?: string; workingTreeDir?: string }
+  options?: { sourcePath?: string; workingTreeDir?: string; fromSharedLink?: boolean }
 ): Promise<{ session: SessionView; issues: ParseIssue[] }> {
   return request("/api/sessions", {
     method: "POST",
@@ -77,8 +77,14 @@ export async function createSession(
       workflowYaml,
       sourcePath: options?.sourcePath,
       workingTreeDir: options?.workingTreeDir,
+      fromSharedLink: options?.fromSharedLink,
     }),
   });
+}
+
+/** Allows a session opened from a share link to execute. */
+export async function grantExecutionConsent(id: string): Promise<{ session: SessionView }> {
+  return request(`/api/sessions/${id}/consent`, { method: "POST" });
 }
 
 export async function getSession(id: string): Promise<{ session: SessionView }> {
