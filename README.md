@@ -28,6 +28,9 @@ intermittently "disappear" mid-debug. One free-tier tradeoff: the instance
 spins down after ~15 minutes idle, so the first request after a quiet
 period can take up to a minute to wake it back up.
 
+(An earlier `*.vercel.app` link for this project has been paused and is no
+longer live — the Render URL above is the only public demo.)
+
 ## Quick start
 
 ```bash
