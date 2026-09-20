@@ -2,30 +2,38 @@ const MASK = "***";
 const MIN_MASKABLE_LENGTH = 3; // avoid masking trivially short/common substrings
 
 /**
+ * The set of values to redact. Deliberately a list of values, not a map of
+ * name to value: masking never cares what a secret is called, and the one
+ * time this was a map it had to invent names for retired values, which
+ * collided with real ones - a secret actually named `__retired_0` was
+ * dropped from the set and printed in full.
+ */
+export type SecretValues = readonly string[];
+
+/**
  * Values to redact: everything that is a secret now, plus everything that
  * was one earlier in this session.
  *
- * Masking stored data against only the current map lets a secret escape by
- * being removed - What-If deletes it, and every snapshot and record that
- * still holds the old value is suddenly matched against a map that no
- * longer contains it. Retired values are never dropped, so a value that was
- * ever secret here stays redacted. Masking something that is no longer
- * secret costs nothing; the reverse does not.
+ * Masking stored data against only the current secrets lets a secret escape
+ * by being removed - What-If deletes it, and every snapshot and record that
+ * still holds the old value is suddenly matched against a set that no longer
+ * contains it. Retired values are never dropped, so a value that was ever
+ * secret here stays redacted. Masking something that is no longer secret
+ * costs nothing; the reverse does not.
+ *
+ * This is a read-side view. It is never the thing to write a secret change
+ * into - that is `session.config.secrets`, the live map.
  */
 export function secretsToMask(
   current: Record<string, string>,
   retired: readonly string[]
-): Record<string, string> {
-  if (retired.length === 0) return current;
-  return {
-    ...current,
-    ...Object.fromEntries(retired.map((value, i) => [`__retired_${i}`, value])),
-  };
+): SecretValues {
+  return [...Object.values(current), ...retired];
 }
 
-function maskableValues(secrets: Record<string, string>): string[] {
+function maskableValues(secrets: SecretValues): string[] {
   return (
-    Object.values(secrets)
+    [...new Set(secrets)]
       .filter((v) => v && v.length >= MIN_MASKABLE_LENGTH)
       // Mask longer values first so a short secret that's a substring of a
       // longer one doesn't fragment the longer value's mask.
@@ -39,7 +47,7 @@ function maskableValues(secrets: Record<string, string>): string[] {
  * skipped since masking them would redact unrelated text (GitHub applies a
  * similar minimum-length rule).
  */
-export function maskSecrets(text: string, secrets: Record<string, string>): string {
+export function maskSecrets(text: string, secrets: SecretValues): string {
   let out = text;
   for (const value of maskableValues(secrets)) {
     if (!out.includes(value)) continue;
@@ -87,7 +95,7 @@ function redactionRanges(text: string, values: string[]): Range[] {
  */
 export function maskChunks<T extends { text: string; stream?: string }>(
   chunks: T[],
-  secrets: Record<string, string>
+  secrets: SecretValues
 ): T[] {
   const values = maskableValues(secrets);
   if (values.length === 0 || chunks.length === 0) return chunks;
@@ -158,7 +166,7 @@ export class StreamMasker {
   private readonly values: string[];
   private readonly longest: number;
 
-  constructor(private readonly secrets: Record<string, string>) {
+  constructor(private readonly secrets: SecretValues) {
     this.values = maskableValues(secrets);
     this.longest = this.values.reduce((max, v) => Math.max(max, v.length), 0);
   }
@@ -198,14 +206,14 @@ export class StreamMasker {
  */
 export function maskThenTruncate(
   text: string,
-  secrets: Record<string, string>,
+  secrets: SecretValues,
   limit: number
 ): string {
   const masked = maskSecrets(text, secrets);
   return masked.length > limit ? `${masked.slice(0, limit)}…` : masked;
 }
 
-export function maskObjectStrings<T>(value: T, secrets: Record<string, string>): T {
+export function maskObjectStrings<T>(value: T, secrets: SecretValues): T {
   if (typeof value === "string") {
     return maskSecrets(value, secrets) as unknown as T;
   }

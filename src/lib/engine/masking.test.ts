@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { StreamMasker, maskChunks, maskObjectStrings, maskSecrets } from "./masking";
+import { StreamMasker, maskChunks, maskObjectStrings, maskSecrets, secretsToMask } from "./masking";
 
 describe("maskSecrets", () => {
   it("replaces every occurrence of a secret", () => {
-    expect(maskSecrets("a tok-123456 b tok-123456", { T: "tok-123456" })).toBe("a *** b ***");
+    expect(maskSecrets("a tok-123456 b tok-123456", ["tok-123456"])).toBe("a *** b ***");
   });
 
   it("masks the longer of two overlapping secrets whole", () => {
-    const masked = maskSecrets("prefix-and-more", { SHORT: "prefix", LONG: "prefix-and-more" });
+    const masked = maskSecrets("prefix-and-more", ["prefix", "prefix-and-more"]);
     expect(masked).toBe("***");
   });
 
   it("skips values too short to mask without redacting unrelated text", () => {
-    expect(maskSecrets("a b c", { T: "b" })).toBe("a b c");
+    expect(maskSecrets("a b c", ["b"])).toBe("a b c");
   });
 
   it("leaves text without secrets untouched", () => {
-    expect(maskSecrets("nothing here", { T: "tok-123456" })).toBe("nothing here");
+    expect(maskSecrets("nothing here", ["tok-123456"])).toBe("nothing here");
   });
 });
 
@@ -24,14 +24,14 @@ describe("maskObjectStrings", () => {
   it("masks strings nested in objects and arrays", () => {
     const masked = maskObjectStrings(
       { a: "tok-123456", b: [{ c: "x tok-123456" }], n: 1 },
-      { T: "tok-123456" }
+      ["tok-123456"]
     );
     expect(masked).toEqual({ a: "***", b: [{ c: "x ***" }], n: 1 });
   });
 });
 
 describe("maskChunks", () => {
-  const secrets = { TOKEN: "review-secret-value" };
+  const secrets = ["review-secret-value"];
 
   it("masks a secret split across two chunks", () => {
     const masked = maskChunks(
@@ -105,12 +105,12 @@ describe("maskChunks", () => {
   it("leaves chunks alone when there is nothing to mask", () => {
     const chunks = [{ stream: "stdout" as const, text: "nothing here" }];
     expect(maskChunks(chunks, secrets)).toEqual(chunks);
-    expect(maskChunks(chunks, {})).toEqual(chunks);
+    expect(maskChunks(chunks, [])).toEqual(chunks);
   });
 });
 
 describe("maskChunks across streams", () => {
-  const secrets = { TOKEN: "review-secret-value" };
+  const secrets = ["review-secret-value"];
 
   it("masks a secret split within one stream when the other interleaves", () => {
     // Concatenating every chunk puts the warning inside the value, so the
@@ -151,7 +151,7 @@ describe("maskChunks across streams", () => {
 });
 
 describe("StreamMasker", () => {
-  const secrets = { TOKEN: "review-secret-value" };
+  const secrets = ["review-secret-value"];
 
   it("masks a secret split across two writes", () => {
     const m = new StreamMasker(secrets);
@@ -177,13 +177,43 @@ describe("StreamMasker", () => {
   });
 
   it("passes text through untouched when there are no secrets", () => {
-    const m = new StreamMasker({});
+    const m = new StreamMasker([]);
     expect(m.push("anything at all")).toBe("anything at all");
     expect(m.flush()).toBe("");
   });
 
   it("does not hold back text once a secret cannot be pending", () => {
-    const m = new StreamMasker({ T: "abc" });
+    const m = new StreamMasker(["abc"]);
     expect(m.push("hello world") + m.flush()).toBe("hello world");
+  });
+});
+
+describe("secretsToMask", () => {
+  it("masks a secret whose name looks like a generated retirement key", () => {
+    // The set used to be a map, and retired values needed names, so they got
+    // fabricated ones - `__retired_0` and friends. A real secret with that
+    // name was overwritten by a retired value and printed in full.
+    const set = secretsToMask(
+      { __retired_0: "real-current-secret-value", NORMAL: "normal-secret-value" },
+      ["an-old-retired-value"]
+    );
+    expect(maskSecrets("real-current-secret-value", set)).toBe("***");
+    expect(maskSecrets("normal-secret-value", set)).toBe("***");
+    expect(maskSecrets("an-old-retired-value", set)).toBe("***");
+  });
+
+  it("carries every current and retired value", () => {
+    expect(secretsToMask({ A: "one", B: "two" }, ["three"]).slice().sort()).toEqual([
+      "one",
+      "three",
+      "two",
+    ]);
+  });
+
+  it("survives two secrets sharing a value", () => {
+    const set = secretsToMask({ A: "same-secret-value", B: "same-secret-value" }, [
+      "same-secret-value",
+    ]);
+    expect(maskSecrets("same-secret-value", set)).toBe("***");
   });
 });

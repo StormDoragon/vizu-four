@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import type { JsonValue } from "../workflow/types";
-import { maskThenTruncate } from "./masking";
+import { maskThenTruncate, type SecretValues } from "./masking";
 import { escapesBase, resolveWithin } from "../pathConfinement";
 
 export interface SimulatedActionResult {
@@ -425,7 +425,7 @@ export function runSimulatedAction(
   withInputs: Record<string, JsonValue>,
   cwd: string,
   artifactsDir: string,
-  secrets: Record<string, string> = {}
+  secrets: SecretValues = []
 ): SimulatedActionResult {
   const handler = findHandler(uses);
   const short = (text: string, limit: number) => maskThenTruncate(text, secrets, limit);

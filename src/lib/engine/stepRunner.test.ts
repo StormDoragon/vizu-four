@@ -227,7 +227,7 @@ describe("capture-stage masking", () => {
       env: {},
       extraPath: [],
       runnerTempDir: dir,
-      secrets: { TOKEN: "review-secret-value" },
+      secrets: ["review-secret-value"],
     });
     expect(result.stdout).not.toContain("review-secret");
     expect(result.stdout.trim()).toBe("***");
@@ -247,7 +247,7 @@ describe("capture-stage masking", () => {
       env: {},
       extraPath: [],
       runnerTempDir: dir,
-      secrets: { TOKEN: "review-secret-value" },
+      secrets: ["review-secret-value"],
     });
     expect(result.stdout).toContain("output truncated");
     expect(result.stdout).not.toContain("review-");

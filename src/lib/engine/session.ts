@@ -24,7 +24,13 @@ import {
 } from "./contexts";
 import { executeRunStep } from "./stepRunner";
 import { runSimulatedAction } from "./simulatedActions";
-import { maskChunks, maskObjectStrings, maskSecrets, secretsToMask } from "./masking";
+import {
+  maskChunks,
+  maskObjectStrings,
+  maskSecrets,
+  secretsToMask,
+  type SecretValues,
+} from "./masking";
 import { EngineError } from "./errors";
 import { defaultRunConfig } from "./defaults";
 import { isSimulationOnly } from "../deployment";
@@ -53,7 +59,7 @@ function isTerminal(status: LaneStatus): boolean {
  * with the rest of it - the part a later mask would have matched on -
  * already discarded.
  */
-function summarizeScript(script: string, secrets: Record<string, string>): string {
+function summarizeScript(script: string, secrets: SecretValues): string {
   const lines = maskSecrets(script.trim(), secrets).split("\n");
   const head = lines[0].slice(0, 200);
   const suffix = lines.length > 1 ? ` (+${lines.length - 1} more line${lines.length === 2 ? "" : "s"})` : "";
@@ -737,7 +743,7 @@ export function setMockOutputs(
 function applyStepMock(
   record: StepRunRecord,
   mock: StepMock,
-  secrets: Record<string, string>,
+  secrets: SecretValues,
   baseOutputs: Record<string, string> = {}
 ): void {
   record.outputs = maskObjectStrings({ ...baseOutputs, ...mock.outputs }, secrets);

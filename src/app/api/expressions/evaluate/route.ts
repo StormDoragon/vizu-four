@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
 import { checkEvaluateLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
-import { maskObjectStrings, maskSecrets } from "@/lib/engine/masking";
+import {
+  maskObjectStrings,
+  maskSecrets,
+  secretsToMask,
+  type SecretValues,
+} from "@/lib/engine/masking";
 import type { EvalContext } from "@/lib/expressions/evaluator";
 import { evaluateExpressionTraced, type TraceNode } from "@/lib/expressions/trace";
 import { findExpressionSpans } from "@/lib/expressions/interpolate";
@@ -137,7 +142,7 @@ export async function POST(req: Request) {
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : undefined;
   const laneId = typeof body?.laneId === "string" ? body.laneId : undefined;
 
-  let secrets: Record<string, string> = {};
+  let secrets: SecretValues = [];
   let sessionCtx: EvalContext | null = null;
   if (sessionId && laneId) {
     // Ownership-gated like every `[id]` route: this endpoint takes a session
@@ -147,7 +152,9 @@ export async function POST(req: Request) {
     const session = await getOwnedSession(sessionId);
     const lane = session?.lanes[laneId];
     if (session && lane) {
-      secrets = session.config.secrets;
+      // Includes retired values: a secret this session has since replaced or
+      // deleted can still be sitting in the context this evaluates against.
+      secrets = secretsToMask(session.config.secrets, session.retiredSecretValues);
       const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, undefined);
       sessionCtx = buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
     }

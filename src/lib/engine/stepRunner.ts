@@ -3,7 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseEnvFile, parsePathFile } from "./envFile";
-import { StreamMasker } from "./masking";
+import { StreamMasker,
+  type SecretValues,
+} from "./masking";
 
 // Character counts (UTF-16 code units, like every other .length in this
 // file) - "BYTES" in the old single constant this replaces was misleading.
@@ -161,7 +163,7 @@ export interface RunStepOptions {
   script: string;
   /** Redacted as the process writes, before any of it is truncated or
    * dropped - masking a capped buffer afterwards is too late. */
-  secrets?: Record<string, string>;
+  secrets?: SecretValues;
   shell?: string;
   cwd: string;
   env: Record<string, string>;
@@ -269,7 +271,7 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
     };
 
     return await new Promise<RunStepResult>((resolve) => {
-      const secrets = opts.secrets ?? {};
+      const secrets = opts.secrets ?? [];
       const stdoutCapture = new TextCapture(new StreamMasker(secrets));
       const stderrCapture = new TextCapture(new StreamMasker(secrets));
       const combinedCapture = new CombinedCapture({
