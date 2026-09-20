@@ -217,3 +217,44 @@ describe("secretsToMask", () => {
     expect(maskSecrets("same-secret-value", set)).toBe("***");
   });
 });
+
+describe("overlapping secret values", () => {
+  // Two secrets can overlap in the text. Handling them one at a time
+  // destroys the evidence the other needed: masking `abcdef` first leaves
+  // `***ghi`, with half of `defghi` still in the output.
+  const OVERLAPPING = ["abcdef-secret", "secret-defghi"];
+  const TEXT = "abcdef-secret-defghi";
+
+  it("masks the whole overlapping run rather than leaving a fragment", () => {
+    expect(maskSecrets(TEXT, OVERLAPPING)).toBe("***");
+  });
+
+  it("fixes it in the streaming masker too", () => {
+    const m = new StreamMasker(OVERLAPPING);
+    expect(m.push(TEXT) + m.flush()).toBe("***");
+  });
+
+  it("fixes it in chunked output too", () => {
+    expect(maskChunks([{ text: TEXT, stream: "stdout" }], OVERLAPPING)[0].text).toBe("***");
+  });
+
+  it("still masks an overlapping run split across two writes", () => {
+    const m = new StreamMasker(OVERLAPPING);
+    const out = m.push("abcdef-sec") + m.push("ret-defghi") + m.flush();
+    expect(out).toBe("***");
+  });
+
+  it("keeps surrounding text", () => {
+    expect(maskSecrets(`before ${TEXT} after`, OVERLAPPING)).toBe("before *** after");
+  });
+
+  it("does not merge two secrets that merely sit next to each other", () => {
+    // Adjacent is not overlapping - these are two distinct values and
+    // collapsing them would hide that there were two.
+    expect(maskSecrets("aaaaaabbbbbb", ["aaaaaa", "bbbbbb"])).toBe("******");
+  });
+
+  it("covers a value that overlaps itself", () => {
+    expect(maskSecrets("ababab", ["abab"])).toBe("***");
+  });
+});

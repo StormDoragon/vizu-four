@@ -41,41 +41,72 @@ function maskableValues(secrets: SecretValues): string[] {
   );
 }
 
-/**
- * Replaces every occurrence of any secret value with `***`, mirroring
- * GitHub Actions' own log masking. Values shorter than a few characters are
- * skipped since masking them would redact unrelated text (GitHub applies a
- * similar minimum-length rule).
- */
-export function maskSecrets(text: string, secrets: SecretValues): string {
-  let out = text;
-  for (const value of maskableValues(secrets)) {
-    if (!out.includes(value)) continue;
-    out = out.split(value).join(MASK);
-  }
-  return out;
-}
-
 interface Range {
   start: number;
   end: number;
 }
 
-/** Non-overlapping spans to redact, longest secret first so a short value
- * that is a substring of a longer one can't carve it up. */
+/**
+ * Spans to redact, with overlapping ones merged.
+ *
+ * Merging is the whole point. Two secrets can overlap in the text - `abcdef`
+ * and `defghi` both occur in `abcdefghi` - and handling them one at a time
+ * destroys the evidence the other needed: replacing the first match leaves
+ * `***ghi`, with half of the second secret sitting in the output. Dropping
+ * the overlapping match instead leaves the same fragment. Deciding every
+ * span first and merging what touches redacts the whole run, so a chain of
+ * overlapping secrets masks to a single `***`.
+ *
+ * Occurrences of one value are also scanned overlapping (`at + 1`, not
+ * `at + length`), so `aa` in `aaa` covers all three characters rather than
+ * leaving a trailing one.
+ *
+ * Strictly overlapping spans merge; merely adjacent ones do not, so two
+ * different secrets written back to back still read as two masks.
+ */
 function redactionRanges(text: string, values: string[]): Range[] {
-  const ranges: Range[] = [];
+  const raw: Range[] = [];
   for (const value of values) {
     let from = 0;
     for (;;) {
       const at = text.indexOf(value, from);
       if (at === -1) break;
-      const end = at + value.length;
-      if (!ranges.some((r) => at < r.end && end > r.start)) ranges.push({ start: at, end });
-      from = end;
+      raw.push({ start: at, end: at + value.length });
+      from = at + 1;
     }
   }
-  return ranges.sort((a, b) => a.start - b.start);
+  if (raw.length === 0) return raw;
+  raw.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: Range[] = [raw[0]];
+  for (const range of raw.slice(1)) {
+    const last = merged[merged.length - 1];
+    if (range.start < last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ ...range });
+  }
+  return merged;
+}
+
+/**
+ * Replaces every occurrence of any secret value with `***`, mirroring
+ * GitHub Actions' own log masking. Values shorter than a few characters are
+ * skipped since masking them would redact unrelated text (GitHub applies a
+ * similar minimum-length rule).
+ *
+ * Built on `redactionRanges` rather than a sequence of replacements: doing
+ * them one value at a time is what let overlapping secrets leak, and it is
+ * the same decision `maskChunks` and `StreamMasker` need, so all three share
+ * it instead of each getting the edge cases right separately.
+ */
+export function maskSecrets(text: string, secrets: SecretValues): string {
+  const ranges = redactionRanges(text, maskableValues(secrets));
+  if (ranges.length === 0) return text;
+  let out = "";
+  let at = 0;
+  for (const range of ranges) {
+    out += text.slice(at, range.start) + MASK;
+    at = range.end;
+  }
+  return out + text.slice(at);
 }
 
 /**
