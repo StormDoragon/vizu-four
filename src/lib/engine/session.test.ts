@@ -391,6 +391,65 @@ jobs:
   });
 });
 
+describe("accumulated session size", () => {
+  const patchOf = (round: number, n: number, chars: number) =>
+    Object.fromEntries(Array.from({ length: n }, (_, i) => [`K${round}_${i}`, "x".repeat(chars)]));
+
+  const tiny = `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`;
+
+  it("refuses a patch that would push the session past the key limit", () => {
+    // Each of these is individually legal. The limits used to bound only one
+    // request, so repeating it grew a session without creating another.
+    const s = session(tiny);
+    for (let round = 0; round < 5; round++) {
+      applyWhatIf(s, { env: patchOf(round, 200, 10) });
+    }
+    expect(Object.keys(s.config.envOverrides)).toHaveLength(1000);
+    expect(() => applyWhatIf(s, { env: patchOf(99, 1, 10) })).toThrow(/more than 1000 keys/);
+  });
+
+  it("refuses a patch that would push the session past the character limit", () => {
+    const s = session(tiny);
+    for (let round = 0; round < 19; round++) {
+      applyWhatIf(s, { env: patchOf(round, 1, 100_000) });
+    }
+    expect(() => applyWhatIf(s, { env: patchOf(99, 1, 100_000) })).toThrow(
+      /more than 2000000 characters/
+    );
+  });
+
+  it("still allows a patch that only removes keys once the limit is reached", () => {
+    // Projecting the result rather than measuring the patch is what makes
+    // this work - otherwise a session at the limit could never come back
+    // under it.
+    const s = session(tiny);
+    for (let round = 0; round < 5; round++) {
+      applyWhatIf(s, { env: patchOf(round, 200, 10) });
+    }
+    expect(() => applyWhatIf(s, { env: { K0_0: null } })).not.toThrow();
+    expect(Object.keys(s.config.envOverrides)).toHaveLength(999);
+    // ...and room freed by the delete is usable again.
+    expect(() => applyWhatIf(s, { env: patchOf(99, 1, 10) })).not.toThrow();
+  });
+
+  it("bounds each map separately rather than in aggregate", () => {
+    const s = session(tiny);
+    for (let round = 0; round < 5; round++) {
+      applyWhatIf(s, { env: patchOf(round, 200, 10) });
+    }
+    // env is full; vars is untouched and must still accept a patch.
+    expect(() => applyWhatIf(s, { vars: patchOf(0, 200, 10) })).not.toThrow();
+  });
+});
+
 describe("masking never touches live execution state", () => {
   // GitHub masks its logs, not the data flowing between steps. Masking at
   // capture time broke the workflow itself: a step that wrote a secret to

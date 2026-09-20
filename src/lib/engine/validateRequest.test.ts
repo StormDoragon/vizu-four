@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { validateRunConfigPatch, validateWhatIfPatch } from "./validateRequest";
+import {
+  MAX_CONFIG_CHARS,
+  MAX_CONFIG_KEYS,
+  configMapSizeError,
+  validateRunConfigPatch,
+  validateWhatIfPatch,
+} from "./validateRequest";
 
 describe("validateRunConfigPatch", () => {
   it("allows undefined (no config given)", () => {
@@ -93,5 +99,33 @@ describe("validateWhatIfPatch", () => {
 
   it("still allows a null value, which is how an override is removed", () => {
     expect(validateWhatIfPatch({ env: { A: null } })).toBeNull();
+  });
+});
+
+describe("cumulative configuration limits", () => {
+  const bigMap = (n: number, valueChars = 1) =>
+    Object.fromEntries(Array.from({ length: n }, (_, i) => [`K${i}`, "x".repeat(valueChars)]));
+
+  it("rejects a session created with an oversized config map", () => {
+    expect(validateRunConfigPatch({ envOverrides: bigMap(MAX_CONFIG_KEYS + 1) })).toMatch(
+      /more than 1000 keys/
+    );
+  });
+
+  it("rejects a session created with an oversized config by character count", () => {
+    expect(validateRunConfigPatch({ vars: bigMap(10, MAX_CONFIG_CHARS / 5) })).toMatch(
+      /more than 2000000 characters/
+    );
+  });
+
+  it("accepts a config comfortably inside the limits", () => {
+    expect(validateRunConfigPatch({ envOverrides: bigMap(100, 100) })).toBeNull();
+  });
+
+  it("counts keys as well as values toward the character limit", () => {
+    const longKeys = Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => [`${"k".repeat(100_000)}${i}`, "v"])
+    );
+    expect(configMapSizeError(longKeys, "env")).toMatch(/more than 2000000 characters/);
   });
 });

@@ -31,6 +31,7 @@ import {
   type SecretValues,
 } from "./masking";
 import { EngineError } from "./errors";
+import { configMapSizeError } from "./validateRequest";
 import { defaultRunConfig } from "./defaults";
 import { isSimulationOnly } from "../deployment";
 import {
@@ -788,8 +789,38 @@ function applyKeyedPatch<T>(
   }
 }
 
+/**
+ * Rejects a patch that would push the session's accumulated configuration
+ * past its limits.
+ *
+ * Checked against the state the patch *would* produce rather than the patch
+ * itself: the per-request bounds in `validateWhatIfPatch` say nothing about
+ * what twelve accepted requests add up to. Projecting also means a patch
+ * that only deletes keys always passes, so a session that somehow reached
+ * the limit can still be brought back under it.
+ */
+function requireWithinConfigLimits(session: DebugSession, patch: WhatIfPatch): void {
+  const projections: [string, Record<string, unknown>, Record<string, unknown> | undefined][] = [
+    ["env", session.config.envOverrides, patch.env],
+    ["vars", session.config.vars, patch.vars],
+    ["secrets", session.config.secrets, patch.secrets],
+    ["inputs", session.config.workflowInputs, patch.inputs],
+  ];
+  for (const [field, current, changes] of projections) {
+    if (!changes) continue;
+    const projected: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) delete projected[key];
+      else projected[key] = value;
+    }
+    const tooBig = configMapSizeError(projected, field);
+    if (tooBig) throw new EngineError(tooBig);
+  }
+}
+
 /** Mutates live session config; takes effect on the next step executed in any lane. */
 export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
+  requireWithinConfigLimits(session, patch);
   // Captured before the patch lands: a secret being replaced or removed is
   // still present in output and snapshots recorded while it was live, and
   // those are redacted on read against this list plus the current map.

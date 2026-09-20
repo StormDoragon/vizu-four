@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { EngineError } from "@/lib/engine/errors";
 import { getOwnedSession } from "@/lib/engine/ownership";
 import { toSessionView } from "@/lib/engine/serialize";
 import { applyWhatIf, type WhatIfPatch } from "@/lib/engine/session";
@@ -18,6 +19,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const invalid = validateWhatIfPatch(body);
   if (invalid) return errorResponse(400, invalid);
 
-  applyWhatIf(session, body);
+  try {
+    applyWhatIf(session, body);
+  } catch (err) {
+    // The only thing `applyWhatIf` refuses is a patch that would push the
+    // session's accumulated configuration past its limits - a property of
+    // the request, so 400 rather than 409 or 500.
+    if (err instanceof EngineError) return errorResponse(400, err.message);
+    throw err;
+  }
   return NextResponse.json({ session: toSessionView(session) });
 }

@@ -49,6 +49,52 @@ export function validateRunConfigPatch(config: unknown): string | null {
   if (config.workflowInputs !== undefined && !isPlainObject(config.workflowInputs)) {
     return "'config.workflowInputs' must be an object";
   }
+
+  // Size, not just shape: a session created with a huge config was as
+  // unbounded as one grown into that state a patch at a time.
+  for (const field of [...STRING_MAP_FIELDS, "workflowInputs" as const]) {
+    const value = config[field];
+    if (!isPlainObject(value)) continue;
+    const tooBig = configMapSizeError(value, `config.${field}`);
+    if (tooBig) return tooBig;
+  }
+  return null;
+}
+
+/**
+ * Bounds on the *accumulated* configuration of one session.
+ *
+ * The per-patch limits below bound a single request, which is not the same
+ * thing: every accepted patch adds to state that lives for the session's
+ * lifetime, so repeating a request that is individually legal grows one
+ * session without creating another. Twelve 200-key patches were accepted and
+ * left 2,400 keys and 2.4MB behind, and nothing stopped the thirteenth.
+ *
+ * Applied to the configuration a session *would* have, so a patch that only
+ * removes keys is always allowed - otherwise a session that reached the
+ * limit could never be brought back under it.
+ *
+ * The same limits apply to the configuration a session is created with,
+ * which previously had no size check at all.
+ */
+export const MAX_CONFIG_KEYS = 1_000;
+export const MAX_CONFIG_CHARS = 2_000_000;
+
+export function configMapSizeError(
+  map: Record<string, unknown>,
+  field: string
+): string | null {
+  const keys = Object.keys(map);
+  if (keys.length > MAX_CONFIG_KEYS) {
+    return `'${field}' would hold more than ${MAX_CONFIG_KEYS} keys in this session`;
+  }
+  let chars = 0;
+  for (const [key, value] of Object.entries(map)) {
+    chars += key.length + (typeof value === "string" ? value.length : JSON.stringify(value ?? null).length);
+    if (chars > MAX_CONFIG_CHARS) {
+      return `'${field}' would hold more than ${MAX_CONFIG_CHARS} characters in this session`;
+    }
+  }
   return null;
 }
 
