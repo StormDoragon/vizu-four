@@ -44,9 +44,17 @@ function isTerminal(status: LaneStatus): boolean {
   return TERMINAL.has(status);
 }
 
-/** One-line, length-capped rendering of a possibly multi-line script. */
-function summarizeScript(script: string): string {
-  const lines = script.trim().split("\n");
+/**
+ * One-line, length-capped rendering of a possibly multi-line script.
+ *
+ * The script is post-interpolation, so it can contain secret values, and it
+ * is masked here rather than by the caller after the fact: capping the line
+ * first left the head of a secret longer than the cap sitting in the output
+ * with the rest of it - the part a later mask would have matched on -
+ * already discarded.
+ */
+function summarizeScript(script: string, secrets: Record<string, string>): string {
+  const lines = maskSecrets(script.trim(), secrets).split("\n");
   const head = lines[0].slice(0, 200);
   const suffix = lines.length > 1 ? ` (+${lines.length - 1} more line${lines.length === 2 ? "" : "s"})` : "";
   return `${head}${head.length < lines[0].length ? "…" : ""}${suffix}`;
@@ -465,7 +473,10 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
           runMock
             ? "this step's result is stubbed, so it was not run."
             : "this deployment runs in simulation-only mode."
-        } After interpolation the command would have been: ${summarizeScript(script)}`,
+        } After interpolation the command would have been: ${summarizeScript(
+          script,
+          secretsToMask(session.config.secrets, session.retiredSecretValues)
+        )}`,
         secretsToMask(session.config.secrets, session.retiredSecretValues)
       );
       record.exitCode = 0;
@@ -523,7 +534,13 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
     // - when that's a real working tree, it's someone's actual repo, not a
     // place for the debugger to drop a scratch `.debugger/` folder.
     const artifactsDir = path.join(sessionTempRoot(session.id), "artifacts");
-    const simResult = runSimulatedAction(step.uses, withInputs, session.workspaceDir, artifactsDir);
+    const simResult = runSimulatedAction(
+      step.uses,
+      withInputs,
+      session.workspaceDir,
+      artifactsDir,
+      secretsToMask(session.config.secrets, session.retiredSecretValues)
+    );
     record.simulated = true;
     // simResult.note can legitimately echo back `with:` input values (e.g. a
     // registry username) that a workflow commonly sources from `secrets.*` -

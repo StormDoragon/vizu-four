@@ -186,6 +186,25 @@ export class StreamMasker {
   }
 }
 
+/**
+ * Masks, then shortens - in that order, always.
+ *
+ * Truncating first and masking what is left is a leak, not a nuance: the
+ * discarded tail is exactly what the retained head needed to be matched
+ * against, so a secret straddling the cut leaves its prefix sitting in the
+ * output with nothing left to recognise it by. Anywhere a string built from
+ * interpolated or captured data has to be shortened for display, it goes
+ * through here rather than through `.slice()` and a later `maskSecrets`.
+ */
+export function maskThenTruncate(
+  text: string,
+  secrets: Record<string, string>,
+  limit: number
+): string {
+  const masked = maskSecrets(text, secrets);
+  return masked.length > limit ? `${masked.slice(0, limit)}…` : masked;
+}
+
 export function maskObjectStrings<T>(value: T, secrets: Record<string, string>): T {
   if (typeof value === "string") {
     return maskSecrets(value, secrets) as unknown as T;

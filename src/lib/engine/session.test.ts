@@ -391,6 +391,59 @@ jobs:
   });
 });
 
+describe("truncation never precedes masking", () => {
+  // A secret longer than a display cap is the case that matters: truncating
+  // first discards exactly the tail a later mask would have matched on, so
+  // the head sits in the output unrecognised. Every string below is capped
+  // well under this length.
+  const LONG_SECRET = `sk-live-${"A".repeat(400)}-end`;
+  const leaks = (text: string) => /A{20,}/.test(text);
+
+  it("masks the interpolated command before capping it to one line", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "\${{ secrets.TOKEN }}"
+`,
+      { secrets: { TOKEN: LONG_SECRET } }
+    );
+    // Mocking the step is what routes it through the simulation note, which
+    // is where the command gets summarised.
+    setMockOutputs(s, "build", "step-0", { outputs: { stubbed: "yes" } });
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.simulationNote).toBeDefined();
+    expect(leaks(record.simulationNote!)).toBe(false);
+    expect(record.simulationNote).toContain("***");
+  });
+
+  it("masks a github-script input before quoting the start of it back", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const token = "\${{ secrets.TOKEN }}";
+`,
+      { secrets: { TOKEN: LONG_SECRET } }
+    );
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.simulationNote).toBeDefined();
+    expect(leaks(record.simulationNote!)).toBe(false);
+    expect(record.simulationNote).toContain("***");
+  });
+});
+
 describe("runner context fidelity", () => {
   it("derives runner.os from runs-on instead of hardcoding Linux", async () => {
     const s = session(`

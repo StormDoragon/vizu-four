@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import type { JsonValue } from "../workflow/types";
+import { maskThenTruncate } from "./masking";
 import { escapesBase, resolveWithin } from "../pathConfinement";
 
 export interface SimulatedActionResult {
@@ -12,6 +13,16 @@ export interface SimulatedActionResult {
 
 interface HandlerArgs {
   withInputs: Record<string, JsonValue>;
+  /**
+   * Masks and shortens a string for inclusion in a note.
+   *
+   * `withInputs` is post-interpolation, so any of it may be a secret value.
+   * A handler that wants to quote an input back must go through this rather
+   * than slicing and leaving the masking to the caller: the caller masks the
+   * finished note, by which point a secret longer than the cut has already
+   * lost the tail that would have matched it.
+   */
+  short: (text: string, limit: number) => string;
   cwd: string;
   artifactsDir: string;
 }
@@ -340,8 +351,8 @@ const HANDLERS: Record<string, Handler> = {
   // ---------------------------------------------------------------------------
   // Common third-party / ecosystem actions (lightweight simulation)
   // ---------------------------------------------------------------------------
-  "actions/github-script": ({ withInputs }) => {
-    const script = str(withInputs.script, "").slice(0, 80);
+  "actions/github-script": ({ withInputs, short }) => {
+    const script = short(str(withInputs.script, ""), 80);
     return {
       outputs: { result: "" },
       conclusion: "success",
@@ -413,10 +424,12 @@ export function runSimulatedAction(
   uses: string,
   withInputs: Record<string, JsonValue>,
   cwd: string,
-  artifactsDir: string
+  artifactsDir: string,
+  secrets: Record<string, string> = {}
 ): SimulatedActionResult {
   const handler = findHandler(uses);
-  if (handler) return handler({ withInputs, cwd, artifactsDir });
+  const short = (text: string, limit: number) => maskThenTruncate(text, secrets, limit);
+  if (handler) return handler({ withInputs, short, cwd, artifactsDir });
   return {
     outputs: {},
     conclusion: "success",
