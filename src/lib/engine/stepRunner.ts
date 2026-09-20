@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseEnvFile, parsePathFile } from "./envFile";
+import { StreamMasker } from "./masking";
 
 // Character counts (UTF-16 code units, like every other .length in this
 // file) - "BYTES" in the old single constant this replaces was misleading.
@@ -27,8 +28,31 @@ class TextCapture {
   private tail = "";
   private total = 0;
 
-  feed(text: string): void {
-    this.total += text.length;
+  // Masks before this class discards anything. Truncating first and masking
+  // afterwards leaves the surviving half of a secret with nothing to match.
+  constructor(private readonly masker: StreamMasker) {}
+
+  feed(rawText: string): void {
+    this.total += rawText.length;
+    const text = this.masker.push(rawText);
+    if (text === "") return;
+    if (this.headFrozen === null) {
+      this.chunks.push(text);
+      const joined = this.chunks.join("");
+      if (joined.length > HEAD_CHARS + TAIL_CHARS) {
+        this.headFrozen = joined.slice(0, HEAD_CHARS);
+        this.tail = joined.slice(joined.length - TAIL_CHARS);
+        this.chunks = [];
+      }
+    } else {
+      this.tail += text;
+      if (this.tail.length > TAIL_CHARS) {
+        this.tail = this.tail.slice(this.tail.length - TAIL_CHARS);
+      }
+    }
+  }
+
+  private feedMasked(text: string): void {
     if (this.headFrozen === null) {
       this.chunks.push(text);
       const joined = this.chunks.join("");
@@ -46,6 +70,8 @@ class TextCapture {
   }
 
   finalize(): string {
+    const held = this.masker.flush();
+    if (held !== "") this.feedMasked(held);
     if (this.headFrozen === null) return this.chunks.join("");
     return (
       `${this.headFrozen}\n… output truncated (${this.total.toLocaleString()} chars total, ` +
@@ -68,9 +94,16 @@ class CombinedCapture {
   private total = 0;
   private truncated = false;
 
-  feed(stream: OutputStream, text: string): void {
-    this.total += text.length;
+  // One per stream: this capture drops whole chunks past its cap, so a
+  // secret split across a kept chunk and a dropped one would otherwise
+  // strand the kept half with nothing left to match it against.
+  constructor(private readonly maskers: Record<OutputStream, StreamMasker>) {}
+
+  feed(stream: OutputStream, rawText: string): void {
+    this.total += rawText.length;
     if (this.truncated) return;
+    const text = this.maskers[stream].push(rawText);
+    if (text === "") return;
     if (this.total > HEAD_CHARS + TAIL_CHARS) {
       this.truncated = true;
       this.entries.push({ stream, text: "\n… output truncated …\n" });
@@ -80,6 +113,12 @@ class CombinedCapture {
   }
 
   finalize(): OutputChunk[] {
+    if (!this.truncated) {
+      for (const stream of ["stdout", "stderr"] as const) {
+        const held = this.maskers[stream].flush();
+        if (held !== "") this.entries.push({ stream, text: held });
+      }
+    }
     return this.entries;
   }
 }
@@ -120,6 +159,9 @@ function baseHostEnv(): Record<string, string> {
 
 export interface RunStepOptions {
   script: string;
+  /** Redacted as the process writes, before any of it is truncated or
+   * dropped - masking a capped buffer afterwards is too late. */
+  secrets?: Record<string, string>;
   shell?: string;
   cwd: string;
   env: Record<string, string>;
@@ -227,9 +269,13 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
     };
 
     return await new Promise<RunStepResult>((resolve) => {
-      const stdoutCapture = new TextCapture();
-      const stderrCapture = new TextCapture();
-      const combinedCapture = new CombinedCapture();
+      const secrets = opts.secrets ?? {};
+      const stdoutCapture = new TextCapture(new StreamMasker(secrets));
+      const stderrCapture = new TextCapture(new StreamMasker(secrets));
+      const combinedCapture = new CombinedCapture({
+        stdout: new StreamMasker(secrets),
+        stderr: new StreamMasker(secrets),
+      });
       let settled = false;
       let timedOut = false;
 

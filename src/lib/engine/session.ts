@@ -467,6 +467,7 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
       await fs.mkdir(lane.tempDir, { recursive: true });
       const runResult = await executeRunStep({
         script,
+        secrets: session.config.secrets,
         shell: step.shell,
         cwd,
         env: effectiveEnv,

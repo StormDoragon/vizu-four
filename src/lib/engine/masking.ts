@@ -51,53 +51,117 @@ function redactionRanges(text: string, values: string[]): Range[] {
 /**
  * Masks a tagged, ordered list of output chunks.
  *
- * Masking each chunk on its own misses any secret split across two of them:
- * a process that writes a token in two `write()` calls produced two chunks
- * holding one half each, neither matching the full value, so the redacted
- * stdout read `***` while the interleaved view still showed the whole token
- * once the chunks were displayed end to end. Redaction is therefore computed
- * over the concatenation and the result re-split on the original boundaries,
- * which also covers a secret straddling a stdout/stderr switch. The mask is
- * emitted in the chunk where the secret begins; the rest of it is dropped
- * from the chunks it continues into, so nothing is masked twice.
+ * Masking each chunk on its own misses a secret split across two of them: a
+ * process writing a token in two `write()` calls leaves one half in each,
+ * and neither matches the whole value. Reading the chunks end to end then
+ * shows the token that the separately-masked stdout reported as `***`.
+ *
+ * Redaction is therefore computed over concatenations and projected back
+ * onto the chunks. Three of them, because no single one catches everything:
+ * the interleaved whole (a secret spanning a stdout/stderr switch), and each
+ * stream on its own (a secret split across two writes of one stream with a
+ * line from the other arriving in between - which breaks the interleaved
+ * concatenation, since the unrelated line lands inside the value).
  */
-export function maskChunks<T extends { text: string }>(
+export function maskChunks<T extends { text: string; stream?: string }>(
   chunks: T[],
   secrets: Record<string, string>
 ): T[] {
   const values = maskableValues(secrets);
   if (values.length === 0 || chunks.length === 0) return chunks;
 
+  const lengths = chunks.map((c) => c.text.length);
+  const starts: number[] = [];
+  let acc = 0;
+  for (const len of lengths) {
+    starts.push(acc);
+    acc += len;
+  }
+
+  const redact = new Uint8Array(acc);
+  const projections: number[][] = [chunks.map((_, i) => i)];
+  for (const stream of new Set(chunks.map((c) => c.stream))) {
+    if (stream === undefined) continue;
+    projections.push(chunks.map((_, i) => i).filter((i) => chunks[i].stream === stream));
+  }
+
+  for (const indexes of projections) {
+    if (indexes.length === 0) continue;
+    const text = indexes.map((i) => chunks[i].text).join("");
+    for (const range of redactionRanges(text, values)) {
+      let local = 0;
+      for (const i of indexes) {
+        const segmentStart = local;
+        local += lengths[i];
+        const from = Math.max(range.start, segmentStart);
+        const to = Math.min(range.end, local);
+        if (from >= to) continue;
+        const globalFrom = starts[i] + (from - segmentStart);
+        redact.fill(1, globalFrom, globalFrom + (to - from));
+      }
+    }
+  }
+  if (!redact.includes(1)) return chunks;
+
   const full = chunks.map((c) => c.text).join("");
-  const ranges = redactionRanges(full, values);
-  if (ranges.length === 0) return chunks;
-
-  const out: T[] = [];
-  let offset = 0;
-  for (const chunk of chunks) {
-    const start = offset;
-    const end = offset + chunk.text.length;
-    offset = end;
-
+  return chunks.map((chunk, i) => {
     let text = "";
-    let i = start;
-    while (i < end) {
-      const covering = ranges.find((r) => r.start <= i && i < r.end);
-      if (covering) {
-        // Only where it begins - a range continuing from an earlier chunk has
-        // already contributed its mask there.
-        if (covering.start === i) text += MASK;
-        i = Math.min(covering.end, end);
+    const end = starts[i] + lengths[i];
+    for (let p = starts[i]; p < end; p++) {
+      if (!redact[p]) {
+        text += full[p];
         continue;
       }
-      const next = ranges.find((r) => r.start > i);
-      const stop = next ? Math.min(next.start, end) : end;
-      text += full.slice(i, stop);
-      i = stop;
+      // One mask per contiguous redacted run, emitted where the run starts -
+      // a run continuing from the previous chunk already produced its own.
+      if (p === 0 || !redact[p - 1]) text += MASK;
     }
-    out.push({ ...chunk, text });
+    return { ...chunk, text };
+  });
+}
+
+/**
+ * Redacts a stream incrementally, holding back just enough of its tail to
+ * recognise a secret split across two writes.
+ *
+ * Capture truncates: a head is frozen, a tail window slides, and whole
+ * chunks are dropped past a cap. Masking afterwards is too late, because the
+ * discarded half of a secret is what the remaining half needed to be matched
+ * against - a value straddling the head boundary left its prefix sitting in
+ * the retained output with nothing left to match. Redacting here means
+ * nothing leaves this class unmasked, so callers may truncate freely.
+ */
+export class StreamMasker {
+  private carry = "";
+  private readonly values: string[];
+  private readonly longest: number;
+
+  constructor(private readonly secrets: Record<string, string>) {
+    this.values = maskableValues(secrets);
+    this.longest = this.values.reduce((max, v) => Math.max(max, v.length), 0);
   }
-  return out;
+
+  /** Masked text that is safe to emit; the rest is held for the next call. */
+  push(text: string): string {
+    if (this.longest === 0) return text;
+    const buffered = this.carry + text;
+    // Anything within one secret-length of the end could still be the start
+    // of a match completed by the next write, so it waits.
+    let safeEnd = Math.max(0, buffered.length - (this.longest - 1));
+    for (const range of redactionRanges(buffered, this.values)) {
+      if (range.start < safeEnd && range.end > safeEnd) safeEnd = range.start;
+    }
+    this.carry = buffered.slice(safeEnd);
+    return maskSecrets(buffered.slice(0, safeEnd), this.secrets);
+  }
+
+  /** Whatever is still held back, masked. Call once the stream has ended. */
+  flush(): string {
+    if (this.longest === 0) return "";
+    const out = maskSecrets(this.carry, this.secrets);
+    this.carry = "";
+    return out;
+  }
 }
 
 export function maskObjectStrings<T>(value: T, secrets: Record<string, string>): T {

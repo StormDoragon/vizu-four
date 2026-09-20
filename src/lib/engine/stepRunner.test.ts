@@ -217,3 +217,54 @@ describe("executeRunStep", () => {
     writeFileSpy.mockRestore();
   });
 });
+
+describe("capture-stage masking", () => {
+  it("masks a secret split across two writes before anything is captured", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mask-run-"));
+    const result = await executeRunStep({
+      script: `printf 'review-secret'\nsleep 0.2\nprintf -- '-value\\n'`,
+      cwd: dir,
+      env: {},
+      extraPath: [],
+      runnerTempDir: dir,
+      secrets: { TOKEN: "review-secret-value" },
+    });
+    expect(result.stdout).not.toContain("review-secret");
+    expect(result.stdout.trim()).toBe("***");
+    expect(result.combined.map((c) => c.text).join("")).not.toContain("review-secret");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("keeps no fragment of a secret that straddles the head cutoff", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mask-trunc-"));
+    // Lands "review-" just under the 100,000-char head freeze and the rest
+    // just past it, so masking after truncation could not match the value.
+    const result = await executeRunStep({
+      script:
+        `printf 'a%.0s' $(seq 1 99993)\nprintf 'review-'\nsleep 0.2\n` +
+        `printf -- 'secret-value'\nprintf 'b%.0s' $(seq 1 250000)`,
+      cwd: dir,
+      env: {},
+      extraPath: [],
+      runnerTempDir: dir,
+      secrets: { TOKEN: "review-secret-value" },
+    });
+    expect(result.stdout).toContain("output truncated");
+    expect(result.stdout).not.toContain("review-");
+    expect(result.stdout).not.toContain("secret-value");
+    await fs.rm(dir, { recursive: true, force: true });
+  }, 30_000);
+
+  it("leaves output untouched when the step has no secrets", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mask-none-"));
+    const result = await executeRunStep({
+      script: `echo "plain output"`,
+      cwd: dir,
+      env: {},
+      extraPath: [],
+      runnerTempDir: dir,
+    });
+    expect(result.stdout.trim()).toBe("plain output");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+});

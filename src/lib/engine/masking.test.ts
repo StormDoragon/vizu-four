@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskChunks, maskObjectStrings, maskSecrets } from "./masking";
+import { StreamMasker, maskChunks, maskObjectStrings, maskSecrets } from "./masking";
 
 describe("maskSecrets", () => {
   it("replaces every occurrence of a secret", () => {
@@ -106,5 +106,84 @@ describe("maskChunks", () => {
     const chunks = [{ stream: "stdout" as const, text: "nothing here" }];
     expect(maskChunks(chunks, secrets)).toEqual(chunks);
     expect(maskChunks(chunks, {})).toEqual(chunks);
+  });
+});
+
+describe("maskChunks across streams", () => {
+  const secrets = { TOKEN: "review-secret-value" };
+
+  it("masks a secret split within one stream when the other interleaves", () => {
+    // Concatenating every chunk puts the warning inside the value, so the
+    // interleaved view alone can never match it - each stream is projected
+    // separately as well.
+    const masked = maskChunks(
+      [
+        { stream: "stdout", text: "review-secret" },
+        { stream: "stderr", text: "unrelated warning\n" },
+        { stream: "stdout", text: "-value\n" },
+      ],
+      secrets
+    );
+    const stdoutOnly = masked
+      .filter((c) => c.stream === "stdout")
+      .map((c) => c.text)
+      .join("");
+    expect(stdoutOnly).not.toContain("review-secret");
+    expect(stdoutOnly).not.toContain("-value");
+    expect(masked[1].text).toBe("unrelated warning\n");
+  });
+
+  it("still masks a secret spanning a stream switch", () => {
+    const masked = maskChunks(
+      [
+        { stream: "stdout", text: "start review-" },
+        { stream: "stderr", text: "secret-value end" },
+      ],
+      secrets
+    );
+    expect(masked.map((c) => c.text).join("")).toBe("start *** end");
+  });
+
+  it("leaves untagged chunks working as before", () => {
+    const masked = maskChunks([{ text: "review-sec" }, { text: "ret-value" }], secrets);
+    expect(masked.map((c) => c.text).join("")).toBe("***");
+  });
+});
+
+describe("StreamMasker", () => {
+  const secrets = { TOKEN: "review-secret-value" };
+
+  it("masks a secret split across two writes", () => {
+    const m = new StreamMasker(secrets);
+    const out = m.push("review-secret") + m.push("-value\n") + m.flush();
+    expect(out).toBe("***\n");
+  });
+
+  it("masks a secret split across many small writes", () => {
+    const m = new StreamMasker(secrets);
+    let out = "";
+    for (const ch of "xx review-secret-value yy") out += m.push(ch);
+    out += m.flush();
+    expect(out).toBe("xx *** yy");
+  });
+
+  it("never emits an unmasked fragment, so truncating its output is safe", () => {
+    const m = new StreamMasker(secrets);
+    const first = m.push("padding review-");
+    // The tail that could still become a secret is held back rather than
+    // emitted - a caller freezing its buffer here keeps no fragment.
+    expect(first).not.toContain("review-");
+    expect(first + m.push("secret-value") + m.flush()).toBe("padding ***");
+  });
+
+  it("passes text through untouched when there are no secrets", () => {
+    const m = new StreamMasker({});
+    expect(m.push("anything at all")).toBe("anything at all");
+    expect(m.flush()).toBe("");
+  });
+
+  it("does not hold back text once a secret cannot be pending", () => {
+    const m = new StreamMasker({ T: "abc" });
+    expect(m.push("hello world") + m.flush()).toBe("hello world");
   });
 });
