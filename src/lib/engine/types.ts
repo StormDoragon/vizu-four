@@ -34,6 +34,19 @@ export interface StepRunRecord {
   engineError?: string;
   /** Output keys that came from a user-defined mock rather than the simulator itself. */
   mockedOutputKeys?: string[];
+  /**
+   * The environment actually supplied to this step when it ran, including
+   * its own `env:` layer - not recomputed on demand.
+   *
+   * Recomputing produced a view of the past built from the present: a later
+   * step writing `$GITHUB_ENV`, or a What-If override applied afterwards,
+   * rewrote what every earlier step appeared to have seen. Kept raw, like
+   * `Lane.env`, and redacted where it reaches the client.
+   */
+  envBefore?: Record<string, string>;
+  /** `$GITHUB_ENV` as it stood once this step finished - what the steps
+   * after it inherit. */
+  envAfter?: Record<string, string>;
 }
 
 export type LaneStatus =

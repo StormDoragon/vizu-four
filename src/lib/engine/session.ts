@@ -372,7 +372,9 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
   const stepIndex = lane.pointer;
   const record = lane.steps[stepIndex];
   try {
-    return await runStep(session, laneId);
+    const finished = await runStep(session, laneId);
+    finished.envAfter = { ...lane.env };
+    return finished;
   } catch (err) {
     record.engineError = maskSecrets(
       `Engine error while running this step: ${err instanceof Error ? err.message : String(err)}`,
@@ -384,6 +386,7 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     record.endedAt = new Date().toISOString();
     record.durationMs =
       new Date(record.endedAt).getTime() - new Date(record.startedAt ?? record.endedAt).getTime();
+    record.envAfter = { ...lane.env };
     finishStepAdvance(session, lane, stepIndex);
     return record;
   }
@@ -400,6 +403,9 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
   record.startedAt = new Date().toISOString();
 
   const effectiveEnv = resolveEffectiveEnv(session, lane, stepIndex, step.env);
+  // Snapshotted now, while it is true. Everything this is composed from -
+  // `$GITHUB_ENV` so far, What-If overrides - keeps changing afterwards.
+  record.envBefore = { ...effectiveEnv };
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: stepIndex, effectiveEnv });
 
   record.ifExpr = step.if;

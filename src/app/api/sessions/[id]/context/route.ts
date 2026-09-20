@@ -27,7 +27,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     ? Math.max(0, Math.min(requestedIndex, lane.pointer))
     : lane.pointer;
 
-  const effectiveEnv = resolveEffectiveEnv(session, lane, uptoStepIndex, undefined);
+  // A step that has already run carries the environment it was actually
+  // given. Recomputing instead would answer with the present: a later
+  // `$GITHUB_ENV` write, or a What-If override applied since, rewrote what
+  // every earlier step appeared to have seen. The step at the pointer has
+  // not run yet, so there it is still a live question - and the answer
+  // should include pending overrides, since that is what running it now
+  // would use.
+  const recorded = uptoStepIndex < lane.pointer ? lane.steps[uptoStepIndex]?.envBefore : undefined;
+  const effectiveEnv = recorded ?? resolveEffectiveEnv(session, lane, uptoStepIndex, undefined);
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex, effectiveEnv });
 
   // Belt-and-suspenders: mask any secret value that leaked into another

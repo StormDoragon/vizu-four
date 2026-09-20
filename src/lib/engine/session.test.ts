@@ -15,7 +15,7 @@ import {
 } from "./session";
 import { EngineError } from "./errors";
 import { toSessionView } from "./serialize";
-import { sessionTempRoot } from "./contexts";
+import { resolveEffectiveEnv, sessionTempRoot } from "./contexts";
 import type { DebugSession } from "./types";
 
 let workspaceDir: string;
@@ -1462,5 +1462,140 @@ jobs:
 `);
     expect(s.awaitingExecutionConsent).toBe(false);
     await expect(controlStep(s, s.laneOrder[0])).resolves.toBeTruthy();
+  });
+});
+
+describe("historical environment snapshots", () => {
+  /** What the context route serves for a given step. */
+  function envAt(s: DebugSession, laneId: string, stepIndex: number): Record<string, string> {
+    const lane = s.lanes[laneId];
+    const recorded = stepIndex < lane.pointer ? lane.steps[stepIndex]?.envBefore : undefined;
+    return recorded ?? resolveEffectiveEnv(s, lane, stepIndex, undefined);
+  }
+
+  const COLOR_WORKFLOW = `name: t
+on: [push]
+env:
+  COLOR: red
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: sees red
+        run: echo "$COLOR"
+      - name: writes blue
+        run: echo "COLOR=blue" >> "$GITHUB_ENV"
+      - name: sees blue
+        run: echo "$COLOR"
+`;
+
+  it("keeps each step's own view, through a GITHUB_ENV write and a later override", async () => {
+    const s = session(COLOR_WORKFLOW);
+    const lane = s.laneOrder[0];
+
+    await controlStep(s, lane);
+    await controlStep(s, lane); // writes COLOR=blue
+    await controlStep(s, lane);
+
+    expect(envAt(s, lane, 0).COLOR).toBe("red");
+    expect(envAt(s, lane, 2).COLOR).toBe("blue");
+
+    applyWhatIf(s, { env: { COLOR: "green" } });
+
+    // The past does not move when the present changes.
+    expect(envAt(s, lane, 0).COLOR).toBe("red");
+    expect(envAt(s, lane, 2).COLOR).toBe("blue");
+  });
+
+  it("records what subsequent steps inherit", async () => {
+    const s = session(COLOR_WORKFLOW);
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    expect(s.lanes[lane].steps[0].envAfter).toEqual({});
+    await controlStep(s, lane);
+    expect(s.lanes[lane].steps[1].envAfter).toEqual({ COLOR: "blue" });
+  });
+
+  it("includes the step's own env: layer in what it was given", async () => {
+    const s = session(`name: t
+on: [push]
+env:
+  COLOR: red
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: overrides for itself
+        env:
+          COLOR: purple
+        run: echo "$COLOR"
+`);
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    expect(s.lanes[lane].steps[0].envBefore?.COLOR).toBe("purple");
+  });
+
+  it("uses current overrides for the step that has not run yet", async () => {
+    const s = session(COLOR_WORKFLOW);
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    applyWhatIf(s, { env: { COLOR: "green" } });
+    // The pointer's step is still a live question, so it answers with what
+    // running it now would actually use.
+    expect(envAt(s, lane, s.lanes[lane].pointer).COLOR).toBe("green");
+  });
+
+  it("keeps matrix lanes' histories independent", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shade: [light, dark]
+    steps:
+      - name: writes its own shade
+        run: echo "PICKED=\${{ matrix.shade }}" >> "$GITHUB_ENV"
+      - name: reads it back
+        run: echo "$PICKED"
+`);
+    const [first, second] = s.laneOrder;
+    await controlStep(s, first);
+    await controlStep(s, first);
+    await controlStep(s, second);
+    await controlStep(s, second);
+
+    expect(s.lanes[first].steps[1].envBefore?.PICKED).toBe("light");
+    expect(s.lanes[second].steps[1].envBefore?.PICKED).toBe("dark");
+    expect(s.lanes[first].steps[0].envAfter).toEqual({ PICKED: "light" });
+    expect(s.lanes[second].steps[0].envAfter).toEqual({ PICKED: "dark" });
+  });
+
+  it("keeps the snapshots out of the serialized session", async () => {
+    const SECRET = "review-secret-value";
+    const s = session(
+      `name: t
+on: [push]
+env:
+  TOKEN: \${{ secrets.TOKEN }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+      { secrets: { TOKEN: SECRET } }
+    );
+    await controlStep(s, s.laneOrder[0]);
+    expect(s.lanes[s.laneOrder[0]].steps[0].envBefore?.TOKEN).toBe(SECRET);
+
+    const view = toSessionView(s);
+    expect(JSON.stringify(view)).not.toContain(SECRET);
+    expect(view.lanes[s.laneOrder[0]].steps[0].envBefore).toBeUndefined();
   });
 });

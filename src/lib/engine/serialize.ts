@@ -97,6 +97,15 @@ function toClientLanes(session: DebugSession): Record<string, Lane> {
       ...lane,
       env: maskObjectStrings(lane.env, secrets),
       extraPath: maskObjectStrings(lane.extraPath, secrets),
+      // The per-step environment snapshots stay server-side: the context
+      // endpoint serves them (masked) for the one step being inspected,
+      // rather than every session payload carrying one env map per step per
+      // lane - which is also one fewer copy of them to redact.
+      steps: lane.steps.map(({ envBefore, envAfter, ...step }) => {
+        void envBefore;
+        void envAfter;
+        return step;
+      }),
     };
   }
   return out;
