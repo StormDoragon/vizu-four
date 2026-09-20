@@ -8,7 +8,12 @@ import {
   countCombinations,
   expandMatrix,
 } from "../workflow/matrix";
-import { evaluateCondition, interpolate } from "../expressions/interpolate";
+import {
+  evaluateCondition,
+  interpolate,
+  referencesStatusFunction,
+  type ConditionResult,
+} from "../expressions/interpolate";
 import {
   resolveEffectiveEnv,
   buildEvalContext,
@@ -43,6 +48,37 @@ function summarizeScript(script: string): string {
   const head = lines[0].slice(0, 200);
   const suffix = lines.length > 1 ? ` (+${lines.length - 1} more line${lines.length === 2 ? "" : "s"})` : "";
   return `${head}${head.length < lines[0].length ? "…" : ""}${suffix}`;
+}
+
+/**
+ * Applies GitHub's default `success()` check to an explicit `if:`.
+ *
+ * Writing a condition does not opt out of the implicit "everything before
+ * this succeeded" gate - only naming a status function (`success()`,
+ * `failure()`, `always()`, `cancelled()`) does. So `if: true` after a failed
+ * step is still skipped, which catches people out often enough that saying
+ * so is most of the value of showing it here at all.
+ */
+function applyImplicitSuccessGate(
+  cond: ConditionResult,
+  raw: string,
+  implicitSuccess: boolean,
+  subject: "step" | "job"
+): ConditionResult {
+  if (implicitSuccess || referencesStatusFunction(raw)) return cond;
+  return {
+    ...cond,
+    result: false,
+    alwaysTruthyWarning:
+      cond.alwaysTruthyWarning ??
+      (cond.result
+        ? `This condition is true, but the ${subject} is skipped anyway: GitHub applies a default ` +
+          `success() check to any if: that doesn't name a status function, and something earlier ` +
+          `${subject === "step" ? "in this job" : "in needs"} did not succeed. Add always(), ` +
+          `failure(), or \${{ !cancelled() }} to run it regardless - the last one needs the ` +
+          `\${{ }} wrapper because a bare leading '!' is a YAML tag, not an expression.`
+        : undefined),
+  };
 }
 
 function stepDisplayName(step: WorkflowStep): string {
@@ -210,7 +246,12 @@ function activateLane(session: DebugSession, lane: Lane): void {
   const cond =
     job.if === undefined
       ? { result: allDepsSucceeded }
-      : evaluateCondition(job.if, evalCtx);
+      : applyImplicitSuccessGate(
+          evaluateCondition(job.if, evalCtx),
+          job.if,
+          allDepsSucceeded,
+          "job"
+        );
 
   if (!cond.result) {
     for (const s of lane.steps) {
@@ -310,10 +351,16 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex: stepIndex, effectiveEnv });
 
   record.ifExpr = step.if;
+  const implicitSuccess = !evalCtx.status.anyFailure && !evalCtx.status.cancelled;
   const cond =
     step.if === undefined
-      ? { result: !evalCtx.status.anyFailure && !evalCtx.status.cancelled }
-      : evaluateCondition(step.if, evalCtx);
+      ? { result: implicitSuccess }
+      : applyImplicitSuccessGate(
+          evaluateCondition(step.if, evalCtx),
+          step.if,
+          implicitSuccess,
+          "step"
+        );
   record.ifResult = cond.result;
   record.ifWarning = "alwaysTruthyWarning" in cond ? cond.alwaysTruthyWarning : undefined;
   // An expression error can quote the value that caused it - `fromJSON(secrets.X)`

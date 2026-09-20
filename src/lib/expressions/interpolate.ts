@@ -1,5 +1,8 @@
 import { toBoolean, toDisplayString } from "./coerce";
 import { evaluateExpression, type EvalContext } from "./evaluator";
+import { parseExpression } from "./parser";
+import { STATUS_FUNCTIONS } from "./functions";
+import type { AstNode } from "./ast";
 
 export interface ExpressionSpan {
   start: number;
@@ -75,6 +78,52 @@ export function interpolate(template: string, ctx: EvalContext): InterpolateResu
   }
   result += template.slice(last);
   return { result, errors };
+}
+
+function callsStatusFunction(node: AstNode): boolean {
+  switch (node.type) {
+    case "Call":
+      return STATUS_FUNCTIONS.has(node.callee.toLowerCase()) || node.args.some(callsStatusFunction);
+    case "Member":
+    case "Filter":
+      return callsStatusFunction(node.object);
+    case "Index":
+      return callsStatusFunction(node.object) || callsStatusFunction(node.index);
+    case "Unary":
+      return callsStatusFunction(node.argument);
+    case "Binary":
+    case "Logical":
+      return callsStatusFunction(node.left) || callsStatusFunction(node.right);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether a condition references one of GitHub's status check functions
+ * (`success`, `failure`, `cancelled`, `always`).
+ *
+ * GitHub applies a default `success()` check to every `if:` that does not
+ * reference one, which is why `if: true` on a step still doesn't run after
+ * an earlier step failed - the surprise being that writing a condition
+ * doesn't opt out of the default, only naming a status function does.
+ *
+ * Decided on the parsed expression rather than the raw text, so the word
+ * appearing inside a string literal doesn't count.
+ */
+export function referencesStatusFunction(raw: string | undefined): boolean {
+  const src = (raw ?? "").trim();
+  if (src === "") return false;
+  const sources = src.includes("${{") ? findExpressionSpans(src).map((s) => s.expr) : [src];
+  return sources.some((source) => {
+    try {
+      return callsStatusFunction(parseExpression(source.trim()));
+    } catch {
+      // An unparseable condition fails on its own in evaluateCondition; it
+      // certainly hasn't opted out of the default gate.
+      return false;
+    }
+  });
 }
 
 export interface ConditionResult {

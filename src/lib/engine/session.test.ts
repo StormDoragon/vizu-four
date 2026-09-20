@@ -1110,3 +1110,150 @@ jobs:
     expect(record.engineError).toContain("***");
   });
 });
+
+describe("implicit success() gate on explicit if:", () => {
+  // GitHub applies a default success() check to any `if:` that doesn't name
+  // a status function, so an ordinary condition does NOT run after a failure.
+  function afterFailure(ifExpr: string): string {
+    return `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: boom
+        run: exit 1
+      - name: after
+        if: ${ifExpr}
+        run: echo hi
+`;
+  }
+
+  async function outcomeOfSecondStep(ifExpr: string) {
+    const s = session(afterFailure(ifExpr));
+    await controlRunAll(s);
+    return s.lanes[s.laneOrder[0]].steps[1];
+  }
+
+  it("skips `if: true` after a failed step", async () => {
+    expect((await outcomeOfSecondStep("true")).conclusion).toBe("skipped");
+  });
+
+  it("skips an ordinary context comparison after a failed step", async () => {
+    expect((await outcomeOfSecondStep("github.ref == 'refs/heads/main'")).conclusion).toBe(
+      "skipped"
+    );
+  });
+
+  it("runs `if: failure()` after a failed step", async () => {
+    expect((await outcomeOfSecondStep("failure()")).conclusion).toBe("success");
+  });
+
+  it("runs `if: always()` after a failed step", async () => {
+    expect((await outcomeOfSecondStep("always()")).conclusion).toBe("success");
+  });
+
+  it("runs a status function combined with another condition", async () => {
+    expect((await outcomeOfSecondStep("always() && true")).conclusion).toBe("success");
+  });
+
+  it("does not count the word success() inside a string literal", async () => {
+    expect((await outcomeOfSecondStep("contains('success()', 'x')")).conclusion).toBe("skipped");
+  });
+
+  it("detects a negated status function, which the warning tells people to use", async () => {
+    // A bare leading `!` is a YAML tag, so this must carry the ${{ }} wrapper -
+    // which is exactly what the warning text tells the user to write.
+    expect((await outcomeOfSecondStep("${{ !cancelled() }}")).conclusion).toBe("success");
+    expect((await outcomeOfSecondStep("\"!cancelled()\"")).conclusion).toBe("success");
+  });
+
+  it("explains why a true condition was skipped anyway", async () => {
+    const record = await outcomeOfSecondStep("true");
+    expect(record.ifWarning).toMatch(/default\s+success\(\) check/);
+  });
+
+  it("leaves an explicit if: alone when nothing failed", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: fine
+        run: echo ok
+      - name: after
+        if: true
+        run: echo hi
+`);
+    await controlRunAll(s);
+    const record = s.lanes[s.laneOrder[0]].steps[1];
+    expect(record.conclusion).toBe("success");
+    expect(record.ifWarning).toBeUndefined();
+  });
+
+  it("does not trip the gate on a continue-on-error failure", async () => {
+    // continue-on-error turns the failure into a "success" conclusion, so
+    // nothing has actually failed as far as the default gate is concerned.
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: tolerated
+        continue-on-error: true
+        run: exit 1
+      - name: after
+        if: true
+        run: echo hi
+`);
+    await controlRunAll(s);
+    expect(s.lanes[s.laneOrder[0]].steps[1].conclusion).toBe("success");
+  });
+
+  it("skips a downstream job whose explicit if: has no status function", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  first:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
+  second:
+    needs: [first]
+    if: true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    await controlRunAll(s);
+    const secondLane = s.laneOrder.map((id) => s.lanes[id]).find((l) => l.jobId === "second");
+    expect(secondLane?.jobResult).toBe("skipped");
+  });
+
+  it("runs a downstream job with if: always() after a failed dependency", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  first:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
+  second:
+    needs: [first]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    await controlRunAll(s);
+    const secondLane = s.laneOrder.map((id) => s.lanes[id]).find((l) => l.jobId === "second");
+    expect(secondLane?.jobResult).toBe("success");
+  });
+});
