@@ -23,7 +23,7 @@ import {
 } from "./contexts";
 import { executeRunStep } from "./stepRunner";
 import { runSimulatedAction } from "./simulatedActions";
-import { maskObjectStrings, maskSecrets } from "./masking";
+import { maskChunks, maskObjectStrings, maskSecrets } from "./masking";
 import { EngineError } from "./errors";
 import { defaultRunConfig } from "./defaults";
 import { isSimulationOnly } from "../deployment";
@@ -480,10 +480,10 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
       record.exitCode = runResult.exitCode;
       record.stdout = maskSecrets(runResult.stdout, session.config.secrets);
       record.stderr = maskSecrets(runResult.stderr, session.config.secrets);
-      record.combinedOutput = runResult.combined.map((chunk) => ({
-        stream: chunk.stream,
-        text: maskSecrets(chunk.text, session.config.secrets),
-      }));
+      // Masked as one stream and re-split, not chunk by chunk: a secret
+      // written in two calls lands in two chunks, and neither holds enough of
+      // it to match on its own.
+      record.combinedOutput = maskChunks(runResult.combined, session.config.secrets);
       record.summary = runResult.summary
         ? maskSecrets(runResult.summary, session.config.secrets)
         : undefined;

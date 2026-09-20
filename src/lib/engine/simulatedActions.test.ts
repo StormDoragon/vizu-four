@@ -97,6 +97,39 @@ describe("runSimulatedAction", () => {
     expect(result.note).toMatch(/copied \d+ file/);
   });
 
+  it("uploads on a fresh session, before the artifact store exists", () => {
+    // The store is created lazily by the engine, so the first upload of a
+    // session resolves against a directory that isn't there yet. The fixture
+    // above pre-creates it, which hid this.
+    const freshStore = path.join(cwd, "never-created", "artifacts");
+    fs.mkdirSync(path.join(cwd, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "dist", "out.js"), "built");
+
+    const result = runSimulatedAction(
+      "actions/upload-artifact@v4",
+      { name: "build", path: "dist/**" },
+      cwd,
+      freshStore
+    );
+    expect(result.conclusion).toBe("success");
+    expect(result.note).toMatch(/copied 1 file/);
+    expect(fs.existsSync(path.join(freshStore, "build", "dist", "out.js"))).toBe(true);
+  });
+
+  it("downloads on a fresh session without inventing a confinement failure", () => {
+    const freshStore = path.join(cwd, "never-created-2", "artifacts");
+    const result = runSimulatedAction(
+      "actions/download-artifact@v4",
+      { name: "missing", path: "restored" },
+      cwd,
+      freshStore
+    );
+    // Nothing to restore, but the reason must be the missing artifact - not a
+    // claim that the name escaped the store.
+    expect(result.conclusion).toBe("failure");
+    expect(result.note).not.toMatch(/outside/);
+  });
+
   it("downloads a named artifact", () => {
     const artDir = path.join(artifactsDir, "build");
     fs.mkdirSync(artDir, { recursive: true });

@@ -35,7 +35,12 @@ export function resolveWithin(base: string, ...segments: string[]): string | nul
     try {
       existing = fs.realpathSync(existing);
       break;
-    } catch {
+    } catch (err) {
+      // Only a genuinely absent path may be walked past. Anything else -
+      // a permission error, a parent that is a file, an invalid argument -
+      // is a reason to refuse, not to assume the path is simply new.
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") return null;
       const parent = path.dirname(existing);
       if (parent === existing) return null;
       missing.unshift(path.basename(existing));

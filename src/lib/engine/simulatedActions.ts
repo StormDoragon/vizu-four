@@ -137,6 +137,10 @@ const HANDLERS: Record<string, Handler> = {
       : [str(withInputs.path, "")];
     const retentionDays = str(withInputs["retention-days"], "90");
 
+    // The store is the engine's own directory and the confinement base, and
+    // a base has to exist to be resolved - on the first upload of a session
+    // it does not yet, which previously read as an escaping artifact name.
+    fs.mkdirSync(artifactsDir, { recursive: true });
     const dest = resolveWithin(artifactsDir, name);
     if (!dest) {
       return rejected(
@@ -201,6 +205,9 @@ const HANDLERS: Record<string, Handler> = {
     const name = withInputs.name ? str(withInputs.name) : undefined;
     const requestedPath = str(withInputs.path, ".");
 
+    // See upload-artifact: the store is the confinement base here too, and on
+    // a session that has never uploaded anything it does not exist yet.
+    fs.mkdirSync(artifactsDir, { recursive: true });
     const destDir = resolveWithin(cwd, requestedPath);
     if (!destDir) {
       return rejected(
