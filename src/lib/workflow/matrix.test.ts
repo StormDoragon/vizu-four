@@ -5,6 +5,7 @@ import {
   comboLabel,
   countBaseCombinations,
   expandMatrix,
+  type MatrixCombo,
 } from "./matrix";
 import type { MatrixDefinition } from "./types";
 
@@ -157,6 +158,51 @@ describe("comboLabel / comboKey", () => {
   it("labels the default (matrix-less) combo", () => {
     expect(comboLabel({})).toBe("default");
     expect(comboKey({})).toBe("default");
+  });
+
+  it("does not let a value containing the delimiters forge another combo's key", () => {
+    // `{a: "x|b:y"}` and `{a: "x", b: "y"}` both used to key `a:x|b:y`.
+    // Lanes live in a map keyed by this, so the second overwrote the first
+    // while `laneOrder` still listed both: one matrix combination vanished
+    // and two entries drove the same lane.
+    expect(comboKey({ a: "x|b:y" })).not.toBe(comboKey({ a: "x", b: "y" }));
+    // Both are reachable from one real matrix, so this is not hypothetical.
+    const combos = expandMatrix({ axes: { a: ["x|b:y"] }, include: [{ a: "x", b: "y" }] });
+    expect(combos).toHaveLength(2);
+    expect(new Set(combos.map(comboKey)).size).toBe(2);
+  });
+
+  it("keeps a string and the number that prints the same apart", () => {
+    expect(comboKey({ node: "18" })).not.toBe(comboKey({ node: 18 }));
+  });
+
+  it("does not let an escape marker in a value collide with a real one", () => {
+    expect(comboKey({ a: "#18" })).not.toBe(comboKey({ a: 18 }));
+    expect(comboKey({ a: "\\|b:y" })).not.toBe(comboKey({ a: "\\", b: "y" }));
+  });
+
+  it("stays injective across a spread of awkward values", () => {
+    const combos: MatrixCombo[] = [
+      {},
+      { a: "default" },
+      { a: "x|b:y" },
+      { a: "x", b: "y" },
+      { a: "18" },
+      { a: 18 },
+      { a: "#18" },
+      { a: "" },
+      { a: ":" },
+      { a: "|" },
+      { a: "\\" },
+      { a: null },
+      { a: true },
+      { a: "true" },
+      { "a|b": "c" },
+      { "a:b": "c" },
+      { a: ["x"] },
+      { a: "[\"x\"]" },
+    ];
+    expect(new Set(combos.map(comboKey)).size).toBe(combos.length);
   });
 
   it("produces stable, sorted keys regardless of insertion order", () => {

@@ -1,4 +1,5 @@
 import os from "node:os";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { JsonValue } from "../workflow/types";
 import { evaluateExpression, type EvalContext } from "../expressions/evaluator";
@@ -15,6 +16,26 @@ function lanesForJob(session: DebugSession, jobId: string): Lane[] {
 /** Root of every temp path this session creates on disk - swept on session cleanup. */
 export function sessionTempRoot(sessionId: string): string {
   return path.join(os.tmpdir(), "actions-debugger", sessionId);
+}
+
+/**
+ * A lane's `$RUNNER_TEMP` directory, always inside the session's temp root.
+ *
+ * The lane id embeds matrix values, which are workflow-author input, so it
+ * cannot be joined into a path as-is: a matrix value of `../../../../tmp/x`
+ * made `path.join` resolve the lane's temp directory to `/tmp/x` - outside
+ * the session root, created on disk, and handed to every `run:` step in that
+ * lane as `$RUNNER_TEMP`. Everything outside a conservative character set is
+ * therefore percent-encoded, and the name is capped with a digest of the
+ * full id so that two lanes whose names truncate or sanitize alike still get
+ * separate directories.
+ */
+export function laneTempDir(sessionId: string, laneId: string): string {
+  const safe = laneId.replace(/[^A-Za-z0-9._-]/g, (c) =>
+    `%${c.charCodeAt(0).toString(16).padStart(2, "0")}`
+  );
+  const digest = createHash("sha256").update(laneId).digest("hex").slice(0, 8);
+  return path.join(sessionTempRoot(sessionId), "runner-temp", `${safe.slice(0, 80)}-${digest}`);
 }
 
 
@@ -35,9 +56,26 @@ function flattenRunsOnLabels(runsOn: JsonValue): string[] {
  * makes `if: runner.os == 'Windows'`-style branches in a matrix-over-OS
  * workflow evaluate the way they would on the real runner, even though the
  * shell underneath is still this host's.
+ *
+ * `ctx` resolves `${{ }}` in the labels first. Without it the single most
+ * common way to write such a workflow - `runs-on: ${{ matrix.os }}` over an
+ * `os` axis - derived from the literal template text, which matches no
+ * label, so every lane reported "Linux" and the OS branches the matrix
+ * exists to exercise all took the same path. A label that fails to
+ * interpolate falls back to its raw text rather than dropping out.
  */
-export function deriveRunnerOs(runsOn: JsonValue): "Linux" | "Windows" | "macOS" {
-  const labels = flattenRunsOnLabels(runsOn).map((l) => l.toLowerCase());
+export function deriveRunnerOs(
+  runsOn: JsonValue,
+  ctx?: EvalContext
+): "Linux" | "Windows" | "macOS" {
+  const labels = flattenRunsOnLabels(runsOn).map((label) => {
+    if (!ctx) return label.toLowerCase();
+    try {
+      return interpolate(label, ctx).result.toLowerCase();
+    } catch {
+      return label.toLowerCase();
+    }
+  });
   if (labels.some((l) => l.includes("windows"))) return "Windows";
   if (labels.some((l) => l.includes("macos") || l.includes("mac-os") || l.includes("darwin"))) {
     return "macOS";
@@ -149,7 +187,9 @@ export function buildEvalContext(
     needs: needsContext,
     steps: stepsContext,
     runner: {
-      os: deriveRunnerOs(job["runs-on"]),
+      // Provisional: `runs-on` may interpolate, and interpolating needs the
+      // rest of this context. Overwritten below, once it exists.
+      os: "Linux",
       arch: "X64",
       name: "Debugger Local Runner",
       // Same path the spawned process actually sees as $RUNNER_TEMP (see
@@ -168,7 +208,7 @@ export function buildEvalContext(
     },
   };
 
-  return {
+  const ctx: EvalContext = {
     contexts,
     // There's no way to cancel a session (no cancel endpoint exists), so
     // cancelled() can never legitimately be true - hardcoded rather than
@@ -176,6 +216,15 @@ export function buildEvalContext(
     status: { anyFailure, cancelled: false },
     cwd: session.workspaceDir,
   };
+
+  // Now that the context exists, resolve `runs-on` against it - `${{
+  // matrix.os }}` is the usual spelling and needs `matrix` to be populated.
+  // A self-referential `runs-on: ${{ runner.os }}` would read the
+  // provisional value above; GitHub rejects that outright, so there is no
+  // correct answer to preserve.
+  (contexts.runner as Record<string, JsonValue>).os = deriveRunnerOs(job["runs-on"], ctx);
+
+  return ctx;
 }
 
 /**

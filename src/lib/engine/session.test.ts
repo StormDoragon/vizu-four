@@ -69,7 +69,7 @@ jobs:
     steps:
       - run: echo hi
 `);
-    expect(Object.keys(s.lanes).sort()).toEqual(["build::node:16", "build::node:18"].sort());
+    expect(Object.keys(s.lanes).sort()).toEqual(["build::node:#16", "build::node:#18"].sort());
   });
 
   it("leaves a job with unmet needs blocked", () => {
@@ -272,10 +272,10 @@ jobs:
       - run: echo second-step
 `);
     await controlRunAll(s);
-    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
-    expect(s.lanes["build::node:18"].status).toBe("cancelled");
-    expect(s.lanes["build::node:18"].jobResult).toBe("cancelled");
-    expect(s.lanes["build::node:18"].steps.every((st) => st.conclusion !== "success")).toBe(true);
+    expect(s.lanes["build::node:#16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:#18"].status).toBe("cancelled");
+    expect(s.lanes["build::node:#18"].jobResult).toBe("cancelled");
+    expect(s.lanes["build::node:#18"].steps.every((st) => st.conclusion !== "success")).toBe(true);
   });
 
   it("does not cancel siblings when fail-fast is explicitly false", async () => {
@@ -292,8 +292,8 @@ jobs:
           if [ "\${{ matrix.node }}" = "16" ]; then exit 1; fi
 `);
     await controlRunAll(s);
-    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
-    expect(s.lanes["build::node:18"].jobResult).toBe("success");
+    expect(s.lanes["build::node:#16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:#18"].jobResult).toBe("success");
   });
 
   it("cancels a sibling lane mid-flight via manual stepping too, not just Run All", async () => {
@@ -311,10 +311,10 @@ jobs:
 `);
     // Manually drive only the failing lane to completion; its sibling should
     // still get cancelled without ever being stepped itself.
-    await controlStep(s, "build::node:16");
-    await controlStep(s, "build::node:16");
-    expect(s.lanes["build::node:16"].jobResult).toBe("failure");
-    expect(s.lanes["build::node:18"].status).toBe("cancelled");
+    await controlStep(s, "build::node:#16");
+    await controlStep(s, "build::node:#16");
+    expect(s.lanes["build::node:#16"].jobResult).toBe("failure");
+    expect(s.lanes["build::node:#18"].status).toBe("cancelled");
   });
 });
 
@@ -402,6 +402,97 @@ jobs:
 `);
     const record = await controlStep(s, "build::default");
     expect(record.stdout).toContain("Windows");
+  });
+
+  it("resolves a matrix-interpolated runs-on before deriving runner.os", async () => {
+    // `runs-on: ${{ matrix.os }}` is how a cross-OS matrix is actually
+    // written. Deriving from the literal template matched no label, so every
+    // lane reported Linux and the OS branches the matrix exists to exercise
+    // all took the same path.
+    const s = session(`
+jobs:
+  build:
+    runs-on: \${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - run: echo "\${{ runner.os }}"
+`);
+    const seen: string[] = [];
+    for (const laneId of s.laneOrder) {
+      seen.push((await controlStep(s, laneId)).stdout.trim());
+    }
+    expect(seen.sort()).toEqual(["Linux", "Windows", "macOS"].sort());
+  });
+
+  it("falls back to the raw label when runs-on cannot be interpolated", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: \${{ nonsense( }}-windows
+    steps:
+      - run: echo "\${{ runner.os }}"
+`);
+    const record = await controlStep(s, "build::default");
+    expect(record.stdout).toContain("Windows");
+  });
+
+  it("keeps a lane's RUNNER_TEMP inside the session temp root", async () => {
+    // Matrix values are workflow-author input and land in the lane id, which
+    // used to be joined straight into the path: `../../..`-style values
+    // resolved the lane's temp directory outside the session root, created it
+    // there, and handed it to every step as $RUNNER_TEMP.
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: ["../../../../../../tmp/pwned", "plain"]
+    steps:
+      - run: echo "$RUNNER_TEMP"
+`);
+    const root = sessionTempRoot(s.id) + path.sep;
+    const dirs = s.laneOrder.map((id) => s.lanes[id].tempDir);
+    expect(dirs).toHaveLength(2);
+    for (const dir of dirs) expect(dir.startsWith(root)).toBe(true);
+    // Distinct lanes keep distinct directories through the sanitizing.
+    expect(new Set(dirs).size).toBe(2);
+
+    // And the directory the step actually gets is the confined one.
+    for (const laneId of s.laneOrder) {
+      await controlStep(s, laneId);
+      expect(s.lanes[laneId].steps[0].stdout.trim()).toBe(s.lanes[laneId].tempDir);
+    }
+  });
+
+  it("keeps lanes separate when a matrix value contains the lane-key delimiters", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        a: ["x|b:y"]
+        include:
+          - a: x
+            b: y
+    steps:
+      - run: echo hi
+`);
+    // Two combinations, so two lanes - not one lane listed twice.
+    expect(s.laneOrder).toHaveLength(2);
+    expect(new Set(s.laneOrder).size).toBe(2);
+    expect(Object.keys(s.lanes)).toHaveLength(2);
+    const matrices = s.laneOrder.map((id) => s.lanes[id].matrix);
+    expect(matrices).toContainEqual({ a: "x|b:y" });
+    expect(matrices).toContainEqual({ a: "x", b: "y" });
+
+    // Stepping one must not advance the other.
+    await controlStep(s, s.laneOrder[0]);
+    expect(s.lanes[s.laneOrder[0]].pointer).toBe(1);
+    expect(s.lanes[s.laneOrder[1]].pointer).toBe(0);
   });
 
   it("keeps runner.temp and $RUNNER_TEMP as the same real, persistent-per-lane directory", async () => {
@@ -977,7 +1068,7 @@ jobs:
     steps:
       - run: echo "building on node \${{ matrix.node }}"
 `);
-    const record = await controlStep(s, "build::node:18");
+    const record = await controlStep(s, "build::node:#18");
     expect(record.simulationNote).toContain("building on node 18");
   });
 

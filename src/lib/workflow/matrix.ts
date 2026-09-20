@@ -145,11 +145,41 @@ export function comboLabel(combo: MatrixCombo): string {
   return entries.map(([k, v]) => `${k}=${stringifyValue(v)}`).join(", ");
 }
 
-/** Stable hash-free key safe for use in ids/URLs. */
+/**
+ * The structural characters of a combo key, plus the backslash that escapes
+ * them and the `#` that marks a non-string value. Escaping all four is what
+ * makes the encoding injective: after escaping, an unescaped `|`, `:` or
+ * leading `#` can only be one this function put there.
+ */
+const KEY_RESERVED = /[\\|:#]/g;
+
+function escapeKeyPart(s: string): string {
+  return s.replace(KEY_RESERVED, (c) => `\\${c}`);
+}
+
+/**
+ * Stable, collision-free key for a combo, used to build lane ids.
+ *
+ * Every part is escaped because a matrix value is workflow-author input and
+ * may contain the delimiters. Naively joining let two genuinely different
+ * combos produce one key - `{a: "x|b:y"}` and `{a: "x", b: "y"}` both gave
+ * `a:x|b:y` - and since lanes are stored in a map keyed by this, the second
+ * lane overwrote the first while `laneOrder` still listed both. One matrix
+ * combination silently vanished and two entries drove the same lane.
+ *
+ * Non-string values are JSON-encoded behind a `#` marker, so the string
+ * `"18"` and the number `18` stay distinct rather than both keying `a:18`.
+ */
 export function comboKey(combo: MatrixCombo): string {
   const entries = Object.entries(combo).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) return "default";
-  return entries.map(([k, v]) => `${k}:${stringifyValue(v)}`).join("|");
+  return entries
+    .map(([k, v]) => {
+      const value =
+        typeof v === "string" ? escapeKeyPart(v) : `#${escapeKeyPart(JSON.stringify(v))}`;
+      return `${escapeKeyPart(k)}:${value}`;
+    })
+    .join("|");
 }
 
 function stringifyValue(v: JsonValue): string {

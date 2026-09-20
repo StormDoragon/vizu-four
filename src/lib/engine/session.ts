@@ -19,6 +19,7 @@ import {
   resolveEffectiveEnv,
   buildEvalContext,
   evaluateBooleanField,
+  laneTempDir,
   sessionTempRoot,
 } from "./contexts";
 import { executeRunStep } from "./stepRunner";
@@ -206,7 +207,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
         env: {},
         extraPath: [],
         outputs: {},
-        tempDir: path.join(sessionTempRoot(session.id), "runner-temp", laneId.replace(/:/g, "_")),
+        tempDir: laneTempDir(session.id, laneId),
       };
       session.lanes[laneId] = lane;
       session.laneOrder.push(laneId);
