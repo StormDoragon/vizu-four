@@ -86,3 +86,60 @@ describe("escapesBase", () => {
     expect(escapesBase("**/*.json")).toBe(false);
   });
 });
+
+describe("dangling symlinks", () => {
+  let base: string;
+  let outside: string;
+
+  beforeEach(() => {
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dangling-base-")));
+    outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dangling-out-")));
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  // `realpath` reports ENOENT for a dangling link as well as for a genuinely
+  // absent path, because it fails on the *target*. Reading that as "new file"
+  // let the name survive as part of the missing tail, so the result looked
+  // confined and the caller then wrote through the link.
+  it("refuses a dangling link as the final component", () => {
+    fs.symlinkSync(path.join(outside, "OUTSIDE.txt"), path.join(base, "dest.txt"));
+    expect(resolveWithin(base, "dest.txt")).toBeNull();
+  });
+
+  it("does not create anything outside the base when refused", () => {
+    const target = path.join(outside, "OUTSIDE.txt");
+    fs.symlinkSync(target, path.join(base, "dest.txt"));
+    const resolved = resolveWithin(base, "dest.txt");
+    expect(resolved).toBeNull();
+    // The escape was only real because a caller writes to what it is handed.
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it("refuses a dangling link part-way along the path", () => {
+    fs.mkdirSync(path.join(base, "sub"));
+    fs.symlinkSync(path.join(outside, "OUTDIR"), path.join(base, "sub", "link"));
+    expect(resolveWithin(base, "sub", "link", "file.txt")).toBeNull();
+  });
+
+  it("refuses a dangling link even when its target would be inside the base", () => {
+    // Not a judgement about the target - resolution genuinely cannot follow
+    // this, and an artifact store has no legitimate reason to contain links.
+    fs.symlinkSync(path.join(base, "not-yet.txt"), path.join(base, "dest.txt"));
+    expect(resolveWithin(base, "dest.txt")).toBeNull();
+  });
+
+  it("still allows a path that simply does not exist yet", () => {
+    expect(resolveWithin(base, "new.txt")).toBe(path.join(base, "new.txt"));
+    expect(resolveWithin(base, "a", "b", "c.txt")).toBe(path.join(base, "a", "b", "c.txt"));
+  });
+
+  it("refuses a symlink loop rather than walking past it", () => {
+    fs.symlinkSync(path.join(base, "b"), path.join(base, "a"));
+    fs.symlinkSync(path.join(base, "a"), path.join(base, "b"));
+    expect(resolveWithin(base, "a")).toBeNull();
+  });
+});

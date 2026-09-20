@@ -167,6 +167,7 @@ const HANDLERS: Record<string, Handler> = {
 
     fs.mkdirSync(dest, { recursive: true });
     let count = 0;
+    let skipped = 0;
     let bytes = 0;
     let truncated = false;
     for (const pattern of patterns) {
@@ -186,7 +187,14 @@ const HANDLERS: Record<string, Handler> = {
         // workspace can't be used to read from - or write to - outside it.
         const from = resolveWithin(cwd, rel);
         const to = resolveWithin(dest, rel); // preserve relative path structure
-        if (!from || !to) continue;
+        if (!from || !to) {
+          // Refused by confinement - a symlink (including a dangling one)
+          // pointing out of the workspace or the store. Counted rather than
+          // dropped silently: "copied 0 files, success" is exactly the
+          // report that hides a refusal from whoever is debugging.
+          skipped++;
+          continue;
+        }
         // Checked before the copy, so one enormous file can't blow past the
         // cap on its own.
         const size = fs.statSync(from).size;
@@ -208,6 +216,10 @@ const HANDLERS: Record<string, Handler> = {
       conclusion: "success",
       note: `Simulated: copied ${count} file(s) into the debugger's local artifact store (name=${name})${
         truncated ? `, stopping at this deployment's artifact size/count cap` : ""
+      }${
+        skipped > 0
+          ? `, skipping ${skipped} path(s) that resolved outside the workspace or the store`
+          : ""
       }. Retention: ${retentionDays} days (ignored locally).`,
     };
   },
@@ -245,6 +257,7 @@ const HANDLERS: Record<string, Handler> = {
 
     fs.mkdirSync(destDir, { recursive: true });
     let count = 0;
+    let skipped = 0;
     let bytes = 0;
     let truncated = false;
     for (const dir of sourceDirs) {
@@ -265,7 +278,10 @@ const HANDLERS: Record<string, Handler> = {
             walk(full, rel);
           } else if (stat.isFile()) {
             const target = resolveWithin(destDir, rel);
-            if (!target) continue;
+            if (!target) {
+              skipped++;
+              continue;
+            }
             if (bytes + stat.size > MAX_ARTIFACT_BYTES) {
               truncated = true;
               return;
@@ -284,6 +300,10 @@ const HANDLERS: Record<string, Handler> = {
       conclusion: count > 0 || !name ? "success" : "failure",
       note: `Simulated: restored ${count} file(s) from the local artifact store${name ? ` (name=${name})` : ""}${
         truncated ? `, stopping at this deployment's artifact size/count cap` : ""
+      }${
+        skipped > 0
+          ? `, skipping ${skipped} path(s) that resolved outside the workspace`
+          : ""
       }.`,
     };
   },

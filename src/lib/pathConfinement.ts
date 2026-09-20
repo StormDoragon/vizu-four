@@ -41,6 +41,23 @@ export function resolveWithin(base: string, ...segments: string[]): string | nul
       // is a reason to refuse, not to assume the path is simply new.
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT" && code !== "ENOTDIR") return null;
+
+      // `realpath` reports ENOENT for a *dangling* symlink too, because it
+      // resolves the target and the target is what is missing. Treating that
+      // as "doesn't exist yet" was an escape: the name was kept as part of
+      // the missing tail and re-appended to the resolved parent, so the
+      // result looked confined, and the caller then wrote through the link
+      // to wherever it pointed. `lstat` succeeding here means the entry does
+      // exist - realpath failed on its target, not on the entry - so it is a
+      // link that resolution cannot follow, and following it is exactly what
+      // the caller would do next.
+      try {
+        fs.lstatSync(existing);
+        return null;
+      } catch {
+        // Genuinely absent; keep walking up.
+      }
+
       const parent = path.dirname(existing);
       if (parent === existing) return null;
       missing.unshift(path.basename(existing));
