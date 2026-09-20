@@ -26,7 +26,6 @@ import { executeRunStep } from "./stepRunner";
 import { runSimulatedAction } from "./simulatedActions";
 import {
   maskChunks,
-  maskObjectStrings,
   maskSecrets,
   secretsToMask,
   type SecretValues,
@@ -323,7 +322,12 @@ function finalizeLaneOutputs(session: DebugSession, lane: Lane): void {
     });
     for (const [key, expr] of Object.entries(job.outputs)) {
       const { result } = interpolate(expr, evalCtx);
-      lane.outputs[key] = maskSecrets(result, secretsToMask(session.config.secrets, session.retiredSecretValues));
+      // Stored raw, like `lane.env` and `lane.extraPath`: a job output is
+      // execution state, read back through `needs.<job>.outputs` by every
+      // dependent job. Masking it here would run the rest of the workflow
+      // against `***`. It is masked in `toClientLanes` instead - the one
+      // place lane state crosses to the client.
+      lane.outputs[key] = result;
     }
   }
   recomputeLaneReadiness(session);
@@ -517,7 +521,9 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
       record.summary = runResult.summary
         ? maskSecrets(runResult.summary, secretsToMask(session.config.secrets, session.retiredSecretValues))
         : undefined;
-      record.outputs = maskObjectStrings(runResult.outputs, secretsToMask(session.config.secrets, session.retiredSecretValues));
+      // Raw for the same reason as `lane.outputs` above: a later step reads
+      // this through `steps.<id>.outputs`. Masked on the way to the client.
+      record.outputs = runResult.outputs;
 
       if (runResult.spawnError) {
         record.engineError = maskSecrets(runResult.spawnError, secretsToMask(session.config.secrets, session.retiredSecretValues));
@@ -554,7 +560,7 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
     record.simulationNote = maskSecrets(simResult.note, secretsToMask(session.config.secrets, session.retiredSecretValues));
 
     const mock = session.mockOutputs[mockOutputsKey(lane.jobId, step.key)];
-    record.outputs = maskObjectStrings(simResult.outputs, secretsToMask(session.config.secrets, session.retiredSecretValues));
+    record.outputs = simResult.outputs;
     record.outcome = simResult.conclusion;
     record.exitCode = simResult.conclusion === "success" ? 0 : 1;
     if (mock) applyStepMock(record, mock, secretsToMask(session.config.secrets, session.retiredSecretValues), simResult.outputs);
@@ -746,7 +752,7 @@ function applyStepMock(
   secrets: SecretValues,
   baseOutputs: Record<string, string> = {}
 ): void {
-  record.outputs = maskObjectStrings({ ...baseOutputs, ...mock.outputs }, secrets);
+  record.outputs = { ...baseOutputs, ...mock.outputs };
   record.mockedOutputKeys = Object.keys(mock.outputs);
   if (mock.stderr) {
     const masked = maskSecrets(mock.stderr, secrets);

@@ -81,13 +81,20 @@ export interface SessionView {
 /**
  * Lanes as the client may see them.
  *
- * A step's own record is masked when it is written, but two lane fields are
- * deliberately kept raw because execution needs the real values: `env`
- * accumulates what steps wrote to `$GITHUB_ENV`, and `extraPath` what they
- * wrote to `$GITHUB_PATH`. Both are resolved into the environment of every
- * later step, so masking them at the point of capture would run the rest of
- * the job against `***`. Masking belongs here instead - the one place lane
- * state crosses from the engine to the client.
+ * Captured *output* - stdout, stderr, notes - is masked where it is
+ * captured, because nothing reads it back. Everything that execution reads
+ * back is deliberately kept raw and masked here instead, at the one place
+ * lane state crosses from the engine to the client:
+ *
+ *   `env`        what steps wrote to `$GITHUB_ENV`
+ *   `extraPath`  what they wrote to `$GITHUB_PATH`
+ *   `outputs`    job outputs, read through `needs.<job>.outputs`
+ *   step outputs read through `steps.<id>.outputs`
+ *
+ * Masking any of those at the point of capture runs the rest of the workflow
+ * against `***`: a step that wrote a secret to `$GITHUB_OUTPUT` handed the
+ * next step a literal `***`, so a comparison against the real value failed.
+ * GitHub masks its logs, not the data flowing between steps.
  */
 function toClientLanes(session: DebugSession): Record<string, Lane> {
   const secrets = secretsToMask(session.config.secrets, session.retiredSecretValues);
@@ -97,6 +104,7 @@ function toClientLanes(session: DebugSession): Record<string, Lane> {
       ...lane,
       env: maskObjectStrings(lane.env, secrets),
       extraPath: maskObjectStrings(lane.extraPath, secrets),
+      outputs: maskObjectStrings(lane.outputs, secrets),
       // The per-step environment snapshots stay server-side: the context
       // endpoint serves them (masked) for the one step being inspected,
       // rather than every session payload carrying one env map per step per
@@ -104,7 +112,7 @@ function toClientLanes(session: DebugSession): Record<string, Lane> {
       steps: lane.steps.map(({ envBefore, envAfter, ...step }) => {
         void envBefore;
         void envAfter;
-        return step;
+        return { ...step, outputs: maskObjectStrings(step.outputs, secrets) };
       }),
     };
   }

@@ -391,6 +391,61 @@ jobs:
   });
 });
 
+describe("masking never touches live execution state", () => {
+  // GitHub masks its logs, not the data flowing between steps. Masking at
+  // capture time broke the workflow itself: a step that wrote a secret to
+  // `$GITHUB_OUTPUT` handed the next step a literal `***`.
+  it("passes a secret-valued step output to the next step unchanged", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: producer
+        run: echo "value=\${{ secrets.TOKEN }}" >> "$GITHUB_OUTPUT"
+      - id: consumer
+        run: test "\${{ steps.producer.outputs.value }}" = "the-real-secret-value" && echo SAME || echo DIFFERENT
+`, { secrets: { TOKEN: "the-real-secret-value" } });
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    const consumer = await controlStep(s, lane);
+    expect(consumer.stdout).toContain("SAME");
+
+    // ...and the client still never sees it.
+    const view = toSessionView(s);
+    expect(view.lanes[lane].steps[0].outputs.value).toBe("***");
+    expect(JSON.stringify(view.lanes)).not.toContain("the-real-secret-value");
+  });
+
+  it("passes a secret-valued job output to a dependent job unchanged", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    outputs:
+      tok: \${{ steps.s.outputs.value }}
+    steps:
+      - id: s
+        run: echo "value=\${{ secrets.TOKEN }}" >> "$GITHUB_OUTPUT"
+  consume:
+    needs: produce
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "\${{ needs.produce.outputs.tok }}" = "the-real-secret-value" && echo SAME || echo DIFFERENT
+`, { secrets: { TOKEN: "the-real-secret-value" } });
+    await controlRunAll(s);
+    expect(s.lanes["consume::default"].steps[0].stdout).toContain("SAME");
+
+    const view = toSessionView(s);
+    expect(view.lanes["produce::default"].outputs.tok).toBe("***");
+    expect(JSON.stringify(view.lanes)).not.toContain("the-real-secret-value");
+  });
+});
+
 describe("truncation never precedes masking", () => {
   // A secret longer than a display cap is the case that matters: truncating
   // first discards exactly the tail a later mask would have matched on, so
@@ -832,7 +887,16 @@ jobs:
     );
     setMockOutputs(s, "build", "login", { outputs: { token: "shh-its-a-secret" } });
     const record = await controlStep(s, "build::default");
-    expect(record.outputs.token).toBe("***");
+    // The engine keeps the real value, because a later step reads this back
+    // through `steps.login.outputs.token` - masking here would hand it
+    // `***`. What matters is that the client never sees it.
+    expect(record.outputs.token).toBe("shh-its-a-secret");
+    const view = toSessionView(s);
+    expect(view.lanes["build::default"].steps[0].outputs.token).toBe("***");
+    // Lane state specifically: `mockOutputs` deliberately still carries the
+    // value, because that is the owner's own mock configuration being echoed
+    // back to the editor they typed it into, not captured execution output.
+    expect(JSON.stringify(view.lanes)).not.toContain("shh-its-a-secret");
   });
 });
 
