@@ -5,11 +5,13 @@ import { NextResponse } from "next/server";
 import { parseWorkflow } from "@/lib/workflow/parser";
 import { createSession } from "@/lib/engine/session";
 import { EngineError } from "@/lib/engine/errors";
-import { countSessionsByOwner, saveSession } from "@/lib/engine/store";
+import { countSessionsByOwner, listSessions, saveSession } from "@/lib/engine/store";
 import { ensureOwnerId } from "@/lib/engine/ownership";
 import {
   MAX_LIVE_SESSIONS_PER_OWNER,
+  MAX_LIVE_SESSIONS_TOTAL,
   checkCreateLimit,
+  clientAddressFrom,
 } from "@/lib/engine/rateLimit";
 import { warnIfUnsafeDeployment } from "@/lib/deployment";
 import { toSessionView } from "@/lib/engine/serialize";
@@ -77,10 +79,15 @@ export async function POST(req: Request) {
   const ownerId = await ensureOwnerId();
 
   // Checked before mkdtemp, so a refused request leaves nothing behind.
-  const limit = checkCreateLimit(ownerId);
+  const limit = checkCreateLimit(ownerId, clientAddressFrom(req.headers));
   if (!limit.allowed) {
     return NextResponse.json(
-      { error: "Too many sessions created recently. Try again shortly." },
+      {
+        error:
+          limit.scope === "global"
+            ? "This demo instance is busy right now. Try again shortly, or run it locally."
+            : "Too many sessions created recently. Try again shortly.",
+      },
       { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
     );
   }
@@ -88,6 +95,15 @@ export async function POST(req: Request) {
     return errorResponse(
       429,
       `You already have ${MAX_LIVE_SESSIONS_PER_OWNER} sessions open. Close one (or wait for it to be reclaimed) before starting another.`
+    );
+  }
+  // Bounds the whole instance, not one visitor: sessions hold captured output
+  // in memory, and the per-owner cap above is only as good as an owner id the
+  // visitor can discard.
+  if (listSessions().length >= MAX_LIVE_SESSIONS_TOTAL) {
+    return errorResponse(
+      429,
+      "This demo instance is holding as many sessions as it will at once. Try again shortly, or run it locally."
     );
   }
 

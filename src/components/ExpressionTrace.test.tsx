@@ -34,7 +34,7 @@ describe("ExpressionTrace", () => {
   it("marks the failing sub-expression and shows a bubbled marker on its ancestor", () => {
     const { trace } = evaluateExpressionTraced("contains(fromJSON('not json'), 1)", ctx());
     render(<ExpressionTrace trace={trace!} />);
-    expect(screen.getByText(/invalid JSON/)).toBeInTheDocument();
+    expect(screen.getByText(/not valid JSON/)).toBeInTheDocument();
     expect(screen.getByText("↳ failed below")).toBeInTheDocument();
   });
 

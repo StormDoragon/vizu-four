@@ -104,12 +104,16 @@ function fromJSONFn(args: JsonValue[]): JsonValue {
   try {
     return JSON.parse(text);
   } catch {
-    throw new ExpressionFunctionError(`fromJSON(): invalid JSON: ${truncate(text)}`);
+    // Deliberately does not quote the value. Errors are masked downstream by
+    // searching for each secret's full text, so a value truncated to fit a
+    // message leaves a prefix that no longer matches the secret it came from
+    // - `fromJSON(secrets.TOKEN)` on a token longer than the cutoff printed
+    // most of it back. The length is enough to tell an empty value from a
+    // malformed one; the playground evaluates sub-expressions for the rest.
+    throw new ExpressionFunctionError(
+      `fromJSON(): the value is not valid JSON (${text.length} character${text.length === 1 ? "" : "s"})`
+    );
   }
-}
-
-function truncate(s: string, max = 60): string {
-  return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
 /**

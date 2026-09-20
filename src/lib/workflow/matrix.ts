@@ -12,20 +12,27 @@ export type MatrixCombo = Record<string, JsonValue>;
 export const MAX_MATRIX_COMBINATIONS = 256;
 
 /**
- * Upper bound on what `expandMatrix` would produce, derived from the axis
- * lengths without building anything - the point is to refuse an absurd
- * matrix before it is allocated, not after. Stops multiplying once past the
- * limit, so the returned number is exact only while it is within it.
+ * Size of the cross product alone, derived from the axis lengths without
+ * building anything - this is the part that grows exponentially and so the
+ * part that has to be refused before it is allocated. Stops multiplying once
+ * past the limit, so the returned number is exact only while it is within it.
+ *
+ * `include` is deliberately excluded. An include entry usually merges into
+ * combos that already exist and adds no row at all, so counting one per entry
+ * rejects legitimate matrices - a full 256-combination matrix plus a single
+ * merging include counted as 257. Include entries also can't explode: there
+ * is at most one per line of YAML. The real total is checked against
+ * MAX_MATRIX_COMBINATIONS after expansion, which is safe once the product
+ * below is known to be bounded.
  */
-export function countCombinations(def: MatrixDefinition): number {
+export function countBaseCombinations(def: MatrixDefinition): number {
   const axes = Object.values(def.axes);
   let product = axes.length === 0 ? 0 : 1;
   for (const values of axes) {
     product *= values.length;
     if (product > MAX_MATRIX_COMBINATIONS) return product;
   }
-  // An include entry either merges into an existing combo or adds one row.
-  return product + (def.include?.length ?? 0);
+  return product;
 }
 
 function valuesEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
@@ -75,7 +82,7 @@ export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
   // Callers are expected to have rejected an oversized matrix before getting
   // here (createSession does, so a session can never hold one) - this is the
   // backstop that keeps any future caller from allocating the product.
-  if (countCombinations(def) > MAX_MATRIX_COMBINATIONS) {
+  if (countBaseCombinations(def) > MAX_MATRIX_COMBINATIONS) {
     throw new Error(`Matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations`);
   }
   const originalKeys = new Set(Object.keys(def.axes));

@@ -5,8 +5,9 @@ import type { JsonValue, ParseIssue, WorkflowFile, WorkflowStep } from "../workf
 import {
   MAX_MATRIX_COMBINATIONS,
   comboKey,
-  countCombinations,
+  countBaseCombinations,
   expandMatrix,
+  type MatrixCombo,
 } from "../workflow/matrix";
 import {
   evaluateCondition,
@@ -74,9 +75,10 @@ function applyImplicitSuccessGate(
       (cond.result
         ? `This condition is true, but the ${subject} is skipped anyway: GitHub applies a default ` +
           `success() check to any if: that doesn't name a status function, and something earlier ` +
-          `${subject === "step" ? "in this job" : "in needs"} did not succeed. Add always(), ` +
-          `failure(), or \${{ !cancelled() }} to run it regardless - the last one needs the ` +
-          `\${{ }} wrapper because a bare leading '!' is a YAML tag, not an expression.`
+          `${subject === "step" ? "in this job" : "in needs"} did not succeed. Naming one replaces ` +
+          `that default - always() runs it whatever happened, \${{ !cancelled() }} runs it unless ` +
+          `the run was cancelled, and failure() runs it only when something failed. (The '!' form ` +
+          `needs the \${{ }} wrapper: a bare leading '!' is a YAML tag, not an expression.)`
         : undefined),
   };
 }
@@ -108,39 +110,54 @@ export interface CreateSessionOptions {
  * buffers, and the whole graph is built synchronously before the response.
  * The YAML length limit doesn't bound any of it, because a matrix
  * multiplies: a handful of axes expand into more lanes than the text they
- * came from could ever suggest. Counted from the axis lengths and refused
- * up front, so nothing oversized is ever allocated.
+ * came from could ever suggest.
  */
 const MAX_TOTAL_LANES = 512;
 const MAX_TOTAL_STEP_RECORDS = 10_000;
 
-function assertExpansionWithinLimits(workflow: WorkflowFile): void {
+/**
+ * Expands every job's matrix once, refusing anything oversized as it goes.
+ *
+ * Two different checks, because only one of the inputs can explode. The
+ * cross product is exponential in the YAML, so it's measured from the axis
+ * lengths and refused *before* being built. `include` entries are linear -
+ * one per line at most - so once the product is known to be bounded it is
+ * safe to expand and count the real total, which is the only way to know
+ * whether an include added a lane or merged into one that already existed.
+ */
+function expandWithinLimits(workflow: WorkflowFile): Map<string, MatrixCombo[]> {
+  const byJob = new Map<string, MatrixCombo[]>();
   let lanes = 0;
   let stepRecords = 0;
+
   for (const job of Object.values(workflow.jobs)) {
-    const combos = job.strategy?.matrix ? countCombinations(job.strategy.matrix) : 1;
-    if (combos > MAX_MATRIX_COMBINATIONS) {
+    const matrix = job.strategy?.matrix;
+    const tooLarge = `jobs.${job.id}: matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations, which is the limit GitHub itself enforces.`;
+    if (matrix && countBaseCombinations(matrix) > MAX_MATRIX_COMBINATIONS) {
+      throw new EngineError(tooLarge);
+    }
+    const combos = matrix ? expandMatrix(matrix) : [{}];
+    if (combos.length > MAX_MATRIX_COMBINATIONS) throw new EngineError(tooLarge);
+
+    byJob.set(job.id, combos);
+    lanes += combos.length;
+    stepRecords += combos.length * job.steps.length;
+    if (lanes > MAX_TOTAL_LANES) {
       throw new EngineError(
-        `jobs.${job.id}: matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations, which is the limit GitHub itself enforces.`
+        `This workflow expands to more than ${MAX_TOTAL_LANES} matrix lanes across its jobs, which is more than the debugger will run at once.`
       );
     }
-    lanes += combos;
-    stepRecords += combos * job.steps.length;
+    if (stepRecords > MAX_TOTAL_STEP_RECORDS) {
+      throw new EngineError(
+        `This workflow expands to more than ${MAX_TOTAL_STEP_RECORDS} steps across its matrix lanes, which is more than the debugger will run at once.`
+      );
+    }
   }
-  if (lanes > MAX_TOTAL_LANES) {
-    throw new EngineError(
-      `This workflow expands to more than ${MAX_TOTAL_LANES} matrix lanes across its jobs, which is more than the debugger will run at once.`
-    );
-  }
-  if (stepRecords > MAX_TOTAL_STEP_RECORDS) {
-    throw new EngineError(
-      `This workflow expands to more than ${MAX_TOTAL_STEP_RECORDS} steps across its matrix lanes, which is more than the debugger will run at once.`
-    );
-  }
+  return byJob;
 }
 
 export function createSession(opts: CreateSessionOptions): DebugSession {
-  assertExpansionWithinLimits(opts.workflow);
+  const combosByJob = expandWithinLimits(opts.workflow);
   const config: RunConfig = { ...defaultRunConfig(opts.workflow), ...opts.config };
   const session: DebugSession = {
     id: randomUUID(),
@@ -162,8 +179,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
   };
 
   for (const job of Object.values(opts.workflow.jobs)) {
-    const combos = job.strategy?.matrix ? expandMatrix(job.strategy.matrix) : [{}];
-    for (const combo of combos) {
+    for (const combo of combosByJob.get(job.id) ?? [{}]) {
       const laneId = `${job.id}::${comboKey(combo)}`;
       const lane: Lane = {
         id: laneId,

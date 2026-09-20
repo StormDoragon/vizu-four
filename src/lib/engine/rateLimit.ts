@@ -1,5 +1,5 @@
 /**
- * Per-visitor limits on session creation.
+ * Limits on session creation.
  *
  * Creating a session allocates a temp directory and an in-memory record that
  * accumulates captured output, so an unbounded loop is the cheapest way to
@@ -7,11 +7,21 @@
  * simulation-only mode: a control that is off by default in local use is a
  * control nobody notices is broken. They're set high enough that a person
  * clicking around locally will never reach them.
+ *
+ * Three scopes, because the owner id is a cookie the visitor controls -
+ * clearing it buys a fresh allowance, so it cannot be the only thing
+ * standing between one client and the whole process. The address scope is
+ * harder to shed (and deliberately looser, since a NAT shares one), and the
+ * global scope bounds the shared instance no matter how many identities the
+ * traffic is spread across.
  */
 
 export const MAX_SESSIONS_PER_WINDOW = 30;
+export const MAX_SESSIONS_PER_ADDRESS_PER_WINDOW = 60;
+export const MAX_SESSIONS_GLOBAL_PER_WINDOW = 500;
 export const RATE_WINDOW_MS = 10 * 60 * 1000;
 export const MAX_LIVE_SESSIONS_PER_OWNER = 25;
+export const MAX_LIVE_SESSIONS_TOTAL = 200;
 
 const GLOBAL_KEY = "__actionsDebuggerRateLimit__";
 
@@ -20,17 +30,70 @@ interface Bucket {
   hits: number[];
 }
 
-function buckets(): Map<string, Bucket> {
-  const g = globalThis as unknown as Record<string, Map<string, Bucket> | undefined>;
-  if (!g[GLOBAL_KEY]) g[GLOBAL_KEY] = new Map();
+interface State {
+  buckets: Map<string, Bucket>;
+  lastSweepAt: number;
+}
+
+function state(): State {
+  const g = globalThis as unknown as Record<string, State | undefined>;
+  if (!g[GLOBAL_KEY]) g[GLOBAL_KEY] = { buckets: new Map(), lastSweepAt: 0 };
   return g[GLOBAL_KEY]!;
 }
+
+/**
+ * Drops buckets with nothing left inside the window.
+ *
+ * Without this the map keeps one entry per owner id ever seen, and owner ids
+ * are minted per visitor - on a long-running single process (which is what
+ * this app needs, see DEPLOY.md) that grows without bound. Runs at most once
+ * per window: the cost is proportional to the map, not to the request.
+ */
+function sweep(s: State, now: number): void {
+  if (now - s.lastSweepAt < RATE_WINDOW_MS) return;
+  s.lastSweepAt = now;
+  const cutoff = now - RATE_WINDOW_MS;
+  for (const [key, bucket] of s.buckets) {
+    const live = bucket.hits.filter((t) => t > cutoff);
+    if (live.length === 0) s.buckets.delete(key);
+    else bucket.hits = live;
+  }
+}
+
+export type LimitScope = "owner" | "address" | "global";
 
 export interface RateLimitResult {
   allowed: boolean;
   /** Seconds until the oldest hit falls out of the window. Only meaningful
    * when `allowed` is false. */
   retryAfterSeconds: number;
+  /** Which limit refused. Only set when `allowed` is false. */
+  scope?: LimitScope;
+}
+
+/**
+ * The address the nearest trusted proxy observed.
+ *
+ * A client can prepend entries to `x-forwarded-for`, but not the one the
+ * proxy appends, so only the last entry is worth limiting on. Null when the
+ * header is absent - a direct connection, as in local use - where the
+ * address scope is skipped rather than guessed at.
+ */
+export function clientAddressFrom(headers: Headers): string | null {
+  const forwarded = headers.get("x-forwarded-for");
+  if (!forwarded) return null;
+  const parts = forwarded
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : null;
+}
+
+function liveHits(s: State, key: string, now: number): number[] {
+  const cutoff = now - RATE_WINDOW_MS;
+  const bucket = s.buckets.get(key) ?? { hits: [] };
+  bucket.hits = bucket.hits.filter((t) => t > cutoff);
+  return bucket.hits;
 }
 
 /**
@@ -41,27 +104,56 @@ export interface RateLimitResult {
  * `now` is injectable so the window behaviour can be tested without waiting
  * ten minutes.
  */
-export function checkCreateLimit(ownerId: string, now: number = Date.now()): RateLimitResult {
-  const map = buckets();
-  const bucket = map.get(ownerId) ?? { hits: [] };
-  const cutoff = now - RATE_WINDOW_MS;
-  bucket.hits = bucket.hits.filter((t) => t > cutoff);
+export function checkCreateLimit(
+  ownerId: string,
+  clientAddress: string | null = null,
+  now: number = Date.now()
+): RateLimitResult {
+  const s = state();
+  sweep(s, now);
 
-  if (bucket.hits.length >= MAX_SESSIONS_PER_WINDOW) {
-    map.set(ownerId, bucket);
-    const oldest = bucket.hits[0];
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.max(1, Math.ceil((oldest + RATE_WINDOW_MS - now) / 1000)),
-    };
+  const scopes: { scope: LimitScope; key: string; limit: number }[] = [
+    { scope: "owner", key: `owner:${ownerId}`, limit: MAX_SESSIONS_PER_WINDOW },
+    { scope: "global", key: "global", limit: MAX_SESSIONS_GLOBAL_PER_WINDOW },
+  ];
+  if (clientAddress) {
+    scopes.splice(1, 0, {
+      scope: "address",
+      key: `addr:${clientAddress}`,
+      limit: MAX_SESSIONS_PER_ADDRESS_PER_WINDOW,
+    });
   }
 
-  bucket.hits.push(now);
-  map.set(ownerId, bucket);
+  // Capacity is checked across every scope before any of them records a hit,
+  // so a request refused by one doesn't spend another's budget on the way.
+  for (const { scope, key, limit } of scopes) {
+    const hits = liveHits(s, key, now);
+    if (hits.length >= limit) {
+      s.buckets.set(key, { hits });
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((hits[0] + RATE_WINDOW_MS - now) / 1000)),
+        scope,
+      };
+    }
+  }
+
+  for (const { key } of scopes) {
+    const hits = liveHits(s, key, now);
+    hits.push(now);
+    s.buckets.set(key, { hits });
+  }
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
 /** Test seam - the bucket map lives on globalThis to survive dev reloads. */
 export function resetRateLimits(): void {
-  buckets().clear();
+  const s = state();
+  s.buckets.clear();
+  s.lastSweepAt = 0;
+}
+
+/** Test seam: how many buckets are currently retained. */
+export function rateLimitBucketCount(): number {
+  return state().buckets.size;
 }

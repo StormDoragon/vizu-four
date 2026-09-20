@@ -1047,6 +1047,26 @@ ${axes}
     expect(s.laneOrder).toHaveLength(256);
   });
 
+  it("accepts a full 256-combination matrix carrying a merging include", () => {
+    const axes = Array.from({ length: 8 }, (_, i) => `        a${i}: [0, 1]`).join("\n");
+    const s = session(`name: ok
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+${axes}
+        include:
+          - a0: 0
+            extra: flag
+    steps:
+      - run: echo hi
+`);
+    expect(s.laneOrder).toHaveLength(256);
+  });
+
   it("refuses a workflow whose jobs together exceed the total lane budget", () => {
     const jobs = Array.from(
       { length: 4 },
@@ -1087,7 +1107,6 @@ jobs:
     const record = await controlStep(s, s.laneOrder[0]);
     expect(record.ifError).toBeTruthy();
     expect(record.ifError).not.toContain(SECRET);
-    expect(record.ifError).toContain("***");
   });
 
   it("masks a secret quoted back by a failing `run:` interpolation", async () => {
@@ -1107,7 +1126,31 @@ jobs:
     const record = await controlStep(s, s.laneOrder[0]);
     expect(record.engineError).toBeTruthy();
     expect(record.engineError).not.toContain(SECRET);
-    expect(record.engineError).toContain("***");
+  });
+
+  it("does not leak a secret longer than any message-truncation cutoff", async () => {
+    // Masking searches for the secret's full text, so a value truncated to
+    // fit an error message leaves an unmatchable prefix. A short secret used
+    // to pass this while a long one printed most of itself back.
+    const LONG = `review-token-${"x".repeat(200)}`;
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: broken
+        if: fromJSON(secrets.TOKEN)
+        run: echo hi
+`,
+      { secrets: { TOKEN: LONG } }
+    );
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.ifError).toBeTruthy();
+    expect(record.ifError).not.toContain("review-token-xxxx");
+    expect(record.ifError).not.toContain(LONG.slice(0, 30));
   });
 });
 
@@ -1172,6 +1215,7 @@ jobs:
   it("explains why a true condition was skipped anyway", async () => {
     const record = await outcomeOfSecondStep("true");
     expect(record.ifWarning).toMatch(/default\s+success\(\) check/);
+    expect(record.ifWarning).toMatch(/failure\(\) runs it only when something failed/);
   });
 
   it("leaves an explicit if: alone when nothing failed", async () => {
