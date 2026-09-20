@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOwnedSession } from "@/lib/engine/ownership";
 import { buildEvalContext, playgroundScratchDir, resolveEffectiveEnv } from "@/lib/engine/contexts";
-import { maskObjectStrings } from "@/lib/engine/masking";
+import { maskObjectStrings, maskSecrets } from "@/lib/engine/masking";
 import type { EvalContext } from "@/lib/expressions/evaluator";
 import { evaluateExpressionTraced } from "@/lib/expressions/trace";
 import { findExpressionSpans } from "@/lib/expressions/interpolate";
@@ -62,7 +62,9 @@ export async function POST(req: Request) {
   );
   return NextResponse.json({
     result: result !== undefined ? maskObjectStrings(result, secrets) : undefined,
-    error,
+    // An error can quote the value that caused it, e.g. fromJSON(secrets.TOKEN)
+    // reports the text it could not parse - masked like `result` and `trace`.
+    error: error ? maskSecrets(error, secrets) : error,
     errorPosition,
     // The trace can surface a secret's own value at the node that reads it
     // (e.g. `secrets.TOKEN` itself), same as `result` above - masked the

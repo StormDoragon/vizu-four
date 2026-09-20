@@ -2,7 +2,12 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { JsonValue, ParseIssue, WorkflowFile, WorkflowStep } from "../workflow/types";
-import { comboKey, expandMatrix } from "../workflow/matrix";
+import {
+  MAX_MATRIX_COMBINATIONS,
+  comboKey,
+  countCombinations,
+  expandMatrix,
+} from "../workflow/matrix";
 import { evaluateCondition, interpolate } from "../expressions/interpolate";
 import {
   resolveEffectiveEnv,
@@ -62,7 +67,44 @@ export interface CreateSessionOptions {
   parseIssues?: ParseIssue[];
 }
 
+/**
+ * Every lane holds a step record per step, each with its own output
+ * buffers, and the whole graph is built synchronously before the response.
+ * The YAML length limit doesn't bound any of it, because a matrix
+ * multiplies: a handful of axes expand into more lanes than the text they
+ * came from could ever suggest. Counted from the axis lengths and refused
+ * up front, so nothing oversized is ever allocated.
+ */
+const MAX_TOTAL_LANES = 512;
+const MAX_TOTAL_STEP_RECORDS = 10_000;
+
+function assertExpansionWithinLimits(workflow: WorkflowFile): void {
+  let lanes = 0;
+  let stepRecords = 0;
+  for (const job of Object.values(workflow.jobs)) {
+    const combos = job.strategy?.matrix ? countCombinations(job.strategy.matrix) : 1;
+    if (combos > MAX_MATRIX_COMBINATIONS) {
+      throw new EngineError(
+        `jobs.${job.id}: matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations, which is the limit GitHub itself enforces.`
+      );
+    }
+    lanes += combos;
+    stepRecords += combos * job.steps.length;
+  }
+  if (lanes > MAX_TOTAL_LANES) {
+    throw new EngineError(
+      `This workflow expands to more than ${MAX_TOTAL_LANES} matrix lanes across its jobs, which is more than the debugger will run at once.`
+    );
+  }
+  if (stepRecords > MAX_TOTAL_STEP_RECORDS) {
+    throw new EngineError(
+      `This workflow expands to more than ${MAX_TOTAL_STEP_RECORDS} steps across its matrix lanes, which is more than the debugger will run at once.`
+    );
+  }
+}
+
 export function createSession(opts: CreateSessionOptions): DebugSession {
+  assertExpansionWithinLimits(opts.workflow);
   const config: RunConfig = { ...defaultRunConfig(opts.workflow), ...opts.config };
   const session: DebugSession = {
     id: randomUUID(),
@@ -274,7 +316,13 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
       : evaluateCondition(step.if, evalCtx);
   record.ifResult = cond.result;
   record.ifWarning = "alwaysTruthyWarning" in cond ? cond.alwaysTruthyWarning : undefined;
-  record.ifError = "error" in cond ? cond.error : undefined;
+  // An expression error can quote the value that caused it - `fromJSON(secrets.X)`
+  // reports the text it failed to parse. Masked like every other client-visible
+  // field; this one also reaches the explanation prompt.
+  record.ifError =
+    "error" in cond && cond.error !== undefined
+      ? maskSecrets(cond.error, session.config.secrets)
+      : undefined;
 
   if (!cond.result) {
     record.status = "skipped";
@@ -293,9 +341,10 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
   if (step.run !== undefined) {
     const { result: script, errors: scriptErrors } = interpolate(step.run, evalCtx);
     if (scriptErrors.length > 0) {
-      record.engineError = `Could not evaluate expression(s) in 'run': ${scriptErrors
-        .map((e) => e.message)
-        .join("; ")}`;
+      record.engineError = maskSecrets(
+        `Could not evaluate expression(s) in 'run': ${scriptErrors.map((e) => e.message).join("; ")}`,
+        session.config.secrets
+      );
       record.outcome = "failure";
     } else if (runMock || isSimulationOnly()) {
       // Either the user mocked this step, or this deployment never spawns.
@@ -346,7 +395,7 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
       record.outputs = maskObjectStrings(runResult.outputs, session.config.secrets);
 
       if (runResult.spawnError) {
-        record.engineError = runResult.spawnError;
+        record.engineError = maskSecrets(runResult.spawnError, session.config.secrets);
         record.outcome = "failure";
       } else if (runResult.timedOut) {
         record.engineError = "Step timed out";

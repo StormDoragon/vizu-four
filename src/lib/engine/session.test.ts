@@ -1009,3 +1009,104 @@ jobs:
     expect(skipped.status).toBe("skipped");
   });
 });
+
+describe("expansion limits", () => {
+  function axesYaml(axisCount: number, size: number): string {
+    const axes = Array.from(
+      { length: axisCount },
+      (_, i) => `        axis${i}: [${Array.from({ length: size }, (_, j) => j).join(", ")}]`
+    ).join("\n");
+    return `name: big
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+${axes}
+    steps:
+      - run: echo hi
+`;
+  }
+
+  it("refuses a matrix over GitHub's own 256-combination limit", () => {
+    // 10 axes of 10 values: a few lines of YAML, ten billion combinations.
+    expect(() => session(axesYaml(10, 10))).toThrow(EngineError);
+    expect(() => session(axesYaml(10, 10))).toThrow(/more than 256 combinations/);
+  });
+
+  it("rejects it quickly rather than expanding to find out", () => {
+    const started = Date.now();
+    expect(() => session(axesYaml(10, 10))).toThrow();
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("still accepts a matrix at the limit", () => {
+    const s = session(axesYaml(8, 2)); // 2^8 = 256
+    expect(s.laneOrder).toHaveLength(256);
+  });
+
+  it("refuses a workflow whose jobs together exceed the total lane budget", () => {
+    const jobs = Array.from(
+      { length: 4 },
+      (_, i) => `  job${i}:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        a: [${Array.from({ length: 16 }, (_, j) => j).join(", ")}]
+        b: [${Array.from({ length: 16 }, (_, j) => j).join(", ")}]
+    steps:
+      - run: echo hi`
+    ).join("\n");
+    // 4 jobs x 256 lanes = 1024, each matrix legal on its own.
+    expect(() => session(`name: many\non: [push]\n\njobs:\n${jobs}\n`)).toThrow(
+      /more than 512 matrix lanes/
+    );
+  });
+});
+
+describe("secret masking in error paths", () => {
+  const SECRET = "super-secret-token-value";
+
+  it("masks a secret quoted back by a failing `if:` expression", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: broken
+        if: fromJSON(secrets.TOKEN)
+        run: echo hi
+`,
+      { secrets: { TOKEN: SECRET } }
+    );
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.ifError).toBeTruthy();
+    expect(record.ifError).not.toContain(SECRET);
+    expect(record.ifError).toContain("***");
+  });
+
+  it("masks a secret quoted back by a failing `run:` interpolation", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: broken
+        run: echo "\${{ fromJSON(secrets.TOKEN) }}"
+`,
+      { secrets: { TOKEN: SECRET } }
+    );
+    const record = await controlStep(s, s.laneOrder[0]);
+    expect(record.engineError).toBeTruthy();
+    expect(record.engineError).not.toContain(SECRET);
+    expect(record.engineError).toContain("***");
+  });
+});

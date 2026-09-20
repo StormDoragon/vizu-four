@@ -2,6 +2,32 @@ import type { JsonValue, MatrixDefinition } from "./types";
 
 export type MatrixCombo = Record<string, JsonValue>;
 
+/**
+ * GitHub's own ceiling: a matrix generates at most 256 jobs per workflow
+ * run. Enforcing the same number keeps the debugger faithful and bounds an
+ * expansion the workflow author controls - ten axes of ten values is ten
+ * billion combinations from a few lines of YAML, and the product is built
+ * synchronously on the process serving every visitor.
+ */
+export const MAX_MATRIX_COMBINATIONS = 256;
+
+/**
+ * Upper bound on what `expandMatrix` would produce, derived from the axis
+ * lengths without building anything - the point is to refuse an absurd
+ * matrix before it is allocated, not after. Stops multiplying once past the
+ * limit, so the returned number is exact only while it is within it.
+ */
+export function countCombinations(def: MatrixDefinition): number {
+  const axes = Object.values(def.axes);
+  let product = axes.length === 0 ? 0 : 1;
+  for (const values of axes) {
+    product *= values.length;
+    if (product > MAX_MATRIX_COMBINATIONS) return product;
+  }
+  // An include entry either merges into an existing combo or adds one row.
+  return product + (def.include?.length ?? 0);
+}
+
 function valuesEqual(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
   if (a === b) return true;
   if (a == null || b == null) return false;
@@ -46,6 +72,12 @@ function cartesianProduct(axes: Record<string, JsonValue[]>): MatrixCombo[] {
  */
 export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
   if (!def) return [];
+  // Callers are expected to have rejected an oversized matrix before getting
+  // here (createSession does, so a session can never hold one) - this is the
+  // backstop that keeps any future caller from allocating the product.
+  if (countCombinations(def) > MAX_MATRIX_COMBINATIONS) {
+    throw new Error(`Matrix produces more than ${MAX_MATRIX_COMBINATIONS} combinations`);
+  }
   const originalKeys = new Set(Object.keys(def.axes));
   // Pristine snapshot used ONLY to decide which combos an include entry
   // matches. Include entries never match combos created by other include

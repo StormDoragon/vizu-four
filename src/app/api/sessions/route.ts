@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { parseWorkflow } from "@/lib/workflow/parser";
 import { createSession } from "@/lib/engine/session";
+import { EngineError } from "@/lib/engine/errors";
 import { countSessionsByOwner, saveSession } from "@/lib/engine/store";
 import { ensureOwnerId } from "@/lib/engine/ownership";
 import {
@@ -92,14 +93,25 @@ export async function POST(req: Request) {
 
   const workspaceDir =
     realWorkspaceDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-")));
-  const session = createSession({
-    workflow,
-    workspaceDir,
-    usesRealWorkspace: realWorkspaceDir !== undefined,
-    ownerId,
-    config,
-    parseIssues: issues,
-  });
+  let session;
+  try {
+    session = createSession({
+      workflow,
+      workspaceDir,
+      usesRealWorkspace: realWorkspaceDir !== undefined,
+      ownerId,
+      config,
+      parseIssues: issues,
+    });
+  } catch (err) {
+    // Only ever the scratch dir this request just made - never a real
+    // working tree the user pointed the debugger at.
+    if (realWorkspaceDir === undefined) {
+      await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => {});
+    }
+    if (err instanceof EngineError) return errorResponse(400, err.message);
+    throw err;
+  }
   saveSession(session);
 
   return NextResponse.json({ session: toSessionView(session), issues });

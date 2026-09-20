@@ -1,6 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { comboKey, comboLabel, expandMatrix } from "./matrix";
+import {
+  MAX_MATRIX_COMBINATIONS,
+  comboKey,
+  comboLabel,
+  countCombinations,
+  expandMatrix,
+} from "./matrix";
 import type { MatrixDefinition } from "./types";
+
+describe("combination limits", () => {
+  const axesOf = (count: number, size: number): Record<string, number[]> =>
+    Object.fromEntries(
+      Array.from({ length: count }, (_, i) => [`axis${i}`, Array.from({ length: size }, (_, j) => j)])
+    );
+
+  it("counts a small matrix exactly", () => {
+    expect(countCombinations({ axes: { os: ["a", "b"], node: [18, 20, 22] } })).toBe(6);
+  });
+
+  it("counts include entries as potential extra rows", () => {
+    expect(
+      countCombinations({ axes: { os: ["a", "b"] }, include: [{ os: "c" }, { os: "d" }] })
+    ).toBe(4);
+  });
+
+  it("counts a matrix-less definition as zero combinations", () => {
+    expect(countCombinations({ axes: {} })).toBe(0);
+  });
+
+  it("does not build the product to discover it is too large", () => {
+    // 10 axes of 10 values is 10 billion combinations - expanding it to find
+    // out would be the exact denial of service this guards against.
+    const started = Date.now();
+    expect(countCombinations({ axes: axesOf(10, 10) })).toBeGreaterThan(MAX_MATRIX_COMBINATIONS);
+    expect(Date.now() - started).toBeLessThan(100);
+  });
+
+  it("refuses to expand a matrix over the limit", () => {
+    expect(() => expandMatrix({ axes: axesOf(10, 10) })).toThrow(/more than 256 combinations/);
+  });
+
+  it("still expands a matrix exactly at the limit", () => {
+    const combos = expandMatrix({ axes: axesOf(8, 2) }); // 2^8 = 256
+    expect(combos).toHaveLength(MAX_MATRIX_COMBINATIONS);
+  });
+});
 
 describe("expandMatrix", () => {
   it("computes a plain cross product", () => {
