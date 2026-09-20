@@ -197,6 +197,80 @@ describe("runSimulatedAction", () => {
       expect(result.note).toContain("outside the debugger's artifact store");
     });
 
+    it("does not upload a file reached through a symlinked directory", () => {
+      fs.symlinkSync(outside, path.join(cwd, "link"));
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "build", path: "link/**" },
+        cwd,
+        artifactsDir
+      );
+      // The pattern is textually inside the workspace, so it is not refused
+      // outright - each match is confined instead, and none survive.
+      expect(result.conclusion).toBe("success");
+      expect(result.note).toMatch(/copied 0 file/);
+      expect(fs.existsSync(path.join(artifactsDir, "build", "link", "secret.txt"))).toBe(false);
+    });
+
+    it("does not restore from an artifact whose root is a symlink to outside", () => {
+      fs.symlinkSync(outside, path.join(artifactsDir, "evil"));
+      const result = runSimulatedAction(
+        "actions/download-artifact@v4",
+        { name: "evil", path: "restored" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(fs.existsSync(path.join(cwd, "restored", "secret.txt"))).toBe(false);
+    });
+
+    it("does not write through a destination that is a symlink to outside", () => {
+      fs.symlinkSync(outside, path.join(cwd, "dest"));
+      const artDir = path.join(artifactsDir, "build");
+      fs.mkdirSync(artDir, { recursive: true });
+      fs.writeFileSync(path.join(artDir, "payload.txt"), "should not land outside");
+
+      const result = runSimulatedAction(
+        "actions/download-artifact@v4",
+        { name: "build", path: "dest" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(fs.existsSync(path.join(outside, "payload.txt"))).toBe(false);
+    });
+
+    it("rejects a path containing a NUL byte instead of throwing", () => {
+      // `path: "a\0b"` is reachable straight from pasted YAML, and reaches
+      // fs before any handler validates it.
+      const result = runSimulatedAction(
+        "actions/download-artifact@v4",
+        { name: "build", path: "a\u0000b" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+    });
+
+    it("stops copying at the artifact byte cap", () => {
+      fs.mkdirSync(path.join(cwd, "big"), { recursive: true });
+      // Two files either side of the 100MB cap, sparse so the test stays fast.
+      for (const name of ["a.bin", "b.bin"]) {
+        const fd = fs.openSync(path.join(cwd, "big", name), "w");
+        fs.ftruncateSync(fd, 60 * 1024 * 1024);
+        fs.closeSync(fd);
+      }
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "big", path: "big/**" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("success");
+      expect(result.note).toMatch(/size\/count cap/);
+      expect(result.note).toMatch(/copied 1 file/);
+    });
+
     it("still allows ordinary relative paths inside the workspace", () => {
       fs.mkdirSync(path.join(cwd, "dist"), { recursive: true });
       fs.writeFileSync(path.join(cwd, "dist", "app.js"), "ok");

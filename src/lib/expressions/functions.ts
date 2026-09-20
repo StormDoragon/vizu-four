@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import fg from "fast-glob";
 import type { JsonValue } from "../workflow/types";
+import { escapesBase, resolveWithin } from "../pathConfinement";
 import { looseEquals, toDisplayString } from "./coerce";
 
 export class ExpressionFunctionError extends Error {}
@@ -123,14 +123,22 @@ const MAX_HASH_FILES = 1000;
 const MAX_HASH_BYTES = 50 * 1024 * 1024;
 
 /** Real (best-effort) implementation: SHA-256 over the matched files' contents, sorted by path. */
-function hashFiles(args: JsonValue[], cwd: string): string {
+function hashFiles(args: JsonValue[], cwd: string | null): string {
   if (args.length === 0) {
     throw new ExpressionFunctionError("hashFiles() expects at least 1 pattern");
+  }
+  // No workspace means no filesystem: the expression playground evaluates
+  // without a session, and there is no directory it could legitimately read.
+  // Previously this fell back to process.cwd() - the server's own tree.
+  if (cwd === null) {
+    throw new ExpressionFunctionError(
+      "hashFiles() needs a debug session - it reads that session's workspace, and there isn't one here"
+    );
   }
   const patterns = args.map((a) => toDisplayString(a));
   // An absolute or `..` pattern reads outside the workspace entirely - on a
   // shared deployment that is the server's own filesystem.
-  const escaping = patterns.filter((p) => path.isAbsolute(p) || p.split("/").includes(".."));
+  const escaping = patterns.filter((p) => escapesBase(p));
   if (escaping.length > 0) {
     throw new ExpressionFunctionError(
       `hashFiles(): pattern(s) ${escaping.join(", ")} resolve outside the workspace; only files inside it can be hashed`
@@ -152,9 +160,13 @@ function hashFiles(args: JsonValue[], cwd: string): string {
   }
   const hash = crypto.createHash("sha256");
   let bytes = 0;
+  let hashed = 0;
   for (const file of files) {
-    const full = path.resolve(cwd, file);
-    if (path.relative(cwd, full).split(path.sep)[0] === "..") continue;
+    // Resolved through the filesystem: a pattern naming a symlinked directory
+    // inside the workspace still matches, and the real file behind it is
+    // outside. A textual check passes that; this doesn't.
+    const full = resolveWithin(cwd, file);
+    if (!full) continue;
     bytes += fs.statSync(full).size;
     if (bytes > MAX_HASH_BYTES) {
       throw new ExpressionFunctionError(
@@ -162,7 +174,11 @@ function hashFiles(args: JsonValue[], cwd: string): string {
       );
     }
     hash.update(fs.readFileSync(full));
+    hashed++;
   }
+  // Every match was confined away, so there is nothing to hash - same answer
+  // as matching nothing, rather than the hash of an empty stream.
+  if (hashed === 0) return "";
   return hash.digest("hex");
 }
 
@@ -203,11 +219,11 @@ const PURE_FUNCTIONS: Record<string, PureFn> = {
 
 /**
  * Resolves and invokes a built-in function by (case-insensitive) name.
- * `cwd` is the working directory used for `hashFiles()`; callers evaluating
- * expressions without filesystem context (e.g. the standalone playground)
- * can pass `process.cwd()` or any scratch directory.
+ * `cwd` is the session workspace `hashFiles()` reads, or null when there is
+ * no session - in which case `hashFiles()` refuses rather than falling back
+ * to a directory of the server's own.
  */
-export function callBuiltin(name: string, args: JsonValue[], cwd: string): JsonValue {
+export function callBuiltin(name: string, args: JsonValue[], cwd: string | null): JsonValue {
   const lower = name.toLowerCase();
   if (lower === "hashfiles") return hashFiles(args, cwd);
   const fn = PURE_FUNCTIONS[lower];

@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseWorkflow } from "../workflow/parser";
 import {
   applyWhatIf,
@@ -1255,5 +1255,76 @@ jobs:
     await controlRunAll(s);
     const secondLane = s.laneOrder.map((id) => s.lanes[id]).find((l) => l.jobId === "second");
     expect(secondLane?.jobResult).toBe("success");
+  });
+});
+
+describe("a throwing step does not wedge the lane", () => {
+  it("records the error and leaves the lane steppable", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: explodes
+        uses: actions/upload-artifact@v4
+        with:
+          name: x
+          path: "**"
+      - name: after
+        if: always()
+        run: echo hi
+`);
+    const mod = await import("./simulatedActions");
+    const spy = vi.spyOn(mod, "runSimulatedAction").mockImplementation(() => {
+      throw new Error("boom from inside the handler");
+    });
+
+    try {
+      const record = await controlStep(s, s.laneOrder[0]);
+      expect(record.conclusion).toBe("failure");
+      expect(record.engineError).toContain("boom from inside the handler");
+    } finally {
+      spy.mockRestore();
+    }
+
+    // "running" is the one status with no way out - the lane must not be left
+    // in it, or every later control call rejects it as already running.
+    expect(s.lanes[s.laneOrder[0]].status).not.toBe("running");
+    const next = await controlStep(s, s.laneOrder[0]);
+    expect(next.name).toBe("after");
+    expect(next.conclusion).toBe("success");
+  });
+
+  it("masks secrets in an engine error", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: explodes
+        uses: actions/upload-artifact@v4
+        with:
+          name: x
+          path: "**"
+`,
+      { secrets: { TOKEN: "super-secret-token-value" } }
+    );
+    const mod = await import("./simulatedActions");
+    const spy = vi.spyOn(mod, "runSimulatedAction").mockImplementation(() => {
+      throw new Error("failed writing super-secret-token-value to disk");
+    });
+
+    try {
+      const record = await controlStep(s, s.laneOrder[0]);
+      expect(record.engineError).not.toContain("super-secret-token-value");
+      expect(record.engineError).toContain("***");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

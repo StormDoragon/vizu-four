@@ -337,7 +337,39 @@ function finishStepAdvance(session: DebugSession, lane: Lane, stepIndex: number)
   }
 }
 
+/**
+ * Runs one step, turning any unexpected throw into a visible step failure.
+ *
+ * An exception escaping to the caller used to leave `lane.status` at
+ * "running" with nothing to reset it, so every later control call rejected
+ * the lane as already running and the session was wedged for good - one bad
+ * `with:` value (a NUL byte in an artifact path reaches `fs` and throws
+ * before any handler validates it) was enough. A debugger should show the
+ * error on the step and stay steppable.
+ */
 async function stepLane(session: DebugSession, laneId: string): Promise<StepRunRecord> {
+  const lane = session.lanes[laneId];
+  const stepIndex = lane.pointer;
+  const record = lane.steps[stepIndex];
+  try {
+    return await runStep(session, laneId);
+  } catch (err) {
+    record.engineError = maskSecrets(
+      `Engine error while running this step: ${err instanceof Error ? err.message : String(err)}`,
+      session.config.secrets
+    );
+    record.outcome = "failure";
+    record.conclusion = "failure";
+    record.status = "failure";
+    record.endedAt = new Date().toISOString();
+    record.durationMs =
+      new Date(record.endedAt).getTime() - new Date(record.startedAt ?? record.endedAt).getTime();
+    finishStepAdvance(session, lane, stepIndex);
+    return record;
+  }
+}
+
+async function runStep(session: DebugSession, laneId: string): Promise<StepRunRecord> {
   const lane = session.lanes[laneId];
   const job = session.workflow.jobs[lane.jobId];
   const stepIndex = lane.pointer;
@@ -505,10 +537,16 @@ export async function controlStep(session: DebugSession, laneId: string): Promis
   if (lane.status === "running") throw new EngineError("Lane is already running");
   if (isTerminal(lane.status)) throw new EngineError("Lane has already finished");
   lane.status = "running";
-  const record = await stepLane(session, laneId);
-  if (!isTerminal(lane.status)) lane.status = "paused";
-  session.revision++;
-  return record;
+  try {
+    const record = await stepLane(session, laneId);
+    if (!isTerminal(lane.status)) lane.status = "paused";
+    return record;
+  } finally {
+    // Last resort: "running" is the one status with no way out, so it must
+    // never survive a throw from anywhere below.
+    if (lane.status === "running") lane.status = "paused";
+    session.revision++;
+  }
 }
 
 async function runLaneLoop(
@@ -546,6 +584,8 @@ async function runLaneLoop(
       }
     }
   } finally {
+    // See controlStep: "running" must never survive a throw from below.
+    if (lane.status === "running") lane.status = "paused";
     session.revision++;
   }
 }

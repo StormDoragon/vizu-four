@@ -15,8 +15,9 @@ export interface EvalContext {
   /** Top-level context objects: github, env, vars, secrets, matrix, needs, steps, runner, job, inputs, strategy... */
   contexts: Record<string, JsonValue>;
   status: StatusFlags;
-  /** Working directory for hashFiles(); defaults to process.cwd(). */
-  cwd?: string;
+  /** Session workspace that hashFiles() reads. Null or absent means there
+   * is no session and hashFiles() refuses - never the server's own cwd. */
+  cwd?: string | null;
 }
 
 function evalNode(node: AstNode, ctx: EvalContext): JsonValue {
@@ -78,7 +79,7 @@ function evalNode(node: AstNode, ctx: EvalContext): JsonValue {
       }
       const args = node.args.map((a) => evalNode(a, ctx));
       try {
-        return callBuiltin(node.callee, args, ctx.cwd ?? process.cwd());
+        return callBuiltin(node.callee, args, ctx.cwd ?? null);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new ExpressionEvalError(message);

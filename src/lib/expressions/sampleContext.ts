@@ -1,7 +1,9 @@
 import type { EvalContext } from "./evaluator";
 
-/** Generic sample data so the expression playground works before any debug session exists. */
-export function sampleEvalContext(cwd: string): EvalContext {
+/** Generic sample data so the expression playground works before any debug
+ * session exists. No workspace: hashFiles() has nothing legitimate to read
+ * without a session, so it refuses rather than reaching the server's disk. */
+export function sampleEvalContext(): EvalContext {
   return {
     contexts: {
       github: {
@@ -36,6 +38,6 @@ export function sampleEvalContext(cwd: string): EvalContext {
       strategy: { "fail-fast": true },
     },
     status: { anyFailure: false, cancelled: false },
-    cwd,
+    cwd: null,
   };
 }

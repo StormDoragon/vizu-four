@@ -58,6 +58,42 @@ describe("hashFiles confinement", () => {
     expect(() => callBuiltin("hashFiles", ["**/*.txt"], cwd)).toThrow(/over the 1000-file limit/);
   });
 
+  it("refuses entirely when there is no session workspace", () => {
+    // The playground evaluates without a session; it used to fall back to
+    // process.cwd(), making hashFiles an oracle over the server's own files.
+    expect(() => callBuiltin("hashFiles", ["**"], null)).toThrow(ExpressionFunctionError);
+    expect(() => callBuiltin("hashFiles", ["**"], null)).toThrow(/needs a debug session/);
+  });
+
+  it("does not hash a file reached through a symlinked directory", () => {
+    fs.symlinkSync(outside, path.join(cwd, "link"));
+    expect(callBuiltin("hashFiles", ["link/canary.txt"], cwd)).toBe("");
+    expect(callBuiltin("hashFiles", ["link/**"], cwd)).toBe("");
+  });
+
+  it("does not hash a symlink that points outside", () => {
+    fs.symlinkSync(path.join(outside, "secret.txt"), path.join(cwd, "alias.txt"));
+    fs.writeFileSync(path.join(outside, "secret.txt"), "outside-content");
+    expect(callBuiltin("hashFiles", ["alias.txt"], cwd)).toBe("");
+  });
+
+  it("still hashes a symlink that stays inside the workspace", () => {
+    fs.mkdirSync(path.join(cwd, "real"));
+    fs.writeFileSync(path.join(cwd, "real", "lock.json"), "{}");
+    fs.symlinkSync(path.join(cwd, "real"), path.join(cwd, "inner"));
+    expect(callBuiltin("hashFiles", ["inner/lock.json"], cwd)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("reports rather than silently truncating when matches exceed the byte limit", () => {
+    fs.mkdirSync(path.join(cwd, "big"));
+    for (const name of ["a.bin", "b.bin"]) {
+      const fd = fs.openSync(path.join(cwd, "big", name), "w");
+      fs.ftruncateSync(fd, 30 * 1024 * 1024);
+      fs.closeSync(fd);
+    }
+    expect(() => callBuiltin("hashFiles", ["big/**"], cwd)).toThrow(/exceed the 50MB limit/);
+  });
+
   it("is stable for the same contents and changes when they do", () => {
     fs.writeFileSync(path.join(cwd, "a.txt"), "one");
     const first = callBuiltin("hashFiles", ["**/*.txt"], cwd);

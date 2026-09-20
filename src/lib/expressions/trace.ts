@@ -142,7 +142,7 @@ function walk(node: AstNode, ctx: EvalContext): TraceNode {
         const value = callBuiltin(
           node.callee,
           argTraces.map((t) => t.value ?? null),
-          ctx.cwd ?? process.cwd()
+          ctx.cwd ?? null
         );
         return done(node, value, argTraces);
       } catch (err) {
