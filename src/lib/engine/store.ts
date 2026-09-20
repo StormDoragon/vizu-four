@@ -79,6 +79,67 @@ export function listSessions(): DebugSession[] {
 }
 
 /** How many live sessions this visitor currently holds, for the creation cap. */
+/**
+ * Admission slots held between "this request may create a session" and the
+ * session actually landing in the store.
+ *
+ * The two live-session caps used to be checked and then awaited across -
+ * the workspace mkdtemp sits between the check and the save - so any number
+ * of concurrent requests could pass the same check before the first of them
+ * counted for anything. Reserving synchronously closes that window: the
+ * check and the increment happen in one turn of the event loop, with no
+ * await between them.
+ */
+const RESERVATION_KEY = "__actionsDebuggerSessionReservations__";
+
+interface Reservations {
+  total: number;
+  byOwner: Map<string, number>;
+}
+
+function reservations(): Reservations {
+  const g = globalThis as unknown as Record<string, Reservations | undefined>;
+  if (!g[RESERVATION_KEY]) g[RESERVATION_KEY] = { total: 0, byOwner: new Map() };
+  return g[RESERVATION_KEY]!;
+}
+
+export type AdmissionRefusal = "owner" | "total";
+
+/**
+ * Takes a slot for a session about to be created, or names the cap that
+ * refused it. Must be released once the session is saved (from then on the
+ * store itself counts it) or the attempt has failed.
+ */
+export function reserveSessionSlot(
+  ownerId: string,
+  maxPerOwner: number,
+  maxTotal: number
+): AdmissionRefusal | null {
+  const held = reservations();
+  if (countSessionsByOwner(ownerId) + (held.byOwner.get(ownerId) ?? 0) >= maxPerOwner) {
+    return "owner";
+  }
+  if (getStore().size + held.total >= maxTotal) return "total";
+  held.total++;
+  held.byOwner.set(ownerId, (held.byOwner.get(ownerId) ?? 0) + 1);
+  return null;
+}
+
+export function releaseSessionSlot(ownerId: string): void {
+  const held = reservations();
+  held.total = Math.max(0, held.total - 1);
+  const forOwner = (held.byOwner.get(ownerId) ?? 0) - 1;
+  if (forOwner > 0) held.byOwner.set(ownerId, forOwner);
+  else held.byOwner.delete(ownerId);
+}
+
+/** Test seam. */
+export function resetSessionSlots(): void {
+  const held = reservations();
+  held.total = 0;
+  held.byOwner.clear();
+}
+
 export function countSessionsByOwner(ownerId: string): number {
   let count = 0;
   for (const session of getStore().values()) {

@@ -72,12 +72,19 @@ export interface RateLimitResult {
 }
 
 /**
- * The address the nearest trusted proxy observed.
+ * The address the nearest proxy reported, if any.
  *
- * A client can prepend entries to `x-forwarded-for`, but not the one the
- * proxy appends, so only the last entry is worth limiting on. Null when the
- * header is absent - a direct connection, as in local use - where the
- * address scope is skipped rather than guessed at.
+ * Taking the last `x-forwarded-for` entry means a client cannot help itself
+ * by prepending entries. That is only as good as the deployment, though:
+ * it assumes a proxy that always appends or overwrites the last entry and
+ * that nothing can reach this process around it. Behind a longer chain the
+ * last entry may also be an intermediary shared by many visitors, which
+ * makes the address scope coarser than intended.
+ *
+ * So treat the address scope as a conditional limit, not a guarantee - the
+ * global scope is the one that bounds this process regardless of what any
+ * header says. Null when the header is absent, as on a direct connection,
+ * where the address scope is skipped rather than guessed at.
  */
 export function clientAddressFrom(headers: Headers): string | null {
   const forwarded = headers.get("x-forwarded-for");

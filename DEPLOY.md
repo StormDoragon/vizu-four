@@ -116,6 +116,22 @@ you forget (`warnIfUnsafeDeployment()` — check your deploy logs for it), it
 can't enforce this from inside the process, so setting the variable is on
 you.
 
+### Abuse limits and what they actually assume
+
+Session creation is limited in three scopes: per visitor (an `httpOnly`
+cookie), per client address, and a global ceiling for the whole process,
+plus caps on how many sessions may be live at once.
+
+Only the global scope is unconditional. The per-visitor scope is keyed on a
+cookie the visitor can simply discard, and the address scope reads the last
+`x-forwarded-for` entry — which is trustworthy **only if your host always
+appends or overwrites that entry and nothing can reach the process around
+it**. Render does sit in front of the app this way, but that has not been
+verified end to end here, and behind a longer proxy chain the last entry can
+be an intermediary shared by many visitors. Treat per-visitor and per-address
+as best-effort layers; the global ceiling and the live-session caps are what
+actually bound the instance.
+
 The rest of these are worth doing in addition, never instead:
 
 - Run as a non-root user

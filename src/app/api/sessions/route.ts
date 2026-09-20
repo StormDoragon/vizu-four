@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { parseWorkflow } from "@/lib/workflow/parser";
 import { createSession } from "@/lib/engine/session";
 import { EngineError } from "@/lib/engine/errors";
-import { countSessionsByOwner, listSessions, saveSession } from "@/lib/engine/store";
+import { releaseSessionSlot, reserveSessionSlot, saveSession } from "@/lib/engine/store";
 import { ensureOwnerId } from "@/lib/engine/ownership";
 import {
   MAX_LIVE_SESSIONS_PER_OWNER,
@@ -60,25 +60,11 @@ export async function POST(req: Request) {
   const configError = validateRunConfigPatch(config);
   if (configError) return errorResponse(400, configError);
 
-  let realWorkspaceDir: string | undefined;
-  if (workingTreeDir !== undefined) {
-    try {
-      assertRealWorkspaceAllowed();
-      realWorkspaceDir = await resolveWorkingTree(workingTreeDir);
-    } catch (err) {
-      if (err instanceof WorkspaceError) return errorResponse(err.status, err.message);
-      throw err;
-    }
-  }
-
-  const { workflow, issues } = parseWorkflow(workflowYaml, sourcePath);
-  if (!workflow) {
-    return errorResponse(400, "Workflow failed to parse", { issues });
-  }
-
   const ownerId = await ensureOwnerId();
 
-  // Checked before mkdtemp, so a refused request leaves nothing behind.
+  // Ahead of parsing and of any filesystem work, so a refused request costs
+  // this process as little as possible - and so a malformed workflow still
+  // spends budget rather than being a free way to make the server parse.
   const limit = checkCreateLimit(ownerId, clientAddressFrom(req.headers));
   if (!limit.allowed) {
     return NextResponse.json(
@@ -91,44 +77,70 @@ export async function POST(req: Request) {
       { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
     );
   }
-  if (countSessionsByOwner(ownerId) >= MAX_LIVE_SESSIONS_PER_OWNER) {
+
+  // Taken synchronously and held until the session is saved. Checking the
+  // live counts and then awaiting mkdtemp would let every concurrent request
+  // pass the same check before any of them counted.
+  const refusal = reserveSessionSlot(ownerId, MAX_LIVE_SESSIONS_PER_OWNER, MAX_LIVE_SESSIONS_TOTAL);
+  if (refusal === "owner") {
     return errorResponse(
       429,
       `You already have ${MAX_LIVE_SESSIONS_PER_OWNER} sessions open. Close one (or wait for it to be reclaimed) before starting another.`
     );
   }
-  // Bounds the whole instance, not one visitor: sessions hold captured output
-  // in memory, and the per-owner cap above is only as good as an owner id the
-  // visitor can discard.
-  if (listSessions().length >= MAX_LIVE_SESSIONS_TOTAL) {
+  if (refusal === "total") {
+    // Bounds the whole instance, not one visitor: sessions hold captured
+    // output in memory, and the per-owner cap above is only as good as an
+    // owner id the visitor can discard.
     return errorResponse(
       429,
       "This demo instance is holding as many sessions as it will at once. Try again shortly, or run it locally."
     );
   }
 
-  const workspaceDir =
-    realWorkspaceDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-")));
-  let session;
   try {
-    session = createSession({
-      workflow,
-      workspaceDir,
-      usesRealWorkspace: realWorkspaceDir !== undefined,
-      ownerId,
-      config,
-      parseIssues: issues,
-    });
-  } catch (err) {
-    // Only ever the scratch dir this request just made - never a real
-    // working tree the user pointed the debugger at.
-    if (realWorkspaceDir === undefined) {
-      await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => {});
+    let realWorkspaceDir: string | undefined;
+    if (workingTreeDir !== undefined) {
+      try {
+        assertRealWorkspaceAllowed();
+        realWorkspaceDir = await resolveWorkingTree(workingTreeDir);
+      } catch (err) {
+        if (err instanceof WorkspaceError) return errorResponse(err.status, err.message);
+        throw err;
+      }
     }
-    if (err instanceof EngineError) return errorResponse(400, err.message);
-    throw err;
-  }
-  saveSession(session);
 
-  return NextResponse.json({ session: toSessionView(session), issues });
+    const { workflow, issues } = parseWorkflow(workflowYaml, sourcePath);
+    if (!workflow) {
+      return errorResponse(400, "Workflow failed to parse", { issues });
+    }
+
+    const workspaceDir =
+      realWorkspaceDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "actions-debugger-ws-")));
+    let session;
+    try {
+      session = createSession({
+        workflow,
+        workspaceDir,
+        usesRealWorkspace: realWorkspaceDir !== undefined,
+        ownerId,
+        config,
+        parseIssues: issues,
+      });
+    } catch (err) {
+      // Only ever the scratch dir this request just made - never a real
+      // working tree the user pointed the debugger at.
+      if (realWorkspaceDir === undefined) {
+        await fs.rm(workspaceDir, { recursive: true, force: true }).catch(() => {});
+      }
+      if (err instanceof EngineError) return errorResponse(400, err.message);
+      throw err;
+    }
+    saveSession(session);
+
+    return NextResponse.json({ session: toSessionView(session), issues });
+  } finally {
+    // Either the store counts this session now, or there is nothing to count.
+    releaseSessionSlot(ownerId);
+  }
 }
