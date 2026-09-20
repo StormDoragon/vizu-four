@@ -15,6 +15,7 @@ import {
 } from "./session";
 import { EngineError } from "./errors";
 import { toSessionView } from "./serialize";
+import { maskObjectStrings, secretsToMask } from "./masking";
 import { resolveEffectiveEnv, sessionTempRoot } from "./contexts";
 import type { DebugSession } from "./types";
 
@@ -1466,11 +1467,21 @@ jobs:
 });
 
 describe("historical environment snapshots", () => {
-  /** What the context route serves for a given step. */
+  /** What the context route serves for `stepIndex=K` - the state entering
+   * step K, historical once that step has run. */
   function envAt(s: DebugSession, laneId: string, stepIndex: number): Record<string, string> {
     const lane = s.lanes[laneId];
     const recorded = stepIndex < lane.pointer ? lane.steps[stepIndex]?.envBefore : undefined;
     return recorded ?? resolveEffectiveEnv(s, lane, stepIndex, undefined);
+  }
+
+  /** What the context route serves for `afterStepIndex=N` - what step N left
+   * behind, falling back to the live view when it has not run. */
+  function envAfter(s: DebugSession, laneId: string, n: number): Record<string, string> {
+    const lane = s.lanes[laneId];
+    const recorded = n >= 0 && n < lane.pointer ? lane.steps[n]?.envAfter : undefined;
+    const upto = Math.max(0, Math.min(n + 1, lane.pointer));
+    return recorded ?? resolveEffectiveEnv(s, lane, upto, undefined);
   }
 
   const COLOR_WORKFLOW = `name: t
@@ -1509,12 +1520,69 @@ jobs:
   });
 
   it("records what subsequent steps inherit", async () => {
+    // `envAfter` is the whole environment a following step inherits, not the
+    // bare `$GITHUB_ENV` additions - so before the write it still carries the
+    // workflow-level `COLOR: red`, and after it the persisted `blue`.
     const s = session(COLOR_WORKFLOW);
     const lane = s.laneOrder[0];
     await controlStep(s, lane);
-    expect(s.lanes[lane].steps[0].envAfter).toEqual({});
+    expect(s.lanes[lane].steps[0].envAfter?.COLOR).toBe("red");
+    await controlStep(s, lane); // writes COLOR=blue
+    expect(s.lanes[lane].steps[1].envAfter?.COLOR).toBe("blue");
+    // The bare additions remain available separately, on the lane itself.
+    expect(s.lanes[lane].env).toEqual({ COLOR: "blue" });
+  });
+
+  it("separates what a finished step left from what the pending one would get", async () => {
+    // Both questions used to land on the same index: the inspector asks
+    // about the selected step, and selecting the last completed one put the
+    // request on the pointer, where recomputing answered with the present.
+    const s = session(COLOR_WORKFLOW);
+    const lane = s.laneOrder[0];
     await controlStep(s, lane);
-    expect(s.lanes[lane].steps[1].envAfter).toEqual({ COLOR: "blue" });
+    await controlStep(s, lane); // writes COLOR=blue; pointer is now 2
+    expect(s.lanes[lane].pointer).toBe(2);
+
+    applyWhatIf(s, { env: { COLOR: "green" } });
+
+    // Inspecting the last completed step: history, unmoved by the override.
+    expect(envAfter(s, lane, 1).COLOR).toBe("blue");
+    // Inspecting the pending step: what running it now would actually use.
+    expect(envAt(s, lane, 2).COLOR).toBe("green");
+  });
+
+  it("keeps redacting a secret that What-If has since removed", async () => {
+    const secret = "secret-value-alpha-0123456789";
+    const s = session(
+      `name: t
+on: [push]
+env:
+  TOKEN: \${{ secrets.TOKEN }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo one
+      - run: echo two
+`,
+      { secrets: { TOKEN: secret } }
+    );
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    expect(s.lanes[lane].steps[0].envBefore?.TOKEN).toBe(secret);
+
+    // Deleting the secret must not un-redact the snapshots taken while it
+    // was one: masking against only the current map would hand back the raw
+    // value, since the map no longer contains it.
+    applyWhatIf(s, { secrets: { TOKEN: null } });
+    const secrets = secretsToMask(s.config.secrets, s.retiredSecretValues);
+    expect(maskObjectStrings(s.lanes[lane].steps[0].envBefore ?? {}, secrets).TOKEN).toBe("***");
+
+    // Replacing it with a different value is the same story.
+    applyWhatIf(s, { secrets: { TOKEN: "another-secret-value-9876543210" } });
+    const after = secretsToMask(s.config.secrets, s.retiredSecretValues);
+    expect(maskObjectStrings(s.lanes[lane].steps[0].envBefore ?? {}, after).TOKEN).toBe("***");
   });
 
   it("includes the step's own env: layer in what it was given", async () => {

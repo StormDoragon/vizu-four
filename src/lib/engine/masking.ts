@@ -2,11 +2,27 @@ const MASK = "***";
 const MIN_MASKABLE_LENGTH = 3; // avoid masking trivially short/common substrings
 
 /**
- * Replaces every occurrence of any secret value with `***`, mirroring
- * GitHub Actions' own log masking. Values shorter than a few characters are
- * skipped since masking them would redact unrelated text (GitHub applies a
- * similar minimum-length rule).
+ * Values to redact: everything that is a secret now, plus everything that
+ * was one earlier in this session.
+ *
+ * Masking stored data against only the current map lets a secret escape by
+ * being removed - What-If deletes it, and every snapshot and record that
+ * still holds the old value is suddenly matched against a map that no
+ * longer contains it. Retired values are never dropped, so a value that was
+ * ever secret here stays redacted. Masking something that is no longer
+ * secret costs nothing; the reverse does not.
  */
+export function secretsToMask(
+  current: Record<string, string>,
+  retired: readonly string[]
+): Record<string, string> {
+  if (retired.length === 0) return current;
+  return {
+    ...current,
+    ...Object.fromEntries(retired.map((value, i) => [`__retired_${i}`, value])),
+  };
+}
+
 function maskableValues(secrets: Record<string, string>): string[] {
   return (
     Object.values(secrets)
@@ -17,6 +33,12 @@ function maskableValues(secrets: Record<string, string>): string[] {
   );
 }
 
+/**
+ * Replaces every occurrence of any secret value with `***`, mirroring
+ * GitHub Actions' own log masking. Values shorter than a few characters are
+ * skipped since masking them would redact unrelated text (GitHub applies a
+ * similar minimum-length rule).
+ */
 export function maskSecrets(text: string, secrets: Record<string, string>): string {
   let out = text;
   for (const value of maskableValues(secrets)) {

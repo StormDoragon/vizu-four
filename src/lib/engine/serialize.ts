@@ -3,7 +3,7 @@ import { isSimulationOnly } from "../deployment";
 import type { JsonValue, ParseIssue } from "../workflow/types";
 import { buildJobGraph } from "../workflow/graph";
 import { expandMatrix, type MatrixCombo } from "../workflow/matrix";
-import { maskObjectStrings } from "./masking";
+import { maskObjectStrings, secretsToMask } from "./masking";
 import type { DebugSession, Lane, StepMock } from "./types";
 
 export interface SessionViewStep {
@@ -90,7 +90,7 @@ export interface SessionView {
  * state crosses from the engine to the client.
  */
 function toClientLanes(session: DebugSession): Record<string, Lane> {
-  const secrets = session.config.secrets;
+  const secrets = secretsToMask(session.config.secrets, session.retiredSecretValues);
   const out: Record<string, Lane> = {};
   for (const [id, lane] of Object.entries(session.lanes)) {
     out[id] = {

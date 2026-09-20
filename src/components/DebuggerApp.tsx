@@ -381,11 +381,14 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
 
   const activeLane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const inspectorLaneId = selection?.laneId ?? session.activeLaneId ?? null;
-  // Context as of right after the selected step finished, so its own
-  // outputs show up in `steps.*` - not always the lane's current pointer,
-  // which is "the next step to run", not "the step the user clicked".
+  // Context as of right after the selected step finished, so its own outputs
+  // show up in `steps.*` - not the lane's current pointer, which is "the next
+  // step to run", not "the step the user clicked". Sent as the step's own
+  // index rather than `+ 1`: the two mean different things once the selected
+  // step is the last completed one, where `+ 1` is the pointer and asked for
+  // the environment the *pending* step would be given now.
   const inspectorStepIndex = selection
-    ? selection.stepIndex + 1
+    ? selection.stepIndex
     : (inspectorLaneId ? session.lanes[inspectorLaneId]?.pointer : undefined);
   const focusedLabel = focusedLaneId ? focusedLaneLabel(session, focusedLaneId) : null;
 

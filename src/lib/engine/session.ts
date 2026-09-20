@@ -23,7 +23,7 @@ import {
 } from "./contexts";
 import { executeRunStep } from "./stepRunner";
 import { runSimulatedAction } from "./simulatedActions";
-import { maskChunks, maskObjectStrings, maskSecrets } from "./masking";
+import { maskChunks, maskObjectStrings, maskSecrets, secretsToMask } from "./masking";
 import { EngineError } from "./errors";
 import { defaultRunConfig } from "./defaults";
 import { isSimulationOnly } from "../deployment";
@@ -172,6 +172,7 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
     usesRealWorkspace: opts.usesRealWorkspace ?? false,
     awaitingExecutionConsent: opts.awaitingExecutionConsent ?? false,
     config,
+    retiredSecretValues: [],
     breakpoints: new Set(),
     breakOnFailure: true,
     lanes: {},
@@ -307,7 +308,7 @@ function finalizeLaneOutputs(session: DebugSession, lane: Lane): void {
     });
     for (const [key, expr] of Object.entries(job.outputs)) {
       const { result } = interpolate(expr, evalCtx);
-      lane.outputs[key] = maskSecrets(result, session.config.secrets);
+      lane.outputs[key] = maskSecrets(result, secretsToMask(session.config.secrets, session.retiredSecretValues));
     }
   }
   recomputeLaneReadiness(session);
@@ -373,12 +374,12 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
   const record = lane.steps[stepIndex];
   try {
     const finished = await runStep(session, laneId);
-    finished.envAfter = { ...lane.env };
+    finished.envAfter = resolveEffectiveEnv(session, lane, stepIndex + 1, undefined);
     return finished;
   } catch (err) {
     record.engineError = maskSecrets(
       `Engine error while running this step: ${err instanceof Error ? err.message : String(err)}`,
-      session.config.secrets
+      secretsToMask(session.config.secrets, session.retiredSecretValues)
     );
     record.outcome = "failure";
     record.conclusion = "failure";
@@ -386,7 +387,7 @@ async function stepLane(session: DebugSession, laneId: string): Promise<StepRunR
     record.endedAt = new Date().toISOString();
     record.durationMs =
       new Date(record.endedAt).getTime() - new Date(record.startedAt ?? record.endedAt).getTime();
-    record.envAfter = { ...lane.env };
+    record.envAfter = resolveEffectiveEnv(session, lane, stepIndex + 1, undefined);
     finishStepAdvance(session, lane, stepIndex);
     return record;
   }
@@ -426,7 +427,7 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
   // field; this one also reaches the explanation prompt.
   record.ifError =
     "error" in cond && cond.error !== undefined
-      ? maskSecrets(cond.error, session.config.secrets)
+      ? maskSecrets(cond.error, secretsToMask(session.config.secrets, session.retiredSecretValues))
       : undefined;
 
   if (!cond.result) {
@@ -448,7 +449,7 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
     if (scriptErrors.length > 0) {
       record.engineError = maskSecrets(
         `Could not evaluate expression(s) in 'run': ${scriptErrors.map((e) => e.message).join("; ")}`,
-        session.config.secrets
+        secretsToMask(session.config.secrets, session.retiredSecretValues)
       );
       record.outcome = "failure";
     } else if (runMock || isSimulationOnly()) {
@@ -464,11 +465,11 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
             ? "this step's result is stubbed, so it was not run."
             : "this deployment runs in simulation-only mode."
         } After interpolation the command would have been: ${summarizeScript(script)}`,
-        session.config.secrets
+        secretsToMask(session.config.secrets, session.retiredSecretValues)
       );
       record.exitCode = 0;
       record.outcome = "success";
-      if (runMock) applyStepMock(record, runMock, session.config.secrets);
+      if (runMock) applyStepMock(record, runMock, secretsToMask(session.config.secrets, session.retiredSecretValues));
     } else {
       const workDirRaw = step["working-directory"]
         ? interpolate(step["working-directory"], evalCtx).result
@@ -477,7 +478,7 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
       await fs.mkdir(lane.tempDir, { recursive: true });
       const runResult = await executeRunStep({
         script,
-        secrets: session.config.secrets,
+        secrets: secretsToMask(session.config.secrets, session.retiredSecretValues),
         shell: step.shell,
         cwd,
         env: effectiveEnv,
@@ -489,19 +490,19 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
             : undefined,
       });
       record.exitCode = runResult.exitCode;
-      record.stdout = maskSecrets(runResult.stdout, session.config.secrets);
-      record.stderr = maskSecrets(runResult.stderr, session.config.secrets);
+      record.stdout = maskSecrets(runResult.stdout, secretsToMask(session.config.secrets, session.retiredSecretValues));
+      record.stderr = maskSecrets(runResult.stderr, secretsToMask(session.config.secrets, session.retiredSecretValues));
       // Masked as one stream and re-split, not chunk by chunk: a secret
       // written in two calls lands in two chunks, and neither holds enough of
       // it to match on its own.
-      record.combinedOutput = maskChunks(runResult.combined, session.config.secrets);
+      record.combinedOutput = maskChunks(runResult.combined, secretsToMask(session.config.secrets, session.retiredSecretValues));
       record.summary = runResult.summary
-        ? maskSecrets(runResult.summary, session.config.secrets)
+        ? maskSecrets(runResult.summary, secretsToMask(session.config.secrets, session.retiredSecretValues))
         : undefined;
-      record.outputs = maskObjectStrings(runResult.outputs, session.config.secrets);
+      record.outputs = maskObjectStrings(runResult.outputs, secretsToMask(session.config.secrets, session.retiredSecretValues));
 
       if (runResult.spawnError) {
-        record.engineError = maskSecrets(runResult.spawnError, session.config.secrets);
+        record.engineError = maskSecrets(runResult.spawnError, secretsToMask(session.config.secrets, session.retiredSecretValues));
         record.outcome = "failure";
       } else if (runResult.timedOut) {
         record.engineError = "Step timed out";
@@ -526,13 +527,13 @@ async function runStep(session: DebugSession, laneId: string): Promise<StepRunRe
     // simResult.note can legitimately echo back `with:` input values (e.g. a
     // registry username) that a workflow commonly sources from `secrets.*` -
     // mask it the same as every other client-visible surface.
-    record.simulationNote = maskSecrets(simResult.note, session.config.secrets);
+    record.simulationNote = maskSecrets(simResult.note, secretsToMask(session.config.secrets, session.retiredSecretValues));
 
     const mock = session.mockOutputs[mockOutputsKey(lane.jobId, step.key)];
-    record.outputs = maskObjectStrings(simResult.outputs, session.config.secrets);
+    record.outputs = maskObjectStrings(simResult.outputs, secretsToMask(session.config.secrets, session.retiredSecretValues));
     record.outcome = simResult.conclusion;
     record.exitCode = simResult.conclusion === "success" ? 0 : 1;
-    if (mock) applyStepMock(record, mock, session.config.secrets, simResult.outputs);
+    if (mock) applyStepMock(record, mock, secretsToMask(session.config.secrets, session.retiredSecretValues), simResult.outputs);
   } else {
     record.engineError = "Step has neither 'run' nor 'uses'";
     record.outcome = "failure";
@@ -759,9 +760,18 @@ function applyKeyedPatch<T>(
 
 /** Mutates live session config; takes effect on the next step executed in any lane. */
 export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
+  // Captured before the patch lands: a secret being replaced or removed is
+  // still present in output and snapshots recorded while it was live, and
+  // those are redacted on read against this list plus the current map.
+  for (const [key, value] of Object.entries(patch.secrets ?? {})) {
+    const previous = secretsToMask(session.config.secrets, session.retiredSecretValues)[key];
+    if (previous && previous !== value && !session.retiredSecretValues.includes(previous)) {
+      session.retiredSecretValues.push(previous);
+    }
+  }
   applyKeyedPatch(session.config.envOverrides, patch.env);
   applyKeyedPatch(session.config.vars, patch.vars);
-  applyKeyedPatch(session.config.secrets, patch.secrets);
+  applyKeyedPatch(secretsToMask(session.config.secrets, session.retiredSecretValues), patch.secrets);
   applyKeyedPatch(session.config.workflowInputs, patch.inputs);
   if (patch.event !== undefined) session.config.event = patch.event;
   if (patch.eventName !== undefined) session.config.eventName = patch.eventName;

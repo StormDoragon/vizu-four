@@ -27,8 +27,9 @@ export function ContextInspector({
 }: {
   sessionId: string;
   laneId: string | null;
-  /** Show context as of this already-executed step, not just the lane's
-   * current pointer - so selecting an earlier step shows its own context. */
+  /** Show context as of the end of this step, not just the lane's current
+   * pointer - so selecting an earlier step shows its own context, including
+   * its own outputs. */
   stepIndex?: number;
   /** Bumped by the session on every mutation - refetches even when neither
    * laneId nor stepIndex changed (e.g. a What-If or mock-output edit). */

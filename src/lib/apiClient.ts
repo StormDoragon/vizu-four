@@ -180,11 +180,20 @@ export async function evaluateExpression(
   });
 }
 
+/**
+ * Context as of the end of `afterStepIndex`, i.e. with that step's own
+ * outputs in scope and the environment it left behind.
+ *
+ * Deliberately not "the state entering step N+1": for a step that has
+ * finished those differ once a What-If override lands, and the inspector
+ * wants the history, not what the next step would be given now. The server
+ * falls back to the live view when the named step has not run.
+ */
 export async function getContext(
   id: string,
   laneId: string,
-  stepIndex?: number
+  afterStepIndex?: number
 ): Promise<{ context: Record<string, JsonValue>; pointer: number }> {
-  const stepParam = stepIndex !== undefined ? `&stepIndex=${stepIndex}` : "";
+  const stepParam = afterStepIndex !== undefined ? `&afterStepIndex=${afterStepIndex}` : "";
   return request(`/api/sessions/${id}/context?laneId=${encodeURIComponent(laneId)}${stepParam}`);
 }

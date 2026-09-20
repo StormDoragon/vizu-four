@@ -44,8 +44,14 @@ export interface StepRunRecord {
    * `Lane.env`, and redacted where it reaches the client.
    */
   envBefore?: Record<string, string>;
-  /** `$GITHUB_ENV` as it stood once this step finished - what the steps
-   * after it inherit. */
+  /**
+   * The environment a following step would inherit, as it stood when this
+   * step finished: the workflow and job layers, plus everything persisted
+   * to `$GITHUB_ENV` up to here, plus What-If overrides in effect at the
+   * time. Not the bare `$GITHUB_ENV` additions - those are `Lane.env` - and
+   * not the next step's own `env:` layer, which is applied on top when that
+   * step runs.
+   */
   envAfter?: Record<string, string>;
 }
 
@@ -121,6 +127,11 @@ export interface DebugSession {
    * guarantees is that following a link never runs anything on its own. */
   awaitingExecutionConsent: boolean;
   config: RunConfig;
+  /** Secret values that were in `config.secrets` earlier in this session and
+   * have since been replaced or removed. Append-only: recorded output and
+   * environment snapshots still hold them, and those are redacted on read,
+   * so dropping a value from the live map must not un-redact the past. */
+  retiredSecretValues: string[];
   breakpoints: Set<string>;
   breakOnFailure: boolean;
   lanes: Record<string, Lane>;
