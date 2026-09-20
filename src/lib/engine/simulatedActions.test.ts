@@ -122,6 +122,96 @@ describe("runSimulatedAction", () => {
     expect(result.conclusion).toBe("failure");
   });
 
+  describe("path confinement", () => {
+    let outside: string;
+
+    beforeEach(() => {
+      outside = fs.mkdtempSync(path.join(os.tmpdir(), "sim-outside-"));
+      fs.writeFileSync(path.join(outside, "secret.txt"), "do-not-copy");
+    });
+
+    afterEach(() => {
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    it("rejects an upload pattern that escapes the workspace", () => {
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "leak", path: "../../**/secret.txt" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(result.note).toContain("outside the job's workspace");
+      expect(fs.existsSync(path.join(artifactsDir, "leak"))).toBe(false);
+    });
+
+    it("rejects an absolute upload pattern", () => {
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "leak", path: `${outside}/secret.txt` },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(result.note).toContain("outside the job's workspace");
+    });
+
+    it("rejects an artifact name that escapes the artifact store", () => {
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "../../escaped", path: "**" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(result.note).toContain("outside the debugger's artifact store");
+      expect(fs.existsSync(path.join(artifactsDir, "..", "..", "escaped"))).toBe(false);
+    });
+
+    it("rejects a download path that escapes the workspace", () => {
+      const artDir = path.join(artifactsDir, "build");
+      fs.mkdirSync(artDir, { recursive: true });
+      fs.writeFileSync(path.join(artDir, "payload.txt"), "overwritten");
+
+      const result = runSimulatedAction(
+        "actions/download-artifact@v4",
+        { name: "build", path: `../../${path.basename(outside)}` },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(result.note).toContain("outside the job's workspace");
+      expect(fs.existsSync(path.join(outside, "payload.txt"))).toBe(false);
+      expect(fs.readFileSync(path.join(outside, "secret.txt"), "utf8")).toBe("do-not-copy");
+    });
+
+    it("rejects a download artifact name that escapes the artifact store", () => {
+      const result = runSimulatedAction(
+        "actions/download-artifact@v4",
+        { name: "../..", path: "restored" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("failure");
+      expect(result.note).toContain("outside the debugger's artifact store");
+    });
+
+    it("still allows ordinary relative paths inside the workspace", () => {
+      fs.mkdirSync(path.join(cwd, "dist"), { recursive: true });
+      fs.writeFileSync(path.join(cwd, "dist", "app.js"), "ok");
+
+      const result = runSimulatedAction(
+        "actions/upload-artifact@v4",
+        { name: "build", path: "./dist/**" },
+        cwd,
+        artifactsDir
+      );
+      expect(result.conclusion).toBe("success");
+      expect(fs.existsSync(path.join(artifactsDir, "build", "dist", "app.js"))).toBe(true);
+    });
+  });
+
   it("handles docker/login-action", () => {
     const result = runSimulatedAction(
       "docker/login-action@v3",

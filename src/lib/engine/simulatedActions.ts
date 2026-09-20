@@ -29,6 +29,34 @@ function bool(v: JsonValue | undefined, fallback = false): boolean {
   return s === "true" || s === "1" || s === "yes";
 }
 
+/** Copy loops here are synchronous and run on the process serving every
+ * visitor, so an enormous glob can't be allowed to monopolize it. */
+const MAX_ARTIFACT_FILES = 2000;
+
+/**
+ * Resolves `segments` under `base`, or null if the result lands outside it.
+ * `path.join` walks straight out of a directory given a `..` segment or an
+ * absolute one, and every path reaching these handlers comes from workflow
+ * YAML - which on a shared deployment is attacker-supplied.
+ */
+function resolveWithin(base: string, ...segments: string[]): string | null {
+  const resolved = path.resolve(base, ...segments);
+  const rel = path.relative(base, resolved);
+  if (rel === "") return resolved;
+  if (path.isAbsolute(rel) || rel.split(path.sep)[0] === "..") return null;
+  return resolved;
+}
+
+/** Globs are matched by fast-glob relative to `cwd`, but an absolute or
+ * `..`-prefixed pattern escapes it before confinement can apply. */
+function escapesCwd(pattern: string): boolean {
+  return path.isAbsolute(pattern) || pattern.split("/").includes("..");
+}
+
+function rejected(note: string): SimulatedActionResult {
+  return { outputs: {}, conclusion: "failure", note };
+}
+
 /** Generic setup-* tool that reports the requested version and a cache miss. */
 const setupTool = (
   toolLabel: string,
@@ -125,15 +153,39 @@ const HANDLERS: Record<string, Handler> = {
       ? (withInputs.path as JsonValue[]).map((p) => str(p))
       : [str(withInputs.path, "")];
     const retentionDays = str(withInputs["retention-days"], "90");
-    const dest = path.join(artifactsDir, name);
+
+    const dest = resolveWithin(artifactsDir, name);
+    if (!dest) {
+      return rejected(
+        `Rejected: artifact name '${name}' resolves outside the debugger's artifact store. Real GitHub rejects path separators in artifact names too.`
+      );
+    }
+    const escaping = patterns.filter((p) => p !== "" && escapesCwd(p));
+    if (escaping.length > 0) {
+      return rejected(
+        `Rejected: path pattern(s) ${escaping.join(", ")} resolve outside the job's workspace. Artifacts are only collected from inside it.`
+      );
+    }
+
     fs.mkdirSync(dest, { recursive: true });
     let count = 0;
+    let truncated = false;
     for (const pattern of patterns) {
-      if (!pattern) continue;
-      const matches = fg.sync(pattern, { cwd, dot: true, onlyFiles: true });
+      if (!pattern || truncated) continue;
+      const matches = fg.sync(pattern, {
+        cwd,
+        dot: true,
+        onlyFiles: true,
+        followSymbolicLinks: false,
+      });
       for (const rel of matches) {
-        const from = path.join(cwd, rel);
-        const to = path.join(dest, rel); // preserve relative path structure
+        if (count >= MAX_ARTIFACT_FILES) {
+          truncated = true;
+          break;
+        }
+        const from = resolveWithin(cwd, rel);
+        const to = resolveWithin(dest, rel); // preserve relative path structure
+        if (!from || !to) continue;
         fs.mkdirSync(path.dirname(to), { recursive: true });
         fs.copyFileSync(from, to);
         count++;
@@ -145,31 +197,59 @@ const HANDLERS: Record<string, Handler> = {
         "artifact-url": `file://${dest}`,
       },
       conclusion: "success",
-      note: `Simulated: copied ${count} file(s) into the debugger's local artifact store (name=${name}). Retention: ${retentionDays} days (ignored locally).`,
+      note: `Simulated: copied ${count} file(s) into the debugger's local artifact store (name=${name})${
+        truncated ? `, stopping at the ${MAX_ARTIFACT_FILES}-file cap` : ""
+      }. Retention: ${retentionDays} days (ignored locally).`,
     };
   },
 
   "actions/download-artifact": ({ withInputs, cwd, artifactsDir }) => {
     const name = withInputs.name ? str(withInputs.name) : undefined;
-    const destDir = path.join(cwd, str(withInputs.path, "."));
-    fs.mkdirSync(destDir, { recursive: true });
-    const sourceDirs = name
-      ? [path.join(artifactsDir, name)]
-      : fs.existsSync(artifactsDir)
+    const requestedPath = str(withInputs.path, ".");
+
+    const destDir = resolveWithin(cwd, requestedPath);
+    if (!destDir) {
+      return rejected(
+        `Rejected: download path '${requestedPath}' resolves outside the job's workspace. Artifacts are only restored inside it.`
+      );
+    }
+    let sourceDirs: string[];
+    if (name) {
+      const source = resolveWithin(artifactsDir, name);
+      if (!source) {
+        return rejected(
+          `Rejected: artifact name '${name}' resolves outside the debugger's artifact store.`
+        );
+      }
+      sourceDirs = [source];
+    } else {
+      sourceDirs = fs.existsSync(artifactsDir)
         ? fs.readdirSync(artifactsDir).map((d) => path.join(artifactsDir, d))
         : [];
+    }
+
+    fs.mkdirSync(destDir, { recursive: true });
     let count = 0;
+    let truncated = false;
     for (const dir of sourceDirs) {
+      if (truncated) break;
       if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
-      // Recursively copy preserving structure
+      // Recursively copy preserving structure. lstat rather than stat so a
+      // symlink is neither followed out of the store nor copied as its target.
       const walk = (src: string, relBase = "") => {
         for (const entry of fs.readdirSync(src)) {
+          if (count >= MAX_ARTIFACT_FILES) {
+            truncated = true;
+            return;
+          }
           const full = path.join(src, entry);
           const rel = path.join(relBase, entry);
-          if (fs.statSync(full).isDirectory()) {
+          const stat = fs.lstatSync(full);
+          if (stat.isDirectory()) {
             walk(full, rel);
-          } else {
-            const target = path.join(destDir, rel);
+          } else if (stat.isFile()) {
+            const target = resolveWithin(destDir, rel);
+            if (!target) continue;
             fs.mkdirSync(path.dirname(target), { recursive: true });
             fs.copyFileSync(full, target);
             count++;
@@ -181,7 +261,9 @@ const HANDLERS: Record<string, Handler> = {
     return {
       outputs: {},
       conclusion: count > 0 || !name ? "success" : "failure",
-      note: `Simulated: restored ${count} file(s) from the local artifact store${name ? ` (name=${name})` : ""}.`,
+      note: `Simulated: restored ${count} file(s) from the local artifact store${name ? ` (name=${name})` : ""}${
+        truncated ? `, stopping at the ${MAX_ARTIFACT_FILES}-file cap` : ""
+      }.`,
     };
   },
 

@@ -112,22 +112,56 @@ function truncate(s: string, max = 60): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+/**
+ * Reads are synchronous and run on the process serving every visitor, so a
+ * broad pattern would otherwise block it for everyone while it walked the
+ * disk. Both limits are far above any plausible real `hashFiles()` use
+ * (lockfiles, a source tree) and are reported rather than silently applied -
+ * a truncated hash would be wrong in a way nobody could detect.
+ */
+const MAX_HASH_FILES = 1000;
+const MAX_HASH_BYTES = 50 * 1024 * 1024;
+
 /** Real (best-effort) implementation: SHA-256 over the matched files' contents, sorted by path. */
 function hashFiles(args: JsonValue[], cwd: string): string {
   if (args.length === 0) {
     throw new ExpressionFunctionError("hashFiles() expects at least 1 pattern");
   }
   const patterns = args.map((a) => toDisplayString(a));
+  // An absolute or `..` pattern reads outside the workspace entirely - on a
+  // shared deployment that is the server's own filesystem.
+  const escaping = patterns.filter((p) => path.isAbsolute(p) || p.split("/").includes(".."));
+  if (escaping.length > 0) {
+    throw new ExpressionFunctionError(
+      `hashFiles(): pattern(s) ${escaping.join(", ")} resolve outside the workspace; only files inside it can be hashed`
+    );
+  }
   let files: string[];
   try {
-    files = fg.sync(patterns, { cwd, dot: true, onlyFiles: true }).sort();
+    files = fg
+      .sync(patterns, { cwd, dot: true, onlyFiles: true, followSymbolicLinks: false })
+      .sort();
   } catch {
     return "";
   }
   if (files.length === 0) return "";
+  if (files.length > MAX_HASH_FILES) {
+    throw new ExpressionFunctionError(
+      `hashFiles(): matched ${files.length} files, over the ${MAX_HASH_FILES}-file limit`
+    );
+  }
   const hash = crypto.createHash("sha256");
+  let bytes = 0;
   for (const file of files) {
-    hash.update(fs.readFileSync(path.join(cwd, file)));
+    const full = path.resolve(cwd, file);
+    if (path.relative(cwd, full).split(path.sep)[0] === "..") continue;
+    bytes += fs.statSync(full).size;
+    if (bytes > MAX_HASH_BYTES) {
+      throw new ExpressionFunctionError(
+        `hashFiles(): matched files exceed the ${MAX_HASH_BYTES / 1024 / 1024}MB limit`
+      );
+    }
+    hash.update(fs.readFileSync(full));
   }
   return hash.digest("hex");
 }

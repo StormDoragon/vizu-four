@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { JsonValue } from "../workflow/types";
@@ -15,6 +16,18 @@ function lanesForJob(session: DebugSession, jobId: string): Lane[] {
 /** Root of every temp path this session creates on disk - swept on session cleanup. */
 export function sessionTempRoot(sessionId: string): string {
   return path.join(os.tmpdir(), "actions-debugger", sessionId);
+}
+
+/**
+ * Workspace for evaluating an expression with no session behind it (the
+ * playground before "Start Debugging"). Deliberately an empty directory:
+ * this used to be `process.cwd()`, which let any anonymous caller use
+ * `hashFiles()` as an existence oracle over the server's own files.
+ */
+export function playgroundScratchDir(): string {
+  const dir = path.join(os.tmpdir(), "actions-debugger", "playground-scratch");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 function flattenRunsOnLabels(runsOn: JsonValue): string[] {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOwnedSession } from "@/lib/engine/ownership";
-import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
+import { buildEvalContext, playgroundScratchDir, resolveEffectiveEnv } from "@/lib/engine/contexts";
 import { maskObjectStrings } from "@/lib/engine/masking";
 import type { EvalContext } from "@/lib/expressions/evaluator";
 import { evaluateExpressionTraced } from "@/lib/expressions/trace";
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       sessionCtx = buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
     }
   }
-  const evalCtx = sessionCtx ?? sampleEvalContext(process.cwd());
+  const evalCtx = sessionCtx ?? sampleEvalContext(playgroundScratchDir());
 
   const { trace, result, error, errorPosition } = evaluateExpressionTraced(
     stripWrapper(body.expression),
