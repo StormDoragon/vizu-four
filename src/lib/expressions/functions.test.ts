@@ -2,7 +2,9 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { callBuiltin, ExpressionFunctionError } from "./functions";
+import { callBuiltin, ExpressionFunctionError, MAX_EXPRESSION_VALUE_CHARS } from "./functions";
+import { evaluateExpression } from "./evaluator";
+import { sampleEvalContext } from "./sampleContext";
 
 describe("hashFiles confinement", () => {
   let cwd: string;
@@ -101,5 +103,49 @@ describe("hashFiles confinement", () => {
 
     fs.writeFileSync(path.join(cwd, "a.txt"), "two");
     expect(callBuiltin("hashFiles", ["**/*.txt"], cwd)).not.toBe(first);
+  });
+});
+
+describe("value size budget", () => {
+  const nest = (levels: number) => {
+    let e = "'A'";
+    for (let i = 0; i < levels; i++) e = `format('{0}{0}{0}{0}', ${e})`;
+    return e;
+  };
+
+  it("refuses an expression that amplifies past the cap", () => {
+    // A repeated placeholder quadruples its input while writing it once, so
+    // nesting multiplies: 14 levels is 339 characters of source and used to
+    // produce a 268MB string - a one-request way to exhaust the instance.
+    expect(() => evaluateExpression(nest(14), sampleEvalContext())).toThrow(
+      /more than 100000 characters/
+    );
+  });
+
+  it("refuses at the innermost call, so nothing larger is allocated", () => {
+    // The cap is only meaningful if it stops the allocation rather than
+    // rejecting a string that has already been built.
+    const started = Date.now();
+    expect(() => evaluateExpression(nest(40), sampleEvalContext())).toThrow(
+      /more than 100000 characters/
+    );
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it("still evaluates an expression comfortably under the cap", () => {
+    expect((evaluateExpression(nest(8), sampleEvalContext()) as string).length).toBe(65536);
+  });
+
+  it("caps join() over a large array", () => {
+    const big = "x".repeat(20_000);
+    expect(() => callBuiltin("join", [[big, big, big, big, big, big], ","], null)).toThrow(
+      /join\(\) would produce more than/
+    );
+  });
+
+  it("caps toJSON() of an oversized value", () => {
+    expect(() => callBuiltin("toJSON", ["x".repeat(MAX_EXPRESSION_VALUE_CHARS + 1)], null)).toThrow(
+      /toJSON\(\) would produce more than/
+    );
   });
 });

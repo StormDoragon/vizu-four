@@ -7,6 +7,33 @@ import { looseEquals, toDisplayString } from "./coerce";
 
 export class ExpressionFunctionError extends Error {}
 
+/**
+ * Ceiling on any single string an expression function may produce.
+ *
+ * Expression evaluation is reachable anonymously through the playground, and
+ * `format()` amplifies: a placeholder may be repeated as often as the format
+ * string likes, so `format('{0}{0}{0}{0}', x)` quadruples its input while
+ * writing it once. Nesting that multiplies - a 339-character expression
+ * produced a 268MB string, which is a one-request way to exhaust the shared
+ * instance long before any per-session limit notices.
+ *
+ * Capping every produced value bounds the whole evaluation rather than one
+ * call, because each nesting level has to materialise its own result before
+ * the level above can use it: the innermost call that would exceed the cap
+ * fails, and nothing larger is ever allocated. The check has to run *as* a
+ * value is built, not on the finished string, or the allocation this exists
+ * to prevent has already happened.
+ */
+export const MAX_EXPRESSION_VALUE_CHARS = 100_000;
+
+function checkValueSize(length: number, fn: string): void {
+  if (length > MAX_EXPRESSION_VALUE_CHARS) {
+    throw new ExpressionFunctionError(
+      `${fn}() would produce more than ${MAX_EXPRESSION_VALUE_CHARS} characters`
+    );
+  }
+}
+
 function requireArgs(name: string, args: JsonValue[], count: number) {
   if (args.length !== count) {
     throw new ExpressionFunctionError(
@@ -67,7 +94,12 @@ function format(args: JsonValue[]): string {
             `format() placeholder {${idx}} has no matching argument`
           );
         }
-        out += toDisplayString(rest[idx]);
+        const piece = toDisplayString(rest[idx]);
+        // Checked before the concatenation, not after: a format string may
+        // repeat one placeholder any number of times, so the overshoot this
+        // guards against happens inside this loop.
+        checkValueSize(out.length + piece.length, "format");
+        out += piece;
         i = j;
         continue;
       }
@@ -88,14 +120,22 @@ function join(args: JsonValue[]): string {
   const [value, sep] = args;
   const separator = sep === undefined ? "," : toDisplayString(sep);
   if (Array.isArray(value)) {
-    return value.map((v) => toDisplayString(v)).join(separator);
+    let out = "";
+    for (const [i, v] of value.entries()) {
+      const piece = (i === 0 ? "" : separator) + toDisplayString(v);
+      checkValueSize(out.length + piece.length, "join");
+      out += piece;
+    }
+    return out;
   }
   return toDisplayString(value);
 }
 
 function toJSONFn(args: JsonValue[]): string {
   requireArgs("toJSON", args, 1);
-  return JSON.stringify(args[0], null, 2);
+  const out = JSON.stringify(args[0], null, 2);
+  checkValueSize(out.length, "toJSON");
+  return out;
 }
 
 function fromJSONFn(args: JsonValue[]): JsonValue {

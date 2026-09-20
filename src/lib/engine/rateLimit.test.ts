@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  MAX_EVALUATIONS_PER_WINDOW,
   MAX_SESSIONS_GLOBAL_PER_WINDOW,
   MAX_SESSIONS_PER_ADDRESS_PER_WINDOW,
   MAX_SESSIONS_PER_WINDOW,
   RATE_WINDOW_MS,
   checkCreateLimit,
+  checkEvaluateLimit,
   clientAddressFrom,
   rateLimitBucketCount,
   resetRateLimits,
@@ -146,5 +148,31 @@ describe("clientAddressFrom", () => {
   it("returns null with no header rather than guessing", () => {
     expect(clientAddressFrom(new Headers())).toBeNull();
     expect(clientAddressFrom(new Headers({ "x-forwarded-for": "  ,  " }))).toBeNull();
+  });
+});
+
+describe("per-action buckets", () => {
+  beforeEach(() => resetRateLimits());
+
+  it("does not let expression evaluation exhaust the session allowance", () => {
+    // The playground evaluates freely and needs no session, so its traffic
+    // must not be what stops a visitor opening one.
+    for (let i = 0; i < MAX_EVALUATIONS_PER_WINDOW; i++) {
+      expect(checkEvaluateLimit("owner-1", null).allowed).toBe(true);
+    }
+    expect(checkEvaluateLimit("owner-1", null).allowed).toBe(false);
+    expect(checkCreateLimit("owner-1", null).allowed).toBe(true);
+  });
+
+  it("limits evaluation per owner, address and globally", () => {
+    for (let i = 0; i < MAX_EVALUATIONS_PER_WINDOW; i++) {
+      expect(checkEvaluateLimit("owner-1", "1.2.3.4").allowed).toBe(true);
+    }
+    const refused = checkEvaluateLimit("owner-1", "1.2.3.4");
+    expect(refused.allowed).toBe(false);
+    expect(refused.scope).toBe("owner");
+    // A fresh owner id from the same address still has room, but the address
+    // scope is what stops that being an unlimited reset.
+    expect(checkEvaluateLimit("owner-2", "1.2.3.4").allowed).toBe(true);
   });
 });

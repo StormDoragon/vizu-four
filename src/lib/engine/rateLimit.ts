@@ -23,6 +23,19 @@ export const RATE_WINDOW_MS = 10 * 60 * 1000;
 export const MAX_LIVE_SESSIONS_PER_OWNER = 25;
 export const MAX_LIVE_SESSIONS_TOTAL = 200;
 
+/**
+ * Expression evaluation gets its own, much looser allowance.
+ *
+ * It is cheap per call and the playground fires one per keystroke-ish edit,
+ * so the numbers are high; the point is only that "cheap" is not "free" and
+ * the endpoint is reachable without creating a session at all, so session
+ * limits never see this traffic. The per-value size cap in the evaluator is
+ * what bounds a single call - this bounds how many of them arrive.
+ */
+export const MAX_EVALUATIONS_PER_WINDOW = 600;
+export const MAX_EVALUATIONS_PER_ADDRESS_PER_WINDOW = 1_200;
+export const MAX_EVALUATIONS_GLOBAL_PER_WINDOW = 10_000;
+
 const GLOBAL_KEY = "__actionsDebuggerRateLimit__";
 
 interface Bucket {
@@ -111,23 +124,36 @@ function liveHits(s: State, key: string, now: number): number[] {
  * `now` is injectable so the window behaviour can be tested without waiting
  * ten minutes.
  */
-export function checkCreateLimit(
+export interface ActionLimits {
+  owner: number;
+  address: number;
+  global: number;
+}
+
+/**
+ * Buckets are namespaced per action, so one endpoint's traffic cannot
+ * exhaust another's allowance - a visitor typing in the playground should
+ * never find themselves unable to open a session.
+ */
+export function checkLimit(
+  action: string,
   ownerId: string,
-  clientAddress: string | null = null,
+  clientAddress: string | null,
+  limits: ActionLimits,
   now: number = Date.now()
 ): RateLimitResult {
   const s = state();
   sweep(s, now);
 
   const scopes: { scope: LimitScope; key: string; limit: number }[] = [
-    { scope: "owner", key: `owner:${ownerId}`, limit: MAX_SESSIONS_PER_WINDOW },
-    { scope: "global", key: "global", limit: MAX_SESSIONS_GLOBAL_PER_WINDOW },
+    { scope: "owner", key: `${action}:owner:${ownerId}`, limit: limits.owner },
+    { scope: "global", key: `${action}:global`, limit: limits.global },
   ];
   if (clientAddress) {
     scopes.splice(1, 0, {
       scope: "address",
-      key: `addr:${clientAddress}`,
-      limit: MAX_SESSIONS_PER_ADDRESS_PER_WINDOW,
+      key: `${action}:addr:${clientAddress}`,
+      limit: limits.address,
     });
   }
 
@@ -151,6 +177,42 @@ export function checkCreateLimit(
     s.buckets.set(key, { hits });
   }
   return { allowed: true, retryAfterSeconds: 0 };
+}
+
+export function checkCreateLimit(
+  ownerId: string,
+  clientAddress: string | null = null,
+  now: number = Date.now()
+): RateLimitResult {
+  return checkLimit(
+    "create",
+    ownerId,
+    clientAddress,
+    {
+      owner: MAX_SESSIONS_PER_WINDOW,
+      address: MAX_SESSIONS_PER_ADDRESS_PER_WINDOW,
+      global: MAX_SESSIONS_GLOBAL_PER_WINDOW,
+    },
+    now
+  );
+}
+
+export function checkEvaluateLimit(
+  ownerId: string,
+  clientAddress: string | null = null,
+  now: number = Date.now()
+): RateLimitResult {
+  return checkLimit(
+    "evaluate",
+    ownerId,
+    clientAddress,
+    {
+      owner: MAX_EVALUATIONS_PER_WINDOW,
+      address: MAX_EVALUATIONS_PER_ADDRESS_PER_WINDOW,
+      global: MAX_EVALUATIONS_GLOBAL_PER_WINDOW,
+    },
+    now
+  );
 }
 
 /** Test seam - the bucket map lives on globalThis to survive dev reloads. */
