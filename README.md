@@ -13,11 +13,20 @@ prioritized checklist of what's next.
 
 ## Live demo
 
-**[vizu-four.vercel.app](https://vizu-four.vercel.app)** — running in
+**[vizu-four.onrender.com](https://vizu-four.onrender.com)** — running in
 `VIZU_DEMO_MODE=1` (see [DEPLOY.md](./DEPLOY.md)), so `run:` steps are
 simulated rather than executed for real. Click **⚠ See a failure debugged
 (one click)** on the home page for the fastest way to see what the debugger
 actually does.
+
+This runs on Render's free tier as a single persistent instance (see
+[DEPLOY.md](./DEPLOY.md#render-quickstart-recommended-free-one-instance-no-card)),
+which is why it's the recommended host over a serverless platform: a
+serverless deployment can route requests across multiple instances, each
+with its own empty copy of the in-memory session store, causing sessions to
+intermittently "disappear" mid-debug. One free-tier tradeoff: the instance
+spins down after ~15 minutes idle, so the first request after a quiet
+period can take up to a minute to wake it back up.
 
 ## Quick start
 

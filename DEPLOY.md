@@ -38,6 +38,10 @@ on a different Lambda with its own empty memory — will intermittently
    `https://<name>.onrender.com` URL and confirm demo mode is on (see
    "After deploy" below) before sharing it.
 
+Live at **https://vizu-four.onrender.com** — verified: `/api/config` returns
+`{"simulationOnly":true}`, and the one-click failure demo lands on a real
+failed step with the mocked exit code and stderr.
+
 Free-tier tradeoff: the instance spins down after ~15 minutes idle, so the
 first request after a quiet period is slow to wake it back up. That's a
 latency cost, not a correctness one — the session-loss bug this section
