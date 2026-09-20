@@ -138,3 +138,38 @@ describe("ShareOpener consent", () => {
     expect(screen.getByText(/No steps/)).toBeInTheDocument();
   });
 });
+
+describe("ShareOpener shows what a link imports", () => {
+  it("lists overrides and mocks, not just the YAML", async () => {
+    stubSession();
+    const token = encodeSharePayload({
+      version: 1,
+      yaml: YAML,
+      breakpoints: ["build:step-1"],
+      env: { DEPLOY_TARGET: "prod" },
+      vars: { REGION: "eu" },
+      breakOnFailure: false,
+      mockOutputs: { "build:step-0": { outputs: { sha: "abc" }, exitCode: 1 } },
+      progress: [{ jobId: "build", matrix: {}, stepIndex: 1 }],
+      activeLane: null,
+    });
+    render(<ShareOpener token={token} />);
+
+    const imported = await screen.findByTestId("share-imported-config");
+    // The YAML alone would not show that a step is stubbed to fail, or that
+    // an override changes what the command expands to.
+    expect(imported).toHaveTextContent("DEPLOY_TARGET");
+    expect(imported).toHaveTextContent("REGION");
+    expect(imported).toHaveTextContent("build:step-0");
+    expect(imported).toHaveTextContent("exit 1");
+    expect(imported).toHaveTextContent("build:step-1");
+    expect(imported).toHaveTextContent("off");
+  });
+
+  it("says plainly when a link imports nothing", async () => {
+    stubSession();
+    render(<ShareOpener token={shareToken(1)} />);
+    const imported = await screen.findByTestId("share-imported-config");
+    expect(imported.textContent).toMatch(/none/);
+  });
+});

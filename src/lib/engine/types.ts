@@ -99,8 +99,13 @@ export interface DebugSession {
    * permission to execute. A link carries someone else's workflow and the
    * progress to replay, and opening one used to run both immediately - on a
    * local install with real execution on, that is a stranger's shell
-   * commands on a click. Enforced in the control route, not just the UI,
-   * because a confirmation the client can skip is not a control. */
+   * commands on a click.
+   *
+   * Scope: the flag is set from a client-supplied field on session creation,
+   * so this stops the sharing flow from executing without a decision. It is
+   * not authentication - a caller writing its own requests can simply not
+   * set it, exactly as it could always create a session directly. What it
+   * guarantees is that following a link never runs anything on its own. */
   awaitingExecutionConsent: boolean;
   config: RunConfig;
   breakpoints: Set<string>;

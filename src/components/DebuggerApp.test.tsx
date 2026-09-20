@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DebuggerApp } from "./DebuggerApp";
@@ -106,5 +106,41 @@ describe("DebuggerApp", () => {
 
     expect(await screen.findByText(/isn't available in this browser/)).toBeInTheDocument();
     expect(screen.queryByTestId("share-dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("DebuggerApp consent for a shared session", () => {
+  it("offers a way out of the inspect-only state", async () => {
+    // Inspecting a link lands here with execution still refused, so the
+    // decision has to be reachable from this screen - the share page that
+    // offered it is gone by now.
+    const pending = makeSessionView({ awaitingExecutionConsent: true });
+    vi.spyOn(apiClient, "getSession").mockResolvedValue({ session: pending });
+    const consent = vi
+      .spyOn(apiClient, "grantExecutionConsent")
+      .mockResolvedValue({ session: { ...pending, awaitingExecutionConsent: false } });
+
+    render(<DebuggerApp sessionId="session-1" />);
+    const banner = await screen.findByTestId("consent-banner");
+    expect(banner).toHaveTextContent(/Nothing in this shared session can run yet/);
+
+    fireEvent.click(screen.getByTestId("allow-execution"));
+    await waitFor(() => expect(consent).toHaveBeenCalledWith("session-1"));
+    await waitFor(() => expect(screen.queryByTestId("consent-banner")).toBeNull());
+  });
+
+  it("warns about real execution only when this deployment executes", async () => {
+    vi.spyOn(apiClient, "getSession").mockResolvedValue({
+      session: makeSessionView({ awaitingExecutionConsent: true, simulationOnly: false }),
+    });
+    render(<DebuggerApp sessionId="session-1" />);
+    expect(await screen.findByTestId("consent-banner")).toHaveTextContent(/for real on this machine/);
+  });
+
+  it("shows no banner for a session the visitor created themselves", async () => {
+    vi.spyOn(apiClient, "getSession").mockResolvedValue({ session: makeSessionView() });
+    render(<DebuggerApp sessionId="session-1" />);
+    await screen.findByText("CI");
+    expect(screen.queryByTestId("consent-banner")).toBeNull();
   });
 });

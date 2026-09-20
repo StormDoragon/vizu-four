@@ -7,6 +7,7 @@ import {
   control,
   deleteSession,
   getSession,
+  grantExecutionConsent,
   setActiveLane,
   setBreakpoint,
   type ControlAction,
@@ -54,6 +55,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [consenting, setConsenting] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("inspector");
   const [failureCursor, setFailureCursor] = useState(0);
@@ -211,6 +213,22 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
       clearPrefs(session.workflowHash);
       setRestoredSecretNames([]);
       setRestoredNote("Saved state for this workflow cleared.");
+    }
+  }
+
+  /** Lets a session opened from a share link run. The engine refuses every
+   * control path until this is granted, so inspecting a link stays safe
+   * while leaving the choice available later. */
+  async function allowExecution() {
+    if (!session) return;
+    setConsenting(true);
+    setActionError(null);
+    try {
+      setSession((await grantExecutionConsent(session.id)).session);
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setConsenting(false);
     }
   }
 
@@ -401,6 +419,32 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           <strong>Viewing a shared session.</strong> This is your own independent copy,
           reconstructed from a link — nothing you do here affects whoever shared it, and vice
           versa.
+        </div>
+      )}
+      {session.awaitingExecutionConsent && (
+        <div
+          data-testid="consent-banner"
+          className="flex flex-wrap items-center gap-3 border-b border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-200"
+        >
+          <span>
+            <strong>Nothing in this shared session can run yet.</strong> You opened it to inspect
+            it, so Step, Continue and Run are refused until you allow execution.
+            {!session.simulationOnly && (
+              <>
+                {" "}
+                Allowing it runs this workflow&apos;s <code>run:</code> steps for real on this
+                machine, as this process.
+              </>
+            )}
+          </span>
+          <button
+            onClick={allowExecution}
+            disabled={consenting}
+            data-testid="allow-execution"
+            className="rounded-md border border-yellow-500/50 px-3 py-1 font-medium text-yellow-100 hover:bg-yellow-500/20 disabled:opacity-50"
+          >
+            {consenting ? "Allowing…" : "Allow execution"}
+          </button>
         </div>
       )}
       {activeLane?.jobIfWarning && (

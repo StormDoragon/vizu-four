@@ -15,6 +15,7 @@ import {
 } from "@/lib/apiClient";
 import type { SessionView } from "@/lib/engine/serialize";
 import { decodeSharePayload, type SharePayload } from "@/lib/share";
+import type { StepMock } from "@/lib/engine/types";
 import { saveWorkflowSource } from "@/lib/workflowSourceCache";
 import { splitBreakpoint } from "@/lib/debugPrefs";
 import { comboKey, type MatrixCombo } from "@/lib/workflow/matrix";
@@ -100,6 +101,38 @@ async function reconstruct(payload: SharePayload, session: SessionView): Promise
   }
 
   return focusSharedLane(payload, latest);
+}
+
+/** A step mock decides a step's result outright, so what it says matters as
+ * much as the YAML when judging what a replay would do. */
+function describeMock(mock: StepMock): string {
+  const parts: string[] = [];
+  const outputs = Object.keys(mock.outputs ?? {});
+  if (outputs.length > 0) parts.push(`outputs ${outputs.join(", ")}`);
+  if (mock.exitCode !== undefined) parts.push(`exit ${mock.exitCode}`);
+  if (mock.stderr) parts.push("stderr set");
+  return parts.length > 0 ? parts.join(", ") : "no change";
+}
+
+function Imported({ label, entries }: { label: string; entries: [string, string][] }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="shrink-0 text-ink-400">{label}:</dt>
+      <dd className="text-ink-200">
+        {entries.length === 0 ? (
+          <span className="text-ink-500">none</span>
+        ) : (
+          <ul className="space-y-0.5">
+            {entries.map(([key, value]) => (
+              <li key={key} className="font-mono">
+                {key} <span className="text-ink-400">— {value}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </dd>
+    </div>
+  );
 }
 
 export function ShareOpener({ token }: { token: string }) {
@@ -225,9 +258,29 @@ export function ShareOpener({ token }: { token: string }) {
               }.`}
         </p>
         <p className="mt-2 text-xs text-ink-500">
-          Breakpoints, What-If overrides and mocked step results from the link are applied either
-          way - none of them execute anything.
+          The settings below are applied either way - none of them execute anything, but they do
+          change what the steps would do, so they are worth reading before allowing a replay.
         </p>
+
+        <dl className="mt-3 space-y-2 text-xs" data-testid="share-imported-config">
+          <Imported label="Env overrides" entries={Object.entries(payload.env)} />
+          <Imported label="Vars overrides" entries={Object.entries(payload.vars)} />
+          <Imported
+            label="Mocked steps"
+            entries={Object.entries(payload.mockOutputs).map(([key, mock]) => [
+              key,
+              describeMock(mock),
+            ])}
+          />
+          <Imported
+            label="Breakpoints"
+            entries={payload.breakpoints.map((bp) => [bp, "pauses here"])}
+          />
+          <div className="flex gap-2">
+            <dt className="shrink-0 text-ink-400">Pause on failure:</dt>
+            <dd className="text-ink-200">{payload.breakOnFailure ? "on" : "off"}</dd>
+          </div>
+        </dl>
       </section>
 
       <pre className="max-h-72 overflow-auto rounded-lg border border-bg-border bg-bg-raised p-3 font-mono text-xs text-ink-200">
