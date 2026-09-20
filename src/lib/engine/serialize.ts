@@ -3,6 +3,7 @@ import { isSimulationOnly } from "../deployment";
 import type { JsonValue, ParseIssue } from "../workflow/types";
 import { buildJobGraph } from "../workflow/graph";
 import { expandMatrix, type MatrixCombo } from "../workflow/matrix";
+import { maskObjectStrings } from "./masking";
 import type { DebugSession, Lane, StepMock } from "./types";
 
 export interface SessionViewStep {
@@ -74,6 +75,30 @@ export interface SessionView {
   usesRealWorkspace: boolean;
 }
 
+/**
+ * Lanes as the client may see them.
+ *
+ * A step's own record is masked when it is written, but two lane fields are
+ * deliberately kept raw because execution needs the real values: `env`
+ * accumulates what steps wrote to `$GITHUB_ENV`, and `extraPath` what they
+ * wrote to `$GITHUB_PATH`. Both are resolved into the environment of every
+ * later step, so masking them at the point of capture would run the rest of
+ * the job against `***`. Masking belongs here instead - the one place lane
+ * state crosses from the engine to the client.
+ */
+function toClientLanes(session: DebugSession): Record<string, Lane> {
+  const secrets = session.config.secrets;
+  const out: Record<string, Lane> = {};
+  for (const [id, lane] of Object.entries(session.lanes)) {
+    out[id] = {
+      ...lane,
+      env: maskObjectStrings(lane.env, secrets),
+      extraPath: maskObjectStrings(lane.extraPath, secrets),
+    };
+  }
+  return out;
+}
+
 export function toSessionView(session: DebugSession): SessionView {
   const graph = buildJobGraph(session.workflow);
 
@@ -122,7 +147,7 @@ export function toSessionView(session: DebugSession): SessionView {
     breakpoints: [...session.breakpoints],
     breakOnFailure: session.breakOnFailure,
     activeLaneId: session.activeLaneId,
-    lanes: session.lanes,
+    lanes: toClientLanes(session),
     laneOrder: session.laneOrder,
     mockOutputs: session.mockOutputs,
     revision: session.revision,

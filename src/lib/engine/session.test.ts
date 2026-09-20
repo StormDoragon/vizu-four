@@ -13,6 +13,7 @@ import {
   setMockOutputs,
 } from "./session";
 import { EngineError } from "./errors";
+import { toSessionView } from "./serialize";
 import { sessionTempRoot } from "./contexts";
 import type { DebugSession } from "./types";
 
@@ -1370,5 +1371,43 @@ jobs:
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("secrets written into GITHUB_ENV / GITHUB_PATH", () => {
+  const SECRET = "review-secret-value";
+
+  it("masks them in the serialized session but keeps them usable by later steps", async () => {
+    const s = session(
+      `name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: export
+        run: |
+          echo "LEAKED=\${{ secrets.TOKEN }}" >> "$GITHUB_ENV"
+          echo "/opt/\${{ secrets.TOKEN }}/bin" >> "$GITHUB_PATH"
+      - name: read it back
+        run: echo "value is $LEAKED"
+`,
+      { secrets: { TOKEN: SECRET } }
+    );
+    await controlStep(s, s.laneOrder[0]);
+
+    // The engine keeps the real value: the next step has to run against it.
+    expect(s.lanes[s.laneOrder[0]].env.LEAKED).toBe(SECRET);
+
+    const view = toSessionView(s);
+    expect(JSON.stringify(view)).not.toContain(SECRET);
+    expect(view.lanes[s.laneOrder[0]].env.LEAKED).toBe("***");
+    expect(view.lanes[s.laneOrder[0]].extraPath[0]).toBe("/opt/***/bin");
+
+    // And the later step still resolved the real value, masked on the way out.
+    const second = await controlStep(s, s.laneOrder[0]);
+    expect(second.stdout).toContain("***");
+    expect(second.stdout).not.toContain(SECRET);
   });
 });
