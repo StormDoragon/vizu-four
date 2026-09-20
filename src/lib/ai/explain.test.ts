@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { acquireAiCall, aiBudgetUsage, resetAiBudget } from "./budget";
 import { explainFailure, explainFailureHeuristic, type ExplainInput } from "./explain";
 
 function input(overrides: Partial<ExplainInput> = {}): ExplainInput {
@@ -96,5 +97,66 @@ describe("explainFailure", () => {
     const result = await explainFailure(input({ exitCode: 127, stderr: "command not found" }));
     expect(result.source).toBe("heuristic");
     expect(result.causes.length).toBeGreaterThan(0);
+  });
+});
+
+describe("budget", () => {
+  const input: ExplainInput = {
+    stepName: "build",
+    run: "npm test",
+    exitCode: 1,
+    stdout: "",
+    stderr: "boom",
+  };
+
+  beforeEach(() => resetAiBudget());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    resetAiBudget();
+  });
+
+  it("does not call the provider once the window's budget is spent", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+    vi.stubEnv("VIZU_AI_MAX_CALLS_PER_WINDOW", "1");
+    // Spend the window's single call and hand the slot back, so only the
+    // spend cap - not concurrency - is what refuses the next one.
+    const spent = acquireAiCall();
+    expect(typeof spent).not.toBe("string");
+    (spent as { release: () => void }).release();
+
+    const explanation = await explainFailure(input);
+    // Degraded, not failed: the offline explanation is still returned.
+    expect(explanation.source).toBe("heuristic");
+    expect(explanation.summary).toBeTruthy();
+    expect(explanation.causes.length).toBeGreaterThan(0);
+  });
+
+  it("does not call the provider when every concurrency slot is held", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+    vi.stubEnv("VIZU_AI_MAX_CONCURRENT", "1");
+    const held = acquireAiCall();
+    expect(typeof held).not.toBe("string");
+
+    const explanation = await explainFailure(input);
+    expect(explanation.source).toBe("heuristic");
+    (held as { release: () => void }).release();
+  });
+
+  it("releases its slot even when the provider call throws", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+    vi.stubEnv("VIZU_AI_MAX_CONCURRENT", "2");
+    // No network here, so the SDK call fails - which is the path that must
+    // still return the slot, or a few failures exhaust the pool forever.
+    const explanation = await explainFailure(input);
+    expect(explanation.source).toBe("heuristic");
+    expect(aiBudgetUsage().inFlight).toBe(0);
+  });
+
+  it("never touches the budget when no API key is configured", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const explanation = await explainFailure(input);
+    expect(explanation.source).toBe("heuristic");
+    expect(aiBudgetUsage().calls).toBe(0);
   });
 });

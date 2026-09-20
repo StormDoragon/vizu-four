@@ -36,6 +36,17 @@ export const MAX_EVALUATIONS_PER_WINDOW = 600;
 export const MAX_EVALUATIONS_PER_ADDRESS_PER_WINDOW = 1_200;
 export const MAX_EVALUATIONS_GLOBAL_PER_WINDOW = 10_000;
 
+/**
+ * Failure explanations. Tighter than evaluation because each one is a
+ * deliberate click rather than something the UI fires as you type, and
+ * because with an API key configured it is the one request that can cost the
+ * operator money. The spend itself is bounded separately in `lib/ai/budget`
+ * - this bounds how many visitors can queue up against that budget.
+ */
+export const MAX_EXPLAINS_PER_WINDOW = 40;
+export const MAX_EXPLAINS_PER_ADDRESS_PER_WINDOW = 80;
+export const MAX_EXPLAINS_GLOBAL_PER_WINDOW = 400;
+
 const GLOBAL_KEY = "__actionsDebuggerRateLimit__";
 
 interface Bucket {
@@ -192,6 +203,24 @@ export function checkCreateLimit(
       owner: MAX_SESSIONS_PER_WINDOW,
       address: MAX_SESSIONS_PER_ADDRESS_PER_WINDOW,
       global: MAX_SESSIONS_GLOBAL_PER_WINDOW,
+    },
+    now
+  );
+}
+
+export function checkExplainLimit(
+  ownerId: string,
+  clientAddress: string | null = null,
+  now: number = Date.now()
+): RateLimitResult {
+  return checkLimit(
+    "explain",
+    ownerId,
+    clientAddress,
+    {
+      owner: MAX_EXPLAINS_PER_WINDOW,
+      address: MAX_EXPLAINS_PER_ADDRESS_PER_WINDOW,
+      global: MAX_EXPLAINS_GLOBAL_PER_WINDOW,
     },
     now
   );

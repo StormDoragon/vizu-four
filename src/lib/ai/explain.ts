@@ -1,3 +1,5 @@
+import { acquireAiCall, callTimeoutMs } from "./budget";
+
 export type Confidence = "high" | "medium" | "low";
 
 export interface FailureCause {
@@ -203,21 +205,36 @@ const DEFAULT_MODEL = "claude-sonnet-5";
 /**
  * Tries a live Claude call when `ANTHROPIC_API_KEY` is configured (never
  * required - this is an optional upgrade over the offline heuristics), and
- * falls back to `explainFailureHeuristic` on any error, missing key, or
- * malformed response.
+ * falls back to `explainFailureHeuristic` on any error, missing key,
+ * malformed response, or exhausted budget.
+ *
+ * The budget is what makes configuring a key safe on a shared instance: this
+ * is the only path that spends the operator's money, and it previously spent
+ * it once per request with no cap, no concurrency limit and no timeout.
+ * Running out of budget is deliberately not an error - the endpoint answers
+ * with the offline explanation instead, so the feature degrades rather than
+ * breaking.
  */
 export async function explainFailure(input: ExplainInput): Promise<FailureExplanation> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return explainFailureHeuristic(input);
 
+  const lease = acquireAiCall();
+  if (typeof lease === "string") return explainFailureHeuristic(input);
+
   try {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: buildPrompt(input) }],
-    });
+    const message = await client.messages.create(
+      {
+        model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: buildPrompt(input) }],
+      },
+      // Without this a hung provider call holds a concurrency slot forever,
+      // so an outage there becomes an outage here.
+      { timeout: callTimeoutMs() }
+    );
     const textBlock = message.content.find((b): b is { type: "text"; text: string } => b.type === "text");
     if (!textBlock) return explainFailureHeuristic(input);
 
@@ -238,5 +255,7 @@ export async function explainFailure(input: ExplainInput): Promise<FailureExplan
     };
   } catch {
     return explainFailureHeuristic(input);
+  } finally {
+    lease.release();
   }
 }

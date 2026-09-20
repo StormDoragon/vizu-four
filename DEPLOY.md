@@ -70,6 +70,31 @@ npm start
 | `PORT` | No | Listen port (default `3000`) |
 | `ANTHROPIC_API_KEY` | No | Enables live Claude upgrades for failure explanations; heuristic fallback always works |
 | `VIZU_DEMO_MODE` | **Yes, on any shared or publicly-reachable host** | Set to `1` to disable real `run:` execution (simulation-only). See the security note below — this is not optional once anyone but you can reach the instance. |
+| `VIZU_AI_MAX_CALLS_PER_WINDOW` | No | Live Claude calls allowed per 10 minutes, instance-wide (default `200`) |
+| `VIZU_AI_MAX_CONCURRENT` | No | Live Claude calls allowed in flight at once (default `4`) |
+| `VIZU_AI_TIMEOUT_MS` | No | How long one Claude call may take before it is abandoned (default `20000`) |
+
+### If you set `ANTHROPIC_API_KEY` on a shared host
+
+That key is the only way this app can spend your money, and the explanation
+endpoint is reachable by anyone who can reach the instance. Three bounds
+apply by default and are worth setting deliberately:
+
+- **Spend**, via `VIZU_AI_MAX_CALLS_PER_WINDOW`. This is the actual cap.
+- **Concurrency**, via `VIZU_AI_MAX_CONCURRENT`. A burst can hold open more
+  sockets and memory than the spend cap suggests, because none of those
+  calls have completed yet.
+- **Per-call timeout**, via `VIZU_AI_TIMEOUT_MS`, so a hung provider call
+  does not occupy a concurrency slot indefinitely and turn an outage there
+  into an outage here.
+
+Running out of budget is not an error: the endpoint falls back to the
+offline heuristic explanation, so the feature degrades rather than breaking.
+A value that is not a positive integer falls back to the default rather than
+being read as "unlimited", so a typo cannot silently remove the bound.
+
+Per-visitor rate limits on the endpoint are separate and always on, so one
+visitor cannot consume the whole instance budget before anyone else can.
 
 ## Docker (optional)
 

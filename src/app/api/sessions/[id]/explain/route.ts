@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getOwnedSession } from "@/lib/engine/ownership";
+import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
+import { checkExplainLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
 import { explainFailure, type ExplainInput } from "@/lib/ai/explain";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
@@ -15,6 +16,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const session = await getOwnedSession(id);
   if (!session) return errorResponse(404, "Session not found");
+
+  // With an API key configured this is the only request that spends money.
+  // The spend cap itself lives in `lib/ai/budget` and applies instance-wide;
+  // this stops one visitor consuming all of it before anyone else can.
+  const limit = checkExplainLimit(await ensureOwnerId(), clientAddressFrom(req.headers));
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many explanations requested recently. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
 
   const body = await readJsonBody<ExplainBody>(req);
   if (!body?.laneId || typeof body.stepIndex !== "number") {
