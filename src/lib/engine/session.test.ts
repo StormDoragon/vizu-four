@@ -1695,6 +1695,56 @@ jobs:
     expect(envAt(s, lane, 2).COLOR).toBe("green");
   });
 
+  it("actually replaces and deletes a secret, even after something was retired", async () => {
+    // Retiring anything made the masking set a fresh object, and the patch
+    // was being applied to *that* - so every later replace or delete
+    // returned success and changed nothing. Masking staying correct is not
+    // evidence the mutation worked; this asserts the mutation itself.
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "\${{ secrets.TOKEN }}"
+`, { secrets: { TOKEN: "original-secret-alpha", OTHER: "other-secret-beta" } });
+
+    applyWhatIf(s, { secrets: { OTHER: null } });
+    expect(s.retiredSecretValues).toContain("other-secret-beta");
+
+    applyWhatIf(s, { secrets: { TOKEN: "replacement-secret-gamma" } });
+    expect(s.config.secrets.TOKEN).toBe("replacement-secret-gamma");
+
+    applyWhatIf(s, { secrets: { TOKEN: null } });
+    expect(s.config.secrets.TOKEN).toBeUndefined();
+
+    // ...and the replacement is retired too, so it stays masked in anything
+    // recorded while it was live.
+    expect(s.retiredSecretValues).toContain("original-secret-alpha");
+    expect(s.retiredSecretValues).toContain("replacement-secret-gamma");
+  });
+
+  it("takes a replaced secret into account when the next step runs", async () => {
+    // The end-to-end consequence of the bug above: evaluation kept using the
+    // old value, so a What-If secret edit had no effect on execution.
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+      - run: test "\${{ secrets.TOKEN }}" = "second-value-xyz" && echo MATCHED || echo STALE
+`, { secrets: { TOKEN: "first-value-abc" } });
+    const lane = s.laneOrder[0];
+    await controlStep(s, lane);
+    applyWhatIf(s, { secrets: { TOKEN: "second-value-xyz" } });
+    const record = await controlStep(s, lane);
+    expect(record.stdout).toContain("MATCHED");
+  });
+
   it("keeps redacting a secret that What-If has since removed", async () => {
     const secret = "secret-value-alpha-0123456789";
     const s = session(

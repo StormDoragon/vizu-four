@@ -781,15 +781,21 @@ export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
   // Captured before the patch lands: a secret being replaced or removed is
   // still present in output and snapshots recorded while it was live, and
   // those are redacted on read against this list plus the current map.
+  // `session.config.secrets`, never the masking set: that set is a *view* -
+  // the live map plus everything retired from it - and once anything has
+  // been retired it is a fresh object. Reading through it looked up the
+  // wrong value for a key shaped like a retired entry, and writing through
+  // it silently edited a throwaway, so replacing or deleting a secret
+  // returned 200 and changed nothing.
   for (const [key, value] of Object.entries(patch.secrets ?? {})) {
-    const previous = secretsToMask(session.config.secrets, session.retiredSecretValues)[key];
+    const previous = session.config.secrets[key];
     if (previous && previous !== value && !session.retiredSecretValues.includes(previous)) {
       session.retiredSecretValues.push(previous);
     }
   }
   applyKeyedPatch(session.config.envOverrides, patch.env);
   applyKeyedPatch(session.config.vars, patch.vars);
-  applyKeyedPatch(secretsToMask(session.config.secrets, session.retiredSecretValues), patch.secrets);
+  applyKeyedPatch(session.config.secrets, patch.secrets);
   applyKeyedPatch(session.config.workflowInputs, patch.inputs);
   if (patch.event !== undefined) session.config.event = patch.event;
   if (patch.eventName !== undefined) session.config.eventName = patch.eventName;
