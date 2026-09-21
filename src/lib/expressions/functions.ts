@@ -166,7 +166,25 @@ function fromJSONFn(args: JsonValue[]): JsonValue {
 const MAX_HASH_FILES = 1000;
 const MAX_HASH_BYTES = 50 * 1024 * 1024;
 
-/** Real (best-effort) implementation: SHA-256 over the matched files' contents, sorted by path. */
+/**
+ * GitHub's algorithm, which is a hash *of hashes*, not a hash of the
+ * concatenated contents: each matched file is hashed on its own, the raw
+ * digest bytes are appended in order, and the final SHA-256 is taken over
+ * that. Hashing the contents end to end - what this used to do - produces a
+ * different digest for the same files, so a cache key computed here never
+ * matched the one the real workflow computed, which is most of the reason to
+ * look at `hashFiles()` in a debugger at all.
+ *
+ * Order matters to the result, and GitHub's runner emits matches in
+ * directory-traversal order rather than a sorted one, so for a pattern
+ * matching several files across directories the digest here can still differ
+ * from a real run. Sorting is the deterministic choice; the single-file case
+ * that dominates real use (`hashFiles('**\/package-lock.json')`) matches
+ * exactly either way.
+ *
+ * Returns "" when nothing matched, as GitHub does - not the hash of an empty
+ * stream.
+ */
 function hashFiles(args: JsonValue[], cwd: string | null): string {
   if (args.length === 0) {
     throw new ExpressionFunctionError("hashFiles() expects at least 1 pattern");
@@ -202,7 +220,7 @@ function hashFiles(args: JsonValue[], cwd: string | null): string {
       `hashFiles(): matched ${files.length} files, over the ${MAX_HASH_FILES}-file limit`
     );
   }
-  const hash = crypto.createHash("sha256");
+  const overall = crypto.createHash("sha256");
   let bytes = 0;
   let hashed = 0;
   for (const file of files) {
@@ -217,13 +235,15 @@ function hashFiles(args: JsonValue[], cwd: string | null): string {
         `hashFiles(): matched files exceed the ${MAX_HASH_BYTES / 1024 / 1024}MB limit`
       );
     }
-    hash.update(fs.readFileSync(full));
+    // Raw digest bytes, not the hex text of them - the runner writes
+    // `hash.digest()` straight into the outer hash.
+    overall.update(crypto.createHash("sha256").update(fs.readFileSync(full)).digest());
     hashed++;
   }
   // Every match was confined away, so there is nothing to hash - same answer
   // as matching nothing, rather than the hash of an empty stream.
   if (hashed === 0) return "";
-  return hash.digest("hex");
+  return overall.digest("hex");
 }
 
 export interface StatusFlags {

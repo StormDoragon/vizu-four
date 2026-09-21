@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -147,5 +148,82 @@ describe("value size budget", () => {
     expect(() => callBuiltin("toJSON", ["x".repeat(MAX_EXPRESSION_VALUE_CHARS + 1)], null)).toThrow(
       /toJSON\(\) would produce more than/
     );
+  });
+});
+
+describe("hashFiles algorithm", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hashfiles-alg-")));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  /**
+   * GitHub's algorithm, written out independently of the implementation:
+   * SHA-256 over the concatenated raw per-file SHA-256 digests. The runner
+   * writes `hash.digest()` - the bytes, not their hex text - into the outer
+   * hash.
+   */
+  const reference = (names: string[]) => {
+    const outer = createHash("sha256");
+    for (const name of names) {
+      outer.update(createHash("sha256").update(fs.readFileSync(path.join(dir, name))).digest());
+    }
+    return outer.digest("hex");
+  };
+
+  /** What this used to do: one hash over the contents end to end. */
+  const concatenatedContents = (names: string[]) => {
+    const h = createHash("sha256");
+    for (const name of names) h.update(fs.readFileSync(path.join(dir, name)));
+    return h.digest("hex");
+  };
+
+  it("hashes each file first, then hashes those hashes", () => {
+    fs.writeFileSync(path.join(dir, "a.txt"), "alpha\n");
+    const hash = callBuiltin("hashFiles", ["a.txt"], dir);
+    expect(hash).toBe(reference(["a.txt"]));
+    // The distinction is the whole finding: a cache key computed the old way
+    // never matched the one the real workflow computed.
+    expect(hash).not.toBe(concatenatedContents(["a.txt"]));
+  });
+
+  it("matches the reference across several files", () => {
+    fs.writeFileSync(path.join(dir, "a.txt"), "alpha\n");
+    fs.writeFileSync(path.join(dir, "b.txt"), "beta\n");
+    const hash = callBuiltin("hashFiles", ["*.txt"], dir);
+    expect(hash).toBe(reference(["a.txt", "b.txt"]));
+    expect(hash).not.toBe(concatenatedContents(["a.txt", "b.txt"]));
+  });
+
+  it("distinguishes a file split differently across the same total bytes", () => {
+    // Hashing contents end to end gives these two sets the same digest,
+    // which is the concrete way the old algorithm was wrong.
+    fs.writeFileSync(path.join(dir, "a.txt"), "alpha");
+    fs.writeFileSync(path.join(dir, "b.txt"), "beta");
+    const split = callBuiltin("hashFiles", ["*.txt"], dir);
+
+    fs.rmSync(path.join(dir, "a.txt"));
+    fs.rmSync(path.join(dir, "b.txt"));
+    fs.writeFileSync(path.join(dir, "c.txt"), "alphabeta");
+    const joined = callBuiltin("hashFiles", ["*.txt"], dir);
+
+    expect(split).not.toBe(joined);
+  });
+
+  it("returns an empty string when nothing matches, not the empty hash", () => {
+    expect(callBuiltin("hashFiles", ["nothing-*.txt"], dir)).toBe("");
+    expect(callBuiltin("hashFiles", ["nothing-*.txt"], dir)).not.toBe(
+      createHash("sha256").digest("hex")
+    );
+  });
+
+  it("is stable across calls and sensitive to content", () => {
+    fs.writeFileSync(path.join(dir, "a.txt"), "alpha\n");
+    const first = callBuiltin("hashFiles", ["a.txt"], dir);
+    expect(callBuiltin("hashFiles", ["a.txt"], dir)).toBe(first);
+    fs.writeFileSync(path.join(dir, "a.txt"), "alpha changed\n");
+    expect(callBuiltin("hashFiles", ["a.txt"], dir)).not.toBe(first);
   });
 });
