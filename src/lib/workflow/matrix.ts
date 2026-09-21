@@ -135,7 +135,34 @@ export function expandMatrix(def: MatrixDefinition | undefined): MatrixCombo[] {
     }
   }
 
-  return combos;
+  return dedupe(combos);
+}
+
+/**
+ * Collapses combinations that are the same combination.
+ *
+ * `matrix: {a: [1, 1]}` expands to two identical combos, and an `include`
+ * can produce a duplicate row the same way. A lane's identity is derived
+ * from its combo's *content*, so two identical combos necessarily key the
+ * same lane: the second overwrote the first in the lane map while
+ * `laneOrder` still listed both, leaving two entries driving one lane -
+ * the same corruption a key collision caused.
+ *
+ * Deduplicating rather than disambiguating, because content-addressed lane
+ * identity is what share links rely on to find a lane again, and because two
+ * identical combos have identical `matrix` contexts and would run
+ * identically anyway. GitHub does not document this case; a repeated axis
+ * value is an authoring mistake either way, and one lane is the reading that
+ * keeps everything downstream consistent.
+ */
+function dedupe(combos: MatrixCombo[]): MatrixCombo[] {
+  const seen = new Set<string>();
+  return combos.filter((combo) => {
+    const key = comboKey(combo);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Short, stable, human-readable label for a combo, e.g. `os=ubuntu-latest, node=18`. */

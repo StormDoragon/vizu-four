@@ -149,6 +149,29 @@ describe("expandMatrix", () => {
     expect(combos).toEqual([{ os: "ubuntu-latest" }, { os: "macos-latest" }]);
   });
 
+  it("collapses a repeated axis value into one combination", () => {
+    // Two identical combos necessarily key the same lane, so the second
+    // overwrote the first while `laneOrder` still listed both - two entries
+    // driving one lane, one combination silently gone.
+    expect(expandMatrix({ axes: { a: [1, 1] } })).toEqual([{ a: 1 }]);
+  });
+
+  it("collapses duplicate include rows", () => {
+    expect(
+      expandMatrix({ axes: {}, include: [{ x: "a" }, { x: "a" }, { x: "b" }] })
+    ).toEqual([{ x: "a" }, { x: "b" }]);
+  });
+
+  it("keeps genuinely different combinations that merely look alike", () => {
+    // Deduplication keys off the same encoding lane ids use, so a string and
+    // the number that prints the same are still two combinations.
+    expect(expandMatrix({ axes: { a: [1, "1"] } })).toEqual([{ a: 1 }, { a: "1" }]);
+  });
+
+  it("keeps the first occurrence's position", () => {
+    expect(expandMatrix({ axes: { a: [2, 1, 2] } })).toEqual([{ a: 2 }, { a: 1 }]);
+  });
+
   it("returns an empty list for an undefined matrix", () => {
     expect(expandMatrix(undefined)).toEqual([]);
   });

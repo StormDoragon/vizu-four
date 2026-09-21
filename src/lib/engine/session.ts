@@ -223,6 +223,12 @@ export function createSession(opts: CreateSessionOptions): DebugSession {
         outputs: {},
         tempDir: laneTempDir(session.id, laneId),
       };
+      // `laneOrder` and `lanes` must agree: an id listed twice but stored
+      // once means two entries driving one lane, and one combination
+      // silently gone. Expansion deduplicates, so this is a backstop that
+      // keeps any future path from reintroducing that state rather than a
+      // second opinion about which combos exist.
+      if (session.lanes[laneId]) continue;
       session.lanes[laneId] = lane;
       session.laneOrder.push(laneId);
     }

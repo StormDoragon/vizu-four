@@ -634,6 +634,43 @@ jobs:
     }
   });
 
+  it("keeps laneOrder and lanes in agreement when a matrix value repeats", async () => {
+    // `laneOrder` listed the id twice while `lanes` held one entry, so
+    // stepping "one" lane stepped what looked like both.
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        a: [1, 1]
+    steps:
+      - run: echo hi
+`);
+    expect(s.laneOrder).toHaveLength(1);
+    expect(new Set(s.laneOrder).size).toBe(s.laneOrder.length);
+    expect(Object.keys(s.lanes)).toHaveLength(s.laneOrder.length);
+  });
+
+  it("never lists a lane id twice, whatever the matrix", async () => {
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        a: [1, 1, 2]
+        b: ["x", "x"]
+        include:
+          - a: 2
+            b: x
+    steps:
+      - run: echo hi
+`);
+    expect(new Set(s.laneOrder).size).toBe(s.laneOrder.length);
+    expect(Object.keys(s.lanes).sort()).toEqual([...s.laneOrder].sort());
+  });
+
   it("keeps lanes separate when a matrix value contains the lane-key delimiters", async () => {
     const s = session(`
 jobs:
