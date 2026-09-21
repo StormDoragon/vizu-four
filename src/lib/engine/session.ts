@@ -796,6 +796,15 @@ function applyKeyedPatch<T>(
 }
 
 /**
+ * Bounds on the retired-secret-value history a session accumulates as
+ * secrets are replaced (see `secretsToMask`). Generous - a real debugging
+ * session rotates a handful of secrets, not hundreds - but not unbounded:
+ * unlike `session.config.secrets` itself, this list can only grow.
+ */
+const MAX_RETIRED_SECRETS = 500;
+const MAX_RETIRED_SECRET_CHARS = 500_000;
+
+/**
  * Rejects a patch that would push the session's accumulated configuration
  * past its limits.
  *
@@ -821,6 +830,36 @@ function requireWithinConfigLimits(session: DebugSession, patch: WhatIfPatch): v
     }
     const tooBig = configMapSizeError(projected, field);
     if (tooBig) throw new EngineError(tooBig);
+  }
+
+  // Retired secret values are never dropped (see `secretsToMask`), so unlike
+  // every field above, repeatedly rotating one secret's value cannot be kept
+  // under a limit by deleting old entries - it can only be refused before it
+  // grows past one. This lived outside the checked live map entirely: the
+  // limits above bound `session.config.secrets` itself, but not the history
+  // rotating it leaves behind, which grew without any bound at all.
+  if (patch.secrets) {
+    let projectedChars = session.retiredSecretValues.reduce((n, v) => n + v.length, 0);
+    const seen = new Set(session.retiredSecretValues);
+    let projectedCount = seen.size;
+    for (const [key, value] of Object.entries(patch.secrets)) {
+      const previous = session.config.secrets[key];
+      if (previous && previous !== value && !seen.has(previous)) {
+        seen.add(previous);
+        projectedChars += previous.length;
+        projectedCount += 1;
+      }
+    }
+    if (projectedCount > MAX_RETIRED_SECRETS) {
+      throw new EngineError(
+        `This session has retired more than ${MAX_RETIRED_SECRETS} distinct secret values through rotation; start a new session to continue`
+      );
+    }
+    if (projectedChars > MAX_RETIRED_SECRET_CHARS) {
+      throw new EngineError(
+        `This session has retired more than ${MAX_RETIRED_SECRET_CHARS} characters of old secret values through rotation; start a new session to continue`
+      );
+    }
   }
 }
 

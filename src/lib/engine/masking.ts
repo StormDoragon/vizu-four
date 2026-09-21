@@ -192,6 +192,14 @@ export function maskChunks<T extends { text: string; stream?: string }>(
  * the retained output with nothing left to match. Redacting here means
  * nothing leaves this class unmasked, so callers may truncate freely.
  */
+// A chain of overlapping occurrences (a repeating secret pattern) merges
+// into one range that keeps touching the end of the buffer, which would
+// otherwise pull `safeEnd` back to 0 forever and hold the entire stream in
+// `carry` - unbounded memory from a crafted input, never flushed until the
+// stream ends. This caps how much a single in-progress match can ever make
+// `push` hold back, on top of the ordinary one-secret-length lookback.
+const MAX_HELD_CHARS = 64 * 1024;
+
 export class StreamMasker {
   private carry = "";
   private readonly values: string[];
@@ -209,11 +217,26 @@ export class StreamMasker {
     // Anything within one secret-length of the end could still be the start
     // of a match completed by the next write, so it waits.
     let safeEnd = Math.max(0, buffered.length - (this.longest - 1));
-    for (const range of redactionRanges(buffered, this.values)) {
+    const ranges = redactionRanges(buffered, this.values);
+    for (const range of ranges) {
       if (range.start < safeEnd && range.end > safeEnd) safeEnd = range.start;
     }
+    // Never let the cap above be defeated by a match that keeps growing:
+    // once held-back text would exceed the cap, emit anyway. Do it from the
+    // ranges already computed over the *whole* buffer, not by re-masking a
+    // truncated slice - a range clipped at the cut is still fully masked,
+    // rather than silently going unmatched because half of it fell outside
+    // a freshly-scanned substring.
+    safeEnd = Math.max(safeEnd, buffered.length - MAX_HELD_CHARS);
     this.carry = buffered.slice(safeEnd);
-    return maskSecrets(buffered.slice(0, safeEnd), this.secrets);
+    let out = "";
+    let at = 0;
+    for (const range of ranges) {
+      if (range.start >= safeEnd) break;
+      out += buffered.slice(at, range.start) + MASK;
+      at = Math.min(range.end, safeEnd);
+    }
+    return out + buffered.slice(at, safeEnd);
   }
 
   /** Whatever is still held back, masked. Call once the stream has ended. */
@@ -244,6 +267,15 @@ export function maskThenTruncate(
   return masked.length > limit ? `${masked.slice(0, limit)}…` : masked;
 }
 
+/**
+ * Masks nested string values - and, just as importantly, object keys.
+ *
+ * A secret can end up as a property name, not just a value: an expression
+ * like `fromJSON(...)` or a `github-script` object literal can use a secret
+ * as a map key, and a value-only mask would return it in full as `k` while
+ * dutifully redacting everything under `v`. Keys go through the same
+ * `maskSecrets` pass as values so neither side of an entry can leak one.
+ */
 export function maskObjectStrings<T>(value: T, secrets: SecretValues): T {
   if (typeof value === "string") {
     return maskSecrets(value, secrets) as unknown as T;
@@ -254,7 +286,7 @@ export function maskObjectStrings<T>(value: T, secrets: SecretValues): T {
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = maskObjectStrings(v, secrets);
+      out[maskSecrets(k, secrets)] = maskObjectStrings(v, secrets);
     }
     return out as T;
   }

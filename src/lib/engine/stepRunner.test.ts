@@ -255,6 +255,27 @@ describe("capture-stage masking", () => {
     await fs.rm(dir, { recursive: true, force: true });
   }, 30_000);
 
+  it("masks a secret split between stdout and stderr in the combined log", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mask-cross-stream-"));
+    // Half the secret goes to stdout, then (after a pause so it lands in a
+    // separate chunk) the other half goes to stderr - independent per-stream
+    // maskers never see the whole value, but the combined log's chronology
+    // does.
+    const result = await executeRunStep({
+      script: `printf 'review-secret' >&1\nsleep 0.2\nprintf -- '-value\\n' >&2`,
+      cwd: dir,
+      env: {},
+      extraPath: [],
+      runnerTempDir: dir,
+      secrets: ["review-secret-value"],
+    });
+    const combinedText = result.combined.map((c) => c.text).join("");
+    expect(combinedText).not.toContain("review-secret");
+    expect(combinedText).not.toContain("secret-value");
+    expect(combinedText).toContain("***");
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
   it("leaves output untouched when the step has no secrets", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mask-none-"));
     const result = await executeRunStep({

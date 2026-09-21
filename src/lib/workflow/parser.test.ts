@@ -127,4 +127,41 @@ jobs:
       issues.some((i) => i.severity === "warning" && i.message.includes("jobs.empty.steps is empty"))
     ).toBe(true);
   });
+
+  it("rejects a YAML alias bomb instead of expanding it", () => {
+    const src = `
+a: &a [1,1,1,1,1,1,1,1,1,1]
+b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a,*a]
+c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b,*b]
+d: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c,*c]
+e: [*d,*d,*d,*d,*d,*d,*d,*d,*d,*d]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`;
+    const { workflow, issues } = parseWorkflow(src);
+    expect(workflow).toBeNull();
+    expect(
+      issues.some((i) => i.severity === "error" && /alias amplification|YAML bomb/i.test(i.message))
+    ).toBe(true);
+  });
+
+  it("still parses a normal workflow that happens to use anchors", () => {
+    const src = `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env: &common_env
+      NODE_ENV: test
+    steps:
+      - run: echo hi
+        env: *common_env
+`;
+    const { workflow, issues } = parseWorkflow(src);
+    expect(issues.filter((i) => i.severity === "error")).toHaveLength(0);
+    expect(workflow).not.toBeNull();
+    expect(workflow!.jobs.build.steps[0].env).toEqual({ NODE_ENV: "test" });
+  });
 });

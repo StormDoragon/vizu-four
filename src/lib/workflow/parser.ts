@@ -13,6 +13,46 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/**
+ * A generous cap on how many nodes a parsed document may visit while it is
+ * walked for validation and interpolation.
+ *
+ * YAML anchors/aliases let a handful of lines reference each other into an
+ * exponential blowup ("billion laughs"): js-yaml itself keeps this cheap in
+ * memory, since an alias is just another reference to the same object, but
+ * every consumer that walks the tree by path rather than by identity - matrix
+ * expansion, interpolation, JSON responses - re-visits the same node once per
+ * occurrence and pays the full expanded cost. A 446-byte workflow built this
+ * way produced a million-character response even though the workflow/matrix
+ * limits (which bound declared sizes, not aliased structure) were untouched.
+ * Counting visits, not unique nodes, is what catches it: the cap trips on the
+ * re-visit count itself, the same thing every downstream walk would pay for.
+ */
+const MAX_YAML_NODES = 20_000;
+
+/**
+ * Rejects a parsed document whose node-visit count is unreasonable, before
+ * anything downstream walks it. Iterative rather than recursive so a deeply
+ * (rather than widely) nested document can't exhaust the call stack first.
+ */
+function assertBoundedYamlStructure(doc: unknown): void {
+  const stack: unknown[] = [doc];
+  let remaining = MAX_YAML_NODES;
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (--remaining < 0) {
+      throw new Error(
+        `workflow YAML expands to more than ${MAX_YAML_NODES} nodes when walked - this looks like an alias amplification ("YAML bomb")`
+      );
+    }
+    if (Array.isArray(value)) {
+      for (const v of value) stack.push(v);
+    } else if (value !== null && typeof value === "object") {
+      for (const v of Object.values(value as Record<string, unknown>)) stack.push(v);
+    }
+  }
+}
+
 function asStringArray(v: unknown): string[] {
   if (v == null) return [];
   if (typeof v === "string") return [v];
@@ -227,6 +267,13 @@ export function parseWorkflow(source: string, sourcePath?: string): ParseResult 
       workflow: null,
       issues: [{ severity: "error", message: "Workflow file is not a YAML mapping" }],
     };
+  }
+
+  try {
+    assertBoundedYamlStructure(doc);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { workflow: null, issues: [{ severity: "error", message }] };
   }
 
   const normalized = normalizeTopLevelKeys(doc);

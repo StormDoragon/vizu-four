@@ -12,6 +12,22 @@ function isStringRecord(v: unknown): v is Record<string, string> {
   return isPlainObject(v) && Object.values(v).every((x) => typeof x === "string");
 }
 
+/**
+ * The size of one value, however it's shaped. Most fields here are
+ * string-only, but `inputs`/`event`/`workflowInputs` carry arbitrary JSON -
+ * an object or array value skips a plain string-length check entirely and
+ * could carry an unbounded amount of nested data through a field that looks,
+ * per key, like it's bounded.
+ */
+function jsonValueSize(value: unknown): number {
+  return typeof value === "string" ? value.length : JSON.stringify(value ?? null).length;
+}
+
+/** Same bound applied to a session's scalar config fields (`sha`, `event`,
+ * etc.) as to a What-If patch's scalar fields - these are stored for the
+ * session's lifetime exactly the same way. */
+const MAX_SCALAR_FIELD_LENGTH = 100_000;
+
 const STRING_FIELDS: (keyof RunConfig)[] = [
   "eventName",
   "ref",
@@ -39,6 +55,9 @@ export function validateRunConfigPatch(config: unknown): string | null {
     if (value !== undefined && typeof value !== "string") {
       return `'config.${field}' must be a string`;
     }
+    if (typeof value === "string" && value.length > MAX_SCALAR_FIELD_LENGTH) {
+      return `'config.${field}' exceeds the ${MAX_SCALAR_FIELD_LENGTH}-character limit`;
+    }
   }
   for (const field of STRING_MAP_FIELDS) {
     const value = config[field];
@@ -48,6 +67,12 @@ export function validateRunConfigPatch(config: unknown): string | null {
   }
   if (config.workflowInputs !== undefined && !isPlainObject(config.workflowInputs)) {
     return "'config.workflowInputs' must be an object";
+  }
+  // `event` carries arbitrary JSON (a webhook-shaped payload), unlike the
+  // string fields above, so it gets the same size check `inputs` gets below
+  // rather than a shape check - it had neither before.
+  if (config.event !== undefined && jsonValueSize(config.event) > MAX_SCALAR_FIELD_LENGTH) {
+    return `'config.event' exceeds the ${MAX_SCALAR_FIELD_LENGTH}-character limit`;
   }
 
   // Size, not just shape: a session created with a huge config was as
@@ -114,7 +139,7 @@ function oversizedEntry(record: Record<string, unknown>, field: string): string 
     return `'${field}' has more than ${MAX_WHATIF_KEYS} keys`;
   }
   for (const [key, value] of Object.entries(record)) {
-    if (typeof value === "string" && value.length > MAX_WHATIF_VALUE_LENGTH) {
+    if (jsonValueSize(value) > MAX_WHATIF_VALUE_LENGTH) {
       return `'${field}.${key}' exceeds the ${MAX_WHATIF_VALUE_LENGTH}-character limit`;
     }
   }
@@ -155,6 +180,14 @@ export function validateWhatIfPatch(patch: unknown): string | null {
     if (typeof value === "string" && value.length > MAX_WHATIF_VALUE_LENGTH) {
       return `'${field}' exceeds the ${MAX_WHATIF_VALUE_LENGTH}-character limit`;
     }
+  }
+
+  // `event` had no check at all: a whole webhook-shaped payload of arbitrary
+  // size reached `session.config.event` unbounded, and stayed there for the
+  // session's lifetime the same way an oversized env/vars/secrets entry
+  // would - it just wasn't being looked at.
+  if (patch.event !== undefined && jsonValueSize(patch.event) > MAX_WHATIF_VALUE_LENGTH) {
+    return `'event' exceeds the ${MAX_WHATIF_VALUE_LENGTH}-character limit`;
   }
 
   if (patch.breakOnFailure !== undefined && typeof patch.breakOnFailure !== "boolean") {

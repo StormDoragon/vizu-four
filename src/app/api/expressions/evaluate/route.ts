@@ -59,7 +59,18 @@ interface Budget {
   left: number;
 }
 
+/**
+ * A per-string cap alone doesn't bound the response: an object with
+ * thousands of keys (e.g. evaluating `vars` against a session sitting at the
+ * 1,000-key configuration limit) kept getting fully walked and rebuilt
+ * regardless of how much budget individual strings had already spent,
+ * producing a response over a megabyte despite the shared budget existing.
+ * Every node visited - not just every string - now spends budget, and both
+ * arrays and objects stop adding entries once the budget is gone instead of
+ * finishing the traversal anyway.
+ */
 function truncateStrings<T>(value: T, budget: Budget): T {
+  budget.left -= 1;
   if (typeof value === "string") {
     const capped =
       value.length > MAX_DISPLAY_CHARS
@@ -68,14 +79,27 @@ function truncateStrings<T>(value: T, budget: Budget): T {
     budget.left -= capped.length;
     return capped as unknown as T;
   }
-  if (Array.isArray(value)) return value.map((v) => truncateStrings(v, budget)) as unknown as T;
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    for (const v of value) {
+      if (budget.left <= 0) {
+        out.push("… (truncated)");
+        break;
+      }
+      out.push(truncateStrings(v, budget));
+    }
+    return out as unknown as T;
+  }
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
-        k,
-        truncateStrings(v, budget),
-      ])
-    ) as T;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (budget.left <= 0) {
+        out["…"] = "(truncated)";
+        break;
+      }
+      out[k] = truncateStrings(v, budget);
+    }
+    return out as T;
   }
   return value;
 }
@@ -155,7 +179,14 @@ export async function POST(req: Request) {
       // Includes retired values: a secret this session has since replaced or
       // deleted can still be sitting in the context this evaluates against.
       secrets = secretsToMask(session.config.secrets, session.retiredSecretValues);
-      const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, undefined);
+      // The pending step's own `env:` is part of what it will be given, same
+      // as the /context inspector - omitting it here (as this route used to)
+      // left the two disagreeing about a pending step's environment: the
+      // inspector would show a value from the step's own `env:` block that
+      // the playground, evaluating the identical `env.*` expression, could
+      // not see at all.
+      const pendingStepEnv = session.workflow.jobs[lane.jobId]?.steps[lane.pointer]?.env;
+      const effectiveEnv = resolveEffectiveEnv(session, lane, lane.pointer, pendingStepEnv);
       sessionCtx = buildEvalContext(session, lane, { uptoStepIndex: lane.pointer, effectiveEnv });
     }
   }
