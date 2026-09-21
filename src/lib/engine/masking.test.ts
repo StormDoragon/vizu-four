@@ -28,6 +28,22 @@ describe("maskObjectStrings", () => {
     );
     expect(masked).toEqual({ a: "***", b: [{ c: "x ***" }], n: 1 });
   });
+
+  it("masks a secret used as an object key, not only as a value", () => {
+    // fromJSON / github-script object literals can put a secret in the key
+    // position. Value-only masking left the key in full while redacting
+    // everything under it.
+    const secret = "review-secret-value";
+    const masked = maskObjectStrings(
+      { [secret]: "ok", nested: { [secret]: 1 }, plain: secret },
+      [secret]
+    );
+    expect(Object.keys(masked as object)).toEqual(["***", "nested", "plain"]);
+    expect((masked as Record<string, unknown>)["***"]).toBe("ok");
+    expect((masked as { nested: Record<string, unknown> }).nested).toEqual({ "***": 1 });
+    expect((masked as { plain: string }).plain).toBe("***");
+    expect(JSON.stringify(masked)).not.toContain(secret);
+  });
 });
 
 describe("maskChunks", () => {
