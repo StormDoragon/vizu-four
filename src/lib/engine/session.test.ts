@@ -1735,11 +1735,13 @@ jobs:
 
 describe("historical environment snapshots", () => {
   /** What the context route serves for `stepIndex=K` - the state entering
-   * step K, historical once that step has run. */
+   * step K, historical once that step has run. Mirrors the route, including
+   * applying the pending step's own `env:` on the live path. */
   function envAt(s: DebugSession, laneId: string, stepIndex: number): Record<string, string> {
     const lane = s.lanes[laneId];
     const recorded = stepIndex < lane.pointer ? lane.steps[stepIndex]?.envBefore : undefined;
-    return recorded ?? resolveEffectiveEnv(s, lane, stepIndex, undefined);
+    const pendingStepEnv = s.workflow.jobs[lane.jobId]?.steps[stepIndex]?.env;
+    return recorded ?? resolveEffectiveEnv(s, lane, stepIndex, pendingStepEnv);
   }
 
   /** What the context route serves for `afterStepIndex=N` - what step N left
@@ -1900,6 +1902,69 @@ jobs:
     applyWhatIf(s, { secrets: { TOKEN: "another-secret-value-9876543210" } });
     const after = secretsToMask(s.config.secrets, s.retiredSecretValues);
     expect(maskObjectStrings(s.lanes[lane].steps[0].envBefore ?? {}, after).TOKEN).toBe("***");
+  });
+
+  it("shows a pending step's own env: before it runs", async () => {
+    // The inspector's whole job here is "what will this step be given?", and
+    // the step's `env:` is the last layer applied. Resolving without it meant
+    // the answer only became correct after the step had already run.
+    const s = session(`name: t
+on: [push]
+env:
+  COLOR: workflow-red
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: overrides for itself
+        env:
+          COLOR: step-blue
+        run: echo "$COLOR"
+`);
+    const lane = s.laneOrder[0];
+    expect(s.lanes[lane].pointer).toBe(0);
+    expect(envAt(s, lane, 0).COLOR).toBe("step-blue");
+
+    // ...and it agrees with what the step actually prints.
+    const record = await controlStep(s, lane);
+    expect(record.stdout.trim()).toBe("step-blue");
+    expect(envAt(s, lane, 0).COLOR).toBe("step-blue");
+  });
+
+  it("interpolates a pending step's env: rather than showing the template", async () => {
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          WHO: \${{ github.actor }}
+        run: echo "$WHO"
+`);
+    expect(envAt(s, s.laneOrder[0], 0).WHO).toBe("local-debugger");
+  });
+
+  it("still applies pending What-If overrides under the step's own env:", async () => {
+    // Step `env:` is the last layer, so it wins over an override - the live
+    // view has to show that precedence, not just include both.
+    const s = session(`name: t
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          COLOR: step-blue
+        run: echo "$COLOR"
+`);
+    const lane = s.laneOrder[0];
+    applyWhatIf(s, { env: { COLOR: "whatif-green", OTHER: "whatif-only" } });
+    expect(envAt(s, lane, 0).COLOR).toBe("step-blue");
+    expect(envAt(s, lane, 0).OTHER).toBe("whatif-only");
   });
 
   it("includes the step's own env: layer in what it was given", async () => {

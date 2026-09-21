@@ -61,7 +61,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       : uptoStepIndex < lane.pointer
         ? lane.steps[uptoStepIndex]?.envBefore
         : undefined;
-  const effectiveEnv = recorded ?? resolveEffectiveEnv(session, lane, uptoStepIndex, undefined);
+
+  // The step's own `env:` is the last layer applied, and it is part of what
+  // that step is given - a recorded `envBefore` already contains it. The
+  // live path was resolving without it, so a pending step's `env:` block was
+  // missing from the inspector until the step actually ran, which is exactly
+  // when someone is looking to find out what it will be given.
+  const pendingStepEnv = session.workflow.jobs[lane.jobId]?.steps[uptoStepIndex]?.env;
+  const effectiveEnv =
+    recorded ?? resolveEffectiveEnv(session, lane, uptoStepIndex, pendingStepEnv);
   const evalCtx = buildEvalContext(session, lane, { uptoStepIndex, effectiveEnv });
 
   // Belt-and-suspenders: mask any secret value that leaked into another
