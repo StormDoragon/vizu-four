@@ -186,6 +186,24 @@ describe("StreamMasker", () => {
     const m = new StreamMasker(["abc"]);
     expect(m.push("hello world") + m.flush()).toBe("hello world");
   });
+
+  it("bounds how much a repeating overlapping pattern can make it hold", () => {
+    // A chain of overlapping occurrences of the same value merges into one
+    // range that keeps touching the end of the buffer, which used to pull
+    // the safe cut back to 0 forever - held-back text grew without bound
+    // until flush() was finally called, regardless of how much was fed in.
+    const m = new StreamMasker(["review-secret-value"]);
+    let emittedBeforeFlush = 0;
+    for (let i = 0; i < 50; i++) {
+      emittedBeforeFlush += m.push("review-secret-value".repeat(50)).length;
+    }
+    // A bounded masker must have emitted (most of) the ~50,000 chars fed in
+    // well before flush(), instead of holding all of it.
+    expect(emittedBeforeFlush).toBeGreaterThan(0);
+    const out = m.flush();
+    expect(out).not.toContain("review-secret-value");
+    expect(out).not.toContain("review-secret-valu");
+  });
 });
 
 describe("secretsToMask", () => {

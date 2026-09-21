@@ -448,6 +448,33 @@ jobs:
     // env is full; vars is untouched and must still accept a patch.
     expect(() => applyWhatIf(s, { vars: patchOf(0, 200, 10) })).not.toThrow();
   });
+
+  it("refuses to keep rotating a secret past the retired-value character limit", () => {
+    // Unlike the live maps above, a retired value can never be dropped
+    // (secretsToMask keeps every value that was ever secret) - so this can
+    // only be bounded by refusing the rotation that would exceed it, not by
+    // deleting old entries the way env/vars/secrets do.
+    const s = session(tiny);
+    applyWhatIf(s, { secrets: { TOKEN: "seed-value" } });
+    for (let round = 0; round < 5; round++) {
+      applyWhatIf(s, { secrets: { TOKEN: `${"x".repeat(100_000)}-${round}` } });
+    }
+    expect(() => applyWhatIf(s, { secrets: { TOKEN: "y".repeat(100_000) } })).toThrow(
+      /more than 500000 characters/
+    );
+    // The live map itself is untouched by the refused rotation.
+    expect(s.config.secrets.TOKEN).not.toContain("y".repeat(100_000));
+  });
+
+  it("refuses to keep rotating distinct secret values past the retired-count limit", () => {
+    const s = session(tiny);
+    for (let i = 0; i <= 500; i++) {
+      applyWhatIf(s, { secrets: { TOKEN: `value-${i}` } });
+    }
+    expect(() => applyWhatIf(s, { secrets: { TOKEN: "one-more-value" } })).toThrow(
+      /more than 500 distinct secret values/
+    );
+  });
 });
 
 describe("masking never touches live execution state", () => {

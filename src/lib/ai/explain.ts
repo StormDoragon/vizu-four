@@ -231,9 +231,13 @@ export async function explainFailure(input: ExplainInput): Promise<FailureExplan
         max_tokens: 1024,
         messages: [{ role: "user", content: buildPrompt(input) }],
       },
-      // Without this a hung provider call holds a concurrency slot forever,
-      // so an outage there becomes an outage here.
-      { timeout: callTimeoutMs() }
+      // `timeout` resets on every retry, so the SDK's own retries (up to 3
+      // HTTP attempts for one logical call by default) could take up to 3x
+      // this long - a hung/slow provider held a concurrency slot for
+      // multiples of the configured budget instead of at most it. `signal`
+      // aborts the whole operation, retries included, once the deadline
+      // passes, so this is what actually bounds one logical call.
+      { signal: AbortSignal.timeout(callTimeoutMs()) }
     );
     const textBlock = message.content.find((b): b is { type: "text"; text: string } => b.type === "text");
     if (!textBlock) return explainFailureHeuristic(input);

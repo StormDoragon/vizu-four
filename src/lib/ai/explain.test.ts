@@ -159,4 +159,37 @@ describe("budget", () => {
     expect(explanation.source).toBe("heuristic");
     expect(aiBudgetUsage().calls).toBe(0);
   });
+
+  it("bounds the whole logical call (retries included), not just one HTTP attempt", async () => {
+    // The SDK's `timeout` request option resets on every retry - a hung
+    // provider could take up to (1 + maxRetries) times the configured
+    // budget instead of at most it. An AbortSignal-based deadline is what
+    // actually bounds one logical call across all of its retries, so that's
+    // what a live call must be issued with instead.
+    let capturedOptions: { signal?: AbortSignal; timeout?: number } | undefined;
+    vi.doMock("@anthropic-ai/sdk", () => ({
+      default: class {
+        messages = {
+          create: (_body: unknown, options: { signal?: AbortSignal; timeout?: number }) => {
+            capturedOptions = options;
+            return Promise.resolve({
+              content: [{ type: "text", text: '{"summary":"s","causes":[{"title":"t","detail":"d"}]}' }],
+            });
+          },
+        };
+      },
+    }));
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+    vi.stubEnv("VIZU_AI_TIMEOUT_MS", "5000");
+
+    const explanation = await explainFailure(input);
+
+    expect(explanation.source).toBe("claude");
+    expect(capturedOptions?.signal).toBeInstanceOf(AbortSignal);
+    // Not the per-attempt `timeout` option, which the SDK's own retries
+    // would each get their own fresh copy of.
+    expect(capturedOptions?.timeout).toBeUndefined();
+
+    vi.doUnmock("@anthropic-ai/sdk");
+  });
 });

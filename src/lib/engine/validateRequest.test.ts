@@ -51,6 +51,20 @@ describe("validateRunConfigPatch", () => {
       })
     ).toBeNull();
   });
+
+  it("rejects an oversized scalar string field", () => {
+    expect(validateRunConfigPatch({ sha: "x".repeat(100_001) })).toMatch(/'config.sha' exceeds/);
+  });
+
+  it("rejects an oversized event payload, which previously had no check at all", () => {
+    expect(validateRunConfigPatch({ event: { body: "x".repeat(100_001) } })).toMatch(
+      /'config.event' exceeds/
+    );
+  });
+
+  it("accepts a reasonably sized event payload", () => {
+    expect(validateRunConfigPatch({ event: { action: "opened", number: 42 } })).toBeNull();
+  });
 });
 
 describe("validateWhatIfPatch", () => {
@@ -99,6 +113,22 @@ describe("validateWhatIfPatch", () => {
 
   it("still allows a null value, which is how an override is removed", () => {
     expect(validateWhatIfPatch({ env: { A: null } })).toBeNull();
+  });
+
+  it("rejects an oversized event payload", () => {
+    expect(validateWhatIfPatch({ event: { body: "x".repeat(100_001) } })).toMatch(
+      /'event' exceeds/
+    );
+  });
+
+  it("accepts a reasonably sized event payload", () => {
+    expect(validateWhatIfPatch({ event: { action: "opened", number: 42 } })).toBeNull();
+  });
+
+  it("rejects an oversized non-string value nested in inputs", () => {
+    expect(validateWhatIfPatch({ inputs: { payload: { big: "x".repeat(100_001) } } })).toMatch(
+      /'inputs\.payload' exceeds/
+    );
   });
 });
 

@@ -3,9 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseEnvFile, parsePathFile } from "./envFile";
-import { StreamMasker,
-  type SecretValues,
-} from "./masking";
+import { StreamMasker, maskChunks, type SecretValues } from "./masking";
 
 // Character counts (UTF-16 code units, like every other .length in this
 // file) - "BYTES" in the old single constant this replaces was misleading.
@@ -90,38 +88,38 @@ class TextCapture {
  * relative to the other stream. This is a supplementary view only, so it
  * uses a simpler head-only cap rather than duplicating the head+tail
  * bookkeeping above.
+ *
+ * Masking is deferred to `finalize`, over the raw retained chunks, via
+ * `maskChunks` - not done per-stream as data arrives. A secret can be split
+ * across the exact point where output interleaves streams (half written to
+ * stdout, half to stderr, or with a line from the other stream landing in
+ * between two halves of one stream's write); an independent per-stream
+ * `StreamMasker` never sees the other stream's bytes, so it can't catch
+ * that. `maskChunks` checks the interleaved whole and each stream alone, so
+ * it does. This is safe to defer because what's retained here is already
+ * capped at HEAD_CHARS + TAIL_CHARS raw chars - small enough to re-scan
+ * once - and nothing is ever emitted before that scan runs.
  */
 class CombinedCapture {
   private entries: OutputChunk[] = [];
   private total = 0;
   private truncated = false;
 
-  // One per stream: this capture drops whole chunks past its cap, so a
-  // secret split across a kept chunk and a dropped one would otherwise
-  // strand the kept half with nothing left to match it against.
-  constructor(private readonly maskers: Record<OutputStream, StreamMasker>) {}
+  constructor(private readonly secrets: SecretValues) {}
 
   feed(stream: OutputStream, rawText: string): void {
     this.total += rawText.length;
     if (this.truncated) return;
-    const text = this.maskers[stream].push(rawText);
-    if (text === "") return;
     if (this.total > HEAD_CHARS + TAIL_CHARS) {
       this.truncated = true;
       this.entries.push({ stream, text: "\n… output truncated …\n" });
       return;
     }
-    this.entries.push({ stream, text });
+    this.entries.push({ stream, text: rawText });
   }
 
   finalize(): OutputChunk[] {
-    if (!this.truncated) {
-      for (const stream of ["stdout", "stderr"] as const) {
-        const held = this.maskers[stream].flush();
-        if (held !== "") this.entries.push({ stream, text: held });
-      }
-    }
-    return this.entries;
+    return maskChunks(this.entries, this.secrets);
   }
 }
 
@@ -274,10 +272,7 @@ export async function executeRunStep(opts: RunStepOptions): Promise<RunStepResul
       const secrets = opts.secrets ?? [];
       const stdoutCapture = new TextCapture(new StreamMasker(secrets));
       const stderrCapture = new TextCapture(new StreamMasker(secrets));
-      const combinedCapture = new CombinedCapture({
-        stdout: new StreamMasker(secrets),
-        stderr: new StreamMasker(secrets),
-      });
+      const combinedCapture = new CombinedCapture(secrets);
       let settled = false;
       let timedOut = false;
 
