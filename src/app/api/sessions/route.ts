@@ -38,10 +38,12 @@ interface CreateSessionBody {
 }
 
 // There is intentionally no GET here. Every session lives in one process-
-// wide in-memory store with no per-visitor ownership check (see the
-// "Security note" in README.md) - a bulk listing endpoint would let any
-// caller enumerate every other session's id and then drive its /control,
-// /context, etc. routes. The UI only ever needs the id it just created.
+// wide in-memory store, and while the `[id]` routes are ownership-gated
+// (see `getOwnedSession`, and the "Security note" in README.md), a bulk
+// listing endpoint would still hand every caller the set of live session
+// ids - and an id is the one thing an attacker needs before a stolen or
+// guessed owner cookie is worth anything. The UI only ever needs the id it
+// just created.
 
 export async function POST(req: Request) {
   warnIfUnsafeDeployment();
