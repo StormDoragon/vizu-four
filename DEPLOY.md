@@ -93,8 +93,56 @@ offline heuristic explanation, so the feature degrades rather than breaking.
 A value that is not a positive integer falls back to the default rather than
 being read as "unlimited", so a typo cannot silently remove the bound.
 
-Per-visitor rate limits on the endpoint are separate and always on, so one
-visitor cannot consume the whole instance budget before anyone else can.
+Per-visitor rate limits on the endpoint are separate and always on: 40
+explanations per visitor and 80 per client address every 10 minutes. At the
+default cap that stops one visitor from spending the whole instance budget.
+Below 40, one visitor can spend it all, and everyone gets the offline
+explanation until the window rolls over.
+
+### What a key can cost, at most
+
+Each explanation is one call to Claude, and each call is bounded at both
+ends:
+
+- **Prompt:** at most 16 KB (`MAX_PROMPT_BYTES` in `src/lib/ai/explain.ts`).
+  Each field is clipped to its own share: the step name and `uses:` to 256
+  bytes each, the engine error to 1 KB, the end of the `run:` script to 2 KB,
+  and the ends of stdout and stderr to 4 KB each. A prompt that still comes
+  out larger isn't sent.
+- **Reply:** at most 1,024 output tokens (`max_tokens`).
+
+So one ten-minute window costs at most `VIZU_AI_MAX_CALLS_PER_WINDOW` ×
+(16,384 input + 1,024 output tokens). At the default model's price (Claude
+Sonnet 5: $2 per million input tokens and $10 per million output tokens as of
+September 2026; check
+[current pricing](https://platform.claude.com/docs/en/about-claude/pricing),
+and note that `ANTHROPIC_MODEL` changes the model), that's about $0.043 per
+call. Running flat out, every window, all day:
+
+| `VIZU_AI_MAX_CALLS_PER_WINDOW` | At most per hour | At most per day |
+|---|---|---|
+| `200` (default) | $51.61 | $1,238.63 |
+| `30` | $7.74 | $185.79 |
+| `10` | $2.58 | $61.93 |
+
+That's what someone saturating the cap with maximum-size prompts around the
+clock could spend. The table assumes the extreme of one token per byte, so it
+overstates what real text costs, and an ordinary failure's prompt is only a
+few KB. For any public instance with a key:
+
+1. Set `VIZU_AI_MAX_CALLS_PER_WINDOW` to what you'd accept losing per hour,
+   instead of keeping the default.
+2. Set a spend limit on the key's workspace in the Claude Console. It's the
+   one bound that doesn't depend on this app being correct.
+
+The SDK may retry a call that failed with a retryable error, at most twice
+and inside the same `VIZU_AI_TIMEOUT_MS` deadline. The cap counts calls, not
+those retries.
+
+`npm run build && npm run verify:deployment` checks every bound against a
+production build, using a stand-in for Anthropic's API: the call cap, the
+concurrency cap, the timeout, the prompt ceiling and the per-visitor 429. CI
+runs it on every push.
 
 ## Docker (optional)
 

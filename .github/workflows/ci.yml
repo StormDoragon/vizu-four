@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # A branch in this repository is already checked on push, so a pull
+    # request only needs its own run when it comes from a fork.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and macOS: `run:` steps need a Unix shell, so Windows isn't
+        # supported. Node 20 is what the demo deploys on (render.yaml).
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # Boots the production build the way the public demo runs it and
+      # checks demo mode and every AI cost bound over HTTP.
+      - run: npm run verify:deployment
