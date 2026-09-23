@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateExpressionTraced } from "./trace";
+import { unwrapExpression } from "./interpolate";
 import { evaluateExpression, ExpressionEvalError, type EvalContext } from "./evaluator";
 import { sampleEvalContext } from "./sampleContext";
 
@@ -176,5 +177,28 @@ describe("evaluateExpressionTraced on input too deep to walk", () => {
     }).not.toThrow();
     expect(outcome?.error).toBeTruthy();
     expect(outcome?.result).toBeUndefined();
+  });
+});
+
+describe("unwrapExpression", () => {
+  it.each([
+    ["${{ a == 'x' }}", "a == 'x'", 4],
+    ["  ${{   a }}", "a", 8],
+    ["a == b", "a == b", 0],
+    ["\t a", "a", 2],
+    // Two expressions are not one wrapped expression - left as written.
+    ["${{ a }} and ${{ b }}", "${{ a }} and ${{ b }}", 0],
+  ])("unwraps %j to %j starting at offset %i", (text, source, offset) => {
+    expect(unwrapExpression(text)).toEqual({ source, offset });
+  });
+
+  it("maps a syntax error back onto the text as pasted, wrapper and all", () => {
+    // The position is reported against the unwrapped source; adding the
+    // offset has to land on the offending character in the original.
+    const pasted = "${{ github.event_name = 'push' }}";
+    const { source, offset } = unwrapExpression(pasted);
+    const { errorPosition } = evaluateExpressionTraced(source, sampleEvalContext());
+    expect(errorPosition).toBeDefined();
+    expect(pasted[errorPosition! + offset]).toBe("=");
   });
 });

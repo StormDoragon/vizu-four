@@ -46,6 +46,30 @@ export function findExpressionSpans(template: string): ExpressionSpan[] {
   return spans;
 }
 
+/**
+ * The expression inside a single `${{ }}` that wraps the whole (trimmed) text
+ * - how one reads when pasted straight out of a workflow file - or the
+ * trimmed text itself when there is no such wrapper.
+ *
+ * `offset` is where `source` starts in the original text. Positions are
+ * reported against what was parsed, and without this there was no way back
+ * onto what the person actually typed: a caret for a pasted `${{ ... }}`
+ * landed four or more columns before the character it meant.
+ */
+export function unwrapExpression(text: string): { source: string; offset: number } {
+  const leading = text.length - text.trimStart().length;
+  const trimmed = text.trim();
+  const spans = findExpressionSpans(trimmed);
+  if (spans.length === 1 && spans[0].start === 0 && spans[0].end === trimmed.length) {
+    const inner = spans[0].expr;
+    return {
+      source: inner.trim(),
+      offset: leading + 3 + (inner.length - inner.trimStart().length),
+    };
+  }
+  return { source: trimmed, offset: leading };
+}
+
 export interface InterpolateError {
   expr: string;
   message: string;
