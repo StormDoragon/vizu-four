@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import type { JsonValue, ParseIssue, WorkflowFile, WorkflowStep } from "../workflow/types";
+import type { JsonValue, ParseIssue, WorkflowFile, WorkflowJob, WorkflowStep } from "../workflow/types";
 import {
   MAX_MATRIX_COMBINATIONS,
   comboKey,
@@ -603,10 +603,57 @@ export function grantExecutionConsent(session: DebugSession): void {
   session.revision++;
 }
 
+/**
+ * `map[key]`, but only when `map` holds `key` itself.
+ *
+ * Lanes, jobs and secrets are plain objects keyed by strings a request chose,
+ * and plain objects inherit: `lanes["__proto__"]` is `Object.prototype`, and
+ * `jobs["constructor"]` is `Object`. Every lookup used to read "truthy" as
+ * "exists", so those names passed as real entries - and the engine then wrote
+ * to whatever it had been handed. Stepping lane `__proto__` set
+ * `Object.prototype.status`, every object in the process inherited
+ * `status: "paused"`, and every response the server built from then on failed
+ * with an invalid status code: one anonymous request took the instance down,
+ * for every visitor, until it was restarted.
+ */
+function ownEntry<T>(map: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
+/** The lane `laneId` names, or undefined. Anything answering for a
+ * client-chosen lane id goes through here, never `session.lanes[laneId]` -
+ * see `ownEntry` for what that costs. */
+export function findLane(session: DebugSession, laneId: string): Lane | undefined {
+  return ownEntry(session.lanes, laneId);
+}
+
+/** The job `jobId` names, or undefined, by the same rule as `findLane`. */
+export function findWorkflowJob(session: DebugSession, jobId: string): WorkflowJob | undefined {
+  return ownEntry(session.workflow.jobs, jobId);
+}
+
 function requireLane(session: DebugSession, laneId: string): Lane {
-  const lane = session.lanes[laneId];
+  const lane = findLane(session, laneId);
   if (!lane) throw new EngineError(`Unknown lane '${laneId}'`);
   return lane;
+}
+
+/**
+ * The step a `jobId` + `stepKey` pair names, or undefined if there isn't one.
+ *
+ * Breakpoints and mock outputs are both keyed this way and both arrive from
+ * the client, so both routes have to answer the same question before storing
+ * anything under that key. Pure and exported so the rule is unit-testable on
+ * its own, and shared so the two routes cannot drift - which they had: the
+ * breakpoint route checked only the job, so any string at all was accepted
+ * as a step key.
+ */
+export function findWorkflowStep(
+  session: DebugSession,
+  jobId: string,
+  stepKey: string
+): WorkflowStep | undefined {
+  return findWorkflowJob(session, jobId)?.steps.find((s) => s.key === stepKey);
 }
 
 export async function controlStep(session: DebugSession, laneId: string): Promise<StepRunRecord> {
@@ -629,6 +676,23 @@ export async function controlStep(session: DebugSession, laneId: string): Promis
     if (lane.status === "running") lane.status = "paused";
     session.revision++;
   }
+}
+
+/**
+ * Gives the event loop to whatever is queued - other visitors' requests -
+ * before the next step.
+ *
+ * A step with nothing to wait on (every `uses:` step, and every `run:` step
+ * in simulation-only mode) completes without ever leaving the microtask
+ * queue, so a loop of them never let an incoming request in: one "run all"
+ * held the whole server until the workflow finished. A real `run:` step
+ * already waits on its process, so this only makes the simulated path yield
+ * where execution would have anyway - which is also why the engine's
+ * existing guards for concurrent requests already cover what can happen
+ * during the yield.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 async function runLaneLoop(
@@ -665,6 +729,11 @@ async function runLaneLoop(
         lane.status = "paused";
         return;
       }
+      await yieldToEventLoop();
+      // Anything may have run during the yield - including a sibling matrix
+      // lane failing and fail-fast-cancelling this one, which leaves it
+      // terminal with its pointer at the end.
+      if (isTerminal(lane.status)) return;
     }
   } finally {
     // See controlStep: "running" must never survive a throw from below.
@@ -843,7 +912,7 @@ function requireWithinConfigLimits(session: DebugSession, patch: WhatIfPatch): v
     const seen = new Set(session.retiredSecretValues);
     let projectedCount = seen.size;
     for (const [key, value] of Object.entries(patch.secrets)) {
-      const previous = session.config.secrets[key];
+      const previous = ownEntry(session.config.secrets, key);
       if (previous && previous !== value && !seen.has(previous)) {
         seen.add(previous);
         projectedChars += previous.length;
@@ -876,7 +945,7 @@ export function applyWhatIf(session: DebugSession, patch: WhatIfPatch): void {
   // it silently edited a throwaway, so replacing or deleting a secret
   // returned 200 and changed nothing.
   for (const [key, value] of Object.entries(patch.secrets ?? {})) {
-    const previous = session.config.secrets[key];
+    const previous = ownEntry(session.config.secrets, key);
     if (previous && previous !== value && !session.retiredSecretValues.includes(previous)) {
       session.retiredSecretValues.push(previous);
     }

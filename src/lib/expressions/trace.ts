@@ -218,7 +218,17 @@ export function evaluateExpressionTraced(src: string, ctx: EvalContext): TracedE
     }
     return { error: err instanceof Error ? err.message : String(err) };
   }
-  const trace = walk(ast, ctx);
+  let trace: TraceNode;
+  try {
+    trace = walk(ast, ctx);
+  } catch (err) {
+    // `walk` records ordinary evaluation errors on the node that raised
+    // them, so what escapes it is input too deep to walk at all: a long
+    // `!!!!...` chain costs the parser one frame per `!` but the walk
+    // several, so it parsed fine and then overflowed here - a RangeError
+    // the playground route answered with a 500.
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
   if (trace.error) return { trace, error: trace.error };
   return { trace, result: trace.value ?? null };
 }

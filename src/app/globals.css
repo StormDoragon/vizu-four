@@ -88,3 +88,26 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--ink-700));
 }
+
+/* React Flow's zoom/fit controls default to a white background and a glyph
+ * colour of `inherit` - which on this app's dark canvas resolves to
+ * white-on-white, an invisible control (and washes out on the light theme).
+ * The library only switches to its dark palette under a `.react-flow.dark`
+ * class this app never sets, and its own stylesheet is imported after this
+ * file, so plain overrides lose on load order. Feeding the `--xy-*`
+ * variables the library itself reads sidesteps that entirely and themes the
+ * controls from the same tokens as everything else, in both modes. */
+.react-flow {
+  /* The library reads `--xy-controls-button-*` first and only falls back to
+   * `*-default`, which it defines itself on `.react-flow` (so overriding the
+   * `-default` names ties and loses on load order). It never sets the
+   * non-default names, so these have no competitor and win regardless. */
+  --xy-controls-button-background-color: rgb(var(--bg-raised));
+  --xy-controls-button-background-color-hover: rgb(var(--bg-panel));
+  --xy-controls-button-color: rgb(var(--ink-300));
+  --xy-controls-button-color-hover: rgb(var(--ink));
+  --xy-controls-button-border-color: rgb(var(--bg-border));
+}
+.react-flow__controls {
+  box-shadow: 0 0 0 1px rgb(var(--bg-border));
+}

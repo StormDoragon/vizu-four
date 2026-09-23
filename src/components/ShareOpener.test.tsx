@@ -173,3 +173,49 @@ describe("ShareOpener shows what a link imports", () => {
     expect(imported.textContent).toMatch(/none/);
   });
 });
+
+describe("ShareOpener with entries the server rejects", () => {
+  it("skips a breakpoint or mock for an unknown step instead of failing the whole open", async () => {
+    const session = stubSession();
+    // The token is user-editable text: "ghost" is a step this workflow does
+    // not have, which both routes refuse with a 404. One bad entry should
+    // cost that entry, not the session.
+    const token = encodeSharePayload({
+      version: 1,
+      yaml: YAML,
+      breakpoints: ["build:ghost", "build:step-1"],
+      env: {},
+      vars: {},
+      breakOnFailure: true,
+      mockOutputs: {
+        "build:ghost": { outputs: { a: "1" } },
+        "build:step-0": { outputs: { sha: "abc" } },
+      },
+      progress: [],
+      activeLane: null,
+    });
+    const setBreakpoint = vi
+      .spyOn(apiClient, "setBreakpoint")
+      .mockImplementation(async (_id, _job, stepKey) => {
+        if (stepKey === "ghost") throw new Error("Unknown step 'ghost' in job 'build'");
+        return { session };
+      });
+    const setMockOutputs = vi
+      .spyOn(apiClient, "setMockOutputs")
+      .mockImplementation(async (_id, _job, stepKey) => {
+        if (stepKey === "ghost") throw new Error("Unknown step 'ghost' in job 'build'");
+        return { session };
+      });
+
+    render(<ShareOpener token={token} />);
+    fireEvent.click(await screen.findByTestId("share-inspect"));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/debug/shared-session?shared=1"));
+    // The valid entries on either side of a rejected one were still applied.
+    expect(setBreakpoint).toHaveBeenCalledWith("shared-session", "build", "step-1", true);
+    expect(setMockOutputs).toHaveBeenCalledWith("shared-session", "build", "step-0", {
+      outputs: { sha: "abc" },
+    });
+    expect(screen.queryByText(/Unknown step/)).toBeNull();
+  });
+});

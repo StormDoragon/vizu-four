@@ -329,8 +329,18 @@ export default function HomePage() {
       </div>
 
       <footer className="mt-auto pt-8 text-xs text-ink-500">
-        Local-first MVP: <code>run:</code> steps execute for real in a scratch workspace on this
-        machine; <code>uses:</code> actions are simulated. See the README for full scope.
+        {simulationOnly ? (
+          <>
+            Simulation-only deployment: <code>run:</code> steps are never executed here - each
+            shows the command it would have run, and a mock decides its result.{" "}
+            <code>uses:</code> actions are simulated. See the README for full scope.
+          </>
+        ) : (
+          <>
+            Local-first MVP: <code>run:</code> steps execute for real in a scratch workspace on
+            this machine; <code>uses:</code> actions are simulated. See the README for full scope.
+          </>
+        )}
       </footer>
     </main>
   );

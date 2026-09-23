@@ -28,7 +28,10 @@ export function buildJobGraph(workflow: WorkflowFile): JobGraph {
   for (const id of jobIds) {
     const job = workflow.jobs[id];
     for (const dep of job.needs) {
-      if (!workflow.jobs[dep]) continue; // unknown dep reported by parser as an issue
+      // Unknown deps are reported by the parser as an issue. Own keys only -
+      // an inherited name like `constructor` otherwise passes, and the
+      // `.push` below then throws on the value it inherited.
+      if (!Object.hasOwn(workflow.jobs, dep)) continue;
       indegree[id] += 1;
       dependents[dep].push(id);
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOwnedSession } from "@/lib/engine/ownership";
+import { findLane } from "@/lib/engine/session";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
 import { maskObjectStrings, secretsToMask } from "@/lib/engine/masking";
 import { errorResponse } from "@/lib/http";
@@ -22,7 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const url = new URL(req.url);
   const laneId = url.searchParams.get("laneId");
-  const lane = laneId ? session.lanes[laneId] : undefined;
+  const lane = laneId ? findLane(session, laneId) : undefined;
   if (!lane) return errorResponse(404, "Unknown or missing 'laneId'");
 
   // Two different questions land on the same step index, so the caller says

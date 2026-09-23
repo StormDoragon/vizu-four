@@ -36,22 +36,13 @@ class TextCapture {
     this.total += rawText.length;
     const text = this.masker.push(rawText);
     if (text === "") return;
-    if (this.headFrozen === null) {
-      this.chunks.push(text);
-      const joined = this.chunks.join("");
-      if (joined.length > HEAD_CHARS + TAIL_CHARS) {
-        this.headFrozen = joined.slice(0, HEAD_CHARS);
-        this.tail = joined.slice(joined.length - TAIL_CHARS);
-        this.chunks = [];
-      }
-    } else {
-      this.tail += text;
-      if (this.tail.length > TAIL_CHARS) {
-        this.tail = this.tail.slice(this.tail.length - TAIL_CHARS);
-      }
-    }
+    this.feedMasked(text);
   }
 
+  /** The head/tail bookkeeping, over text that is already masked. `feed`
+   * masks first and comes through here; `finalize` uses it directly for the
+   * masker's held-back tail, which `feed` would otherwise double-count
+   * against `total`. */
   private feedMasked(text: string): void {
     if (this.headFrozen === null) {
       this.chunks.push(text);

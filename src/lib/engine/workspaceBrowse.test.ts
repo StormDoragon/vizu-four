@@ -72,6 +72,18 @@ describe("listWorkflowFiles", () => {
     expect(files.map((f) => f.name)).toEqual(["real.yml"]);
   });
 
+  it("skips an entry it cannot stat, such as a dangling symlink, rather than failing the listing", async () => {
+    // `stat` throws on a link whose target is gone; one such entry used to
+    // fail the whole listing with a 500 and hide every workflow beside it.
+    const workflowsDir = path.join(dir, ".github", "workflows");
+    await fs.mkdir(workflowsDir, { recursive: true });
+    await fs.symlink(path.join(dir, "gone.yml"), path.join(workflowsDir, "dangling.yml"));
+    await fs.writeFile(path.join(workflowsDir, "real.yml"), "name: Real\n");
+
+    const files = await listWorkflowFiles(dir);
+    expect(files.map((f) => f.name)).toEqual(["real.yml"]);
+  });
+
   it("rejects a directory that doesn't exist", async () => {
     await expect(listWorkflowFiles(path.join(dir, "nope"))).rejects.toThrow(WorkspaceError);
   });

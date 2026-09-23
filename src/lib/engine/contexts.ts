@@ -248,13 +248,18 @@ export function resolveEffectiveEnv(
 
   const applyLayer = (raw: Record<string, string> | undefined, shouldInterpolate: boolean) => {
     if (!raw) return;
+    // One context per layer, not one per key. The context holds `env` by
+    // reference, so each key still sees every key applied before it - the
+    // per-key rebuild bought nothing but cost: it rebuilt the steps, needs
+    // and runner contexts once per key, making every step's environment
+    // O(keys x context). 4,000 workflow `env:` keys cost ~50ms of blocking
+    // CPU per step, which a matrix multiplies into minutes of a stalled
+    // event loop for every visitor from one "run all".
+    const ctx = shouldInterpolate
+      ? buildEvalContext(session, lane, { uptoStepIndex, effectiveEnv: env })
+      : undefined;
     for (const [key, value] of Object.entries(raw)) {
-      if (shouldInterpolate) {
-        const ctx = buildEvalContext(session, lane, { uptoStepIndex, effectiveEnv: env });
-        env[key] = interpolate(value, ctx).result;
-      } else {
-        env[key] = value;
-      }
+      env[key] = ctx ? interpolate(value, ctx).result : value;
     }
   };
 

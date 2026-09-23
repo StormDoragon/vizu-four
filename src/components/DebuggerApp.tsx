@@ -332,8 +332,12 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
 
   async function onToggleBreakOnFailure(v: boolean) {
     if (!session) return;
-    const { session: updated } = await applyWhatIf(session.id, { breakOnFailure: v });
-    setSession(updated);
+    try {
+      const { session: updated } = await applyWhatIf(session.id, { breakOnFailure: v });
+      setSession(updated);
+    } catch (err) {
+      setActionError((err as Error).message);
+    }
   }
 
   function onNewSession() {

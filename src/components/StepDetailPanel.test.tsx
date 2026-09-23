@@ -88,4 +88,43 @@ describe("StepDetailPanel", () => {
 
     expect(screen.getByText(/no output yet/i)).toBeInTheDocument();
   });
+
+  it("shows a placeholder, not a crash, for a job with no steps", () => {
+    // The parser keeps a job whose `steps:` is empty ("treated as an
+    // immediate success"), and the debugger's initial selection for its
+    // lane is step 0 - which doesn't exist. The panel read `step.name` off
+    // it unconditionally and took the whole page down on load.
+    const session = makeSessionView({
+      workflow: {
+        name: "CI",
+        on: "push",
+        jobs: { build: { id: "build", needs: [], matrix: null, steps: [] } },
+      },
+      lanes: {
+        "build::default": {
+          id: "build::default",
+          jobId: "build",
+          matrix: {},
+          status: "success",
+          jobResult: "success",
+          pointer: 0,
+          steps: [],
+          env: {},
+          extraPath: [],
+          outputs: {},
+          tempDir: "/tmp/fixture-tempdir",
+        },
+      },
+    });
+
+    render(
+      <StepDetailPanel
+        session={session}
+        selection={{ laneId: "build::default", stepIndex: 0 }}
+        onSessionUpdate={vi.fn()}
+      />
+    );
+    expect(screen.getByText(/no steps/i)).toBeInTheDocument();
+  });
 });
+

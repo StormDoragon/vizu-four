@@ -155,6 +155,18 @@ describe("built-in functions", () => {
     expect(() => evaluateExpression("nope(1)", ctx())).toThrow(ExpressionEvalError);
   });
 
+  it.each(["constructor(1)", "toString()", "valueOf()", "hasOwnProperty('a')", "__proto__(1)"])(
+    "treats %s as an unknown function, not one every object inherits",
+    (src) => {
+      // The function table is a plain object, looked up by lowercased name,
+      // so an inherited name that is already lowercase was found there:
+      // `constructor(1)` ran `Object` and gave [1], and `__proto__(1)` threw
+      // a raw TypeError. Mixed-case ones (`toString`) lowercase to a key
+      // nothing inherits, and are pinned here so they stay unknown.
+      expect(() => evaluateExpression(src, ctx())).toThrow(/Unknown function/);
+    }
+  );
+
   it("status functions read from ctx.status", () => {
     expect(evaluateExpression("success()", ctx({}, { anyFailure: false, cancelled: false }))).toBe(true);
     expect(evaluateExpression("failure()", ctx({}, { anyFailure: true, cancelled: false }))).toBe(true);

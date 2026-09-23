@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
 import { checkEvaluateLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
+import { findLane } from "@/lib/engine/session";
 import {
   maskObjectStrings,
   maskSecrets,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/engine/masking";
 import type { EvalContext } from "@/lib/expressions/evaluator";
 import { evaluateExpressionTraced, type TraceNode } from "@/lib/expressions/trace";
-import { findExpressionSpans } from "@/lib/expressions/interpolate";
+import { unwrapExpression } from "@/lib/expressions/interpolate";
 import { sampleEvalContext } from "@/lib/expressions/sampleContext";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
@@ -114,22 +115,6 @@ function shapeTrace(node: TraceNode, budget: Budget): TraceNode & { truncated?: 
   return { ...shaped, children: children.map((c) => shapeTrace(c, budget)) };
 }
 
-/**
- * Pasting an expression straight out of a workflow file (the obvious thing
- * to do here, whatever the placeholder hint says) comes wrapped in
- * `${{ ... }}`, which this playground evaluates as a raw expression - so
- * that wrapper must be stripped first, exactly like a step/job `if:` does
- * when it's a single whole-string expression.
- */
-function stripWrapper(expression: string): string {
-  const trimmed = expression.trim();
-  const spans = findExpressionSpans(trimmed);
-  if (spans.length === 1 && spans[0].start === 0 && spans[0].end === trimmed.length) {
-    return spans[0].expr.trim();
-  }
-  return trimmed;
-}
-
 export async function POST(req: Request) {
   const body = await readJsonBody<EvaluateBody>(req);
   const expression = body?.expression;
@@ -174,7 +159,7 @@ export async function POST(req: Request) {
     // secrets, so an unowned id has to fall through to the sample context
     // rather than quietly evaluate against someone else's session.
     const session = await getOwnedSession(sessionId);
-    const lane = session?.lanes[laneId];
+    const lane = session ? findLane(session, laneId) : undefined;
     if (session && lane) {
       // Includes retired values: a secret this session has since replaced or
       // deleted can still be sitting in the context this evaluates against.
@@ -192,10 +177,13 @@ export async function POST(req: Request) {
   }
   const evalCtx = sessionCtx ?? sampleEvalContext();
 
-  const { trace, result, error, errorPosition } = evaluateExpressionTraced(
-    stripWrapper(expression),
-    evalCtx
-  );
+  // Pasting an expression straight out of a workflow file - the obvious
+  // thing to do here - brings its `${{ }}` wrapper along, and the playground
+  // evaluates the expression inside it, exactly as a whole-string `if:`
+  // does. Positions come back against what was parsed, so they are mapped
+  // onto the text as sent before anyone draws a caret under it.
+  const { source, offset } = unwrapExpression(expression);
+  const { trace, result, error, errorPosition } = evaluateExpressionTraced(source, evalCtx);
   // Mask, then shape for display - never the other way round. The result and
   // the error are shaped first so a large trace can never crowd them out.
   const budget: Budget = { left: MAX_RESPONSE_CHARS };
@@ -207,7 +195,7 @@ export async function POST(req: Request) {
     // An error can quote the value that caused it, e.g. fromJSON(secrets.TOKEN)
     // reports the text it could not parse - masked like `result` and `trace`.
     error: error ? truncateStrings(maskSecrets(error, secrets), budget) : error,
-    errorPosition,
+    errorPosition: errorPosition === undefined ? undefined : errorPosition + offset,
     // The trace can surface a secret's own value at the node that reads it
     // (e.g. `secrets.TOKEN` itself), same as `result` above - masked the
     // same way rather than trusting every node along the way to be safe.

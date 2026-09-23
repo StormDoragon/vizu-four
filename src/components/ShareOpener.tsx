@@ -54,16 +54,30 @@ async function applyShareConfig(
       .session;
   }
 
+  // A breakpoint or mock naming a job/step the workflow doesn't have is
+  // skipped, not fatal. The token carries its own YAML, so these agree for
+  // any link this app produced - but the token is user-editable text, and
+  // one bad entry in it should cost that entry, not the whole session. The
+  // server refuses an unknown job or step on both routes, so "skip what it
+  // rejects" is the only way to stay open to the rest of the link.
   for (const bp of payload.breakpoints) {
     const parts = splitBreakpoint(bp);
     if (!parts) continue;
-    latest = (await setBreakpoint(latest.id, parts.jobId, parts.stepKey, true)).session;
+    try {
+      latest = (await setBreakpoint(latest.id, parts.jobId, parts.stepKey, true)).session;
+    } catch {
+      // Unknown job or step - leave `latest` as it was and carry on.
+    }
   }
 
   for (const [key, mock] of Object.entries(payload.mockOutputs)) {
     const parts = splitBreakpoint(key); // same "jobId:stepKey" format
     if (!parts) continue;
-    latest = (await setMockOutputs(latest.id, parts.jobId, parts.stepKey, mock)).session;
+    try {
+      latest = (await setMockOutputs(latest.id, parts.jobId, parts.stepKey, mock)).session;
+    } catch {
+      // As above.
+    }
   }
 
   return latest;
