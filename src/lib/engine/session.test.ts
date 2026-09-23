@@ -2256,3 +2256,33 @@ jobs:
     );
   });
 });
+
+describe("resolveEffectiveEnv layering", () => {
+  it("lets each key see every key applied before it, across and within layers", () => {
+    // Pins the semantics the per-layer evaluation context relies on: the
+    // context holds `env` by reference, so a key interpolated later in the
+    // same layer - not just a later layer - sees what came before it.
+    const s = session(`
+env:
+  BASE: base
+  AGAIN: \${{ env.BASE }}-again
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      JOB: \${{ env.AGAIN }}-job
+    steps:
+      - run: echo hi
+        env:
+          STEP: \${{ env.JOB }}-step
+`);
+    const lane = s.lanes[s.laneOrder[0]];
+    const stepEnv = s.workflow.jobs.build.steps[0].env;
+    expect(resolveEffectiveEnv(s, lane, 0, stepEnv)).toEqual({
+      BASE: "base",
+      AGAIN: "base-again",
+      JOB: "base-again-job",
+      STEP: "base-again-job-step",
+    });
+  });
+});
