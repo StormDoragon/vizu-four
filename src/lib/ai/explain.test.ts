@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquireAiCall, aiBudgetUsage, resetAiBudget } from "./budget";
-import { explainFailure, explainFailureHeuristic, maskExplainInput, type ExplainInput } from "./explain";
+import {
+  MAX_PROMPT_BYTES,
+  buildPrompt,
+  explainFailure,
+  explainFailureHeuristic,
+  maskExplainInput,
+  type ExplainInput,
+} from "./explain";
 
 function input(overrides: Partial<ExplainInput> = {}): ExplainInput {
   return {
@@ -146,11 +153,18 @@ describe("budget", () => {
   it("releases its slot even when the provider call throws", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
     vi.stubEnv("VIZU_AI_MAX_CONCURRENT", "2");
-    // No network here, so the SDK call fails - which is the path that must
-    // still return the slot, or a few failures exhaust the pool forever.
+    // A failing provider call is the path that must still return the slot,
+    // or a few failures exhaust the pool forever. Mocked rather than left to
+    // fail for lack of network, which CI runners do have.
+    vi.doMock("@anthropic-ai/sdk", () => ({
+      default: class {
+        messages = { create: () => Promise.reject(new Error("provider unavailable")) };
+      },
+    }));
     const explanation = await explainFailure(input);
     expect(explanation.source).toBe("heuristic");
     expect(aiBudgetUsage().inFlight).toBe(0);
+    vi.doUnmock("@anthropic-ai/sdk");
   });
 
   it("never touches the budget when no API key is configured", async () => {
@@ -276,5 +290,73 @@ describe("maskExplainInput", () => {
     expect(masked.stdout).toBe("using ***");
     expect(masked.exitCode).toBe(1);
     expect(masked.timedOut).toBe(false);
+  });
+});
+
+describe("prompt size", () => {
+  const bytes = (text: string) => new TextEncoder().encode(text).length;
+  const huge = (unit: string) => unit.repeat(1_000_000);
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.doUnmock("@anthropic-ai/sdk");
+    resetAiBudget();
+  });
+
+  it("stays under the ceiling however large every field is", () => {
+    // Every field is visitor-controlled up to the 1 MB workflow limit, and a
+    // four-byte character is the worst case per character.
+    const prompt = buildPrompt({
+      stepName: huge("🙂"),
+      run: huge("🙂"),
+      uses: huge("🙂"),
+      shell: huge("🙂"),
+      exitCode: 1,
+      stdout: huge("🙂"),
+      stderr: huge("🙂"),
+      engineError: huge("🙂"),
+      timedOut: true,
+    });
+    expect(bytes(prompt)).toBeLessThanOrEqual(MAX_PROMPT_BYTES);
+    // Clipping the fields must not cost the instructions at the end.
+    expect(prompt).toMatch(/Respond with ONLY minified JSON/);
+  });
+
+  it("keeps the end of the logs and the start of the name", () => {
+    const prompt = buildPrompt({
+      stepName: `Build ${"y".repeat(10_000)}`,
+      exitCode: 1,
+      stdout: "",
+      stderr: `${"x".repeat(10_000)}\nError: the real cause`,
+    });
+    expect(prompt).toContain('named "Build yyy');
+    expect(prompt).toContain("Error: the real cause");
+  });
+
+  it("never cuts a multi-byte character in half", () => {
+    const prompt = buildPrompt({ stepName: huge("é"), exitCode: 1, stdout: huge("🙂"), stderr: "" });
+    expect(prompt).not.toContain("\uFFFD");
+  });
+
+  it("sends the clipped prompt to the provider, not the raw fields", async () => {
+    let sent: string | undefined;
+    vi.doMock("@anthropic-ai/sdk", () => ({
+      default: class {
+        messages = {
+          create: (body: { messages: { content: string }[] }) => {
+            sent = body.messages[0].content;
+            return Promise.resolve({
+              content: [{ type: "text", text: '{"summary":"s","causes":[{"title":"t","detail":"d"}]}' }],
+            });
+          },
+        };
+      },
+    }));
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+
+    await explainFailure({ stepName: huge("n"), exitCode: 1, stdout: huge("o"), stderr: "" });
+
+    expect(sent).toBeDefined();
+    expect(bytes(sent!)).toBeLessThanOrEqual(MAX_PROMPT_BYTES);
   });
 });

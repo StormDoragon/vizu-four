@@ -126,8 +126,26 @@ const RULES: Rule[] = [
   },
 ];
 
-function truncateTail(text: string, max = 4000): string {
-  return text.length > max ? `…${text.slice(text.length - max)}` : text;
+const utf8 = new TextEncoder();
+
+/**
+ * `text` cut to at most `maxBytes` of UTF-8 (marker included), keeping its
+ * head or its tail. Bytes rather than characters because bytes are what
+ * bound what a call costs: a character can be up to four of them.
+ */
+function clipUtf8(text: string, maxBytes: number, keep: "head" | "tail"): string {
+  const bytes = utf8.encode(text);
+  if (bytes.length <= maxBytes) return text;
+  const room = maxBytes - 3; // "…" is three bytes
+  // Never cut through a multi-byte character (continuation bytes are 10xxxxxx).
+  if (keep === "head") {
+    let end = room;
+    while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+    return `${new TextDecoder().decode(bytes.subarray(0, end))}…`;
+  }
+  let start = bytes.length - room;
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  return `…${new TextDecoder().decode(bytes.subarray(start))}`;
 }
 
 /** Deterministic, offline root-cause analysis - always available, no network or API key required. */
@@ -252,16 +270,28 @@ export function parseClaudeExplanation(text: string): FailureExplanation | null 
   return usable.length > 0 ? { summary, causes: usable, source: "claude" } : null;
 }
 
-function buildPrompt(input: ExplainInput): string {
+/**
+ * Ceiling on one prompt, in UTF-8 bytes. The budget caps how many calls are
+ * made, which only bounds spend if each call is bounded too - and every
+ * field below comes from the visitor: a step's name, `uses:` and engine
+ * error went in whole, so a 1 MB workflow made one capped call cost what a
+ * hundred should. Each field is clipped to its own share, and a prompt that
+ * somehow still exceeds this is not sent at all (see explainFailure).
+ */
+export const MAX_PROMPT_BYTES = 16 * 1024;
+
+export function buildPrompt(input: ExplainInput): string {
   const parts = [
-    `A GitHub Actions workflow step named "${input.stepName}" failed during a local debug run.`,
-    input.run ? `run script:\n${truncateTail(input.run, 2000)}` : "",
-    input.uses ? `uses: ${input.uses} (shell: ${input.shell ?? "default"})` : "",
+    `A GitHub Actions workflow step named "${clipUtf8(input.stepName, 256, "head")}" failed during a local debug run.`,
+    input.run ? `run script:\n${clipUtf8(input.run, 2048, "tail")}` : "",
+    input.uses
+      ? `uses: ${clipUtf8(input.uses, 256, "head")} (shell: ${clipUtf8(input.shell ?? "default", 64, "head")})`
+      : "",
     `exit code: ${input.exitCode ?? "none (process killed/crashed)"}`,
     input.timedOut ? "the step timed out" : "",
-    input.engineError ? `engine error: ${input.engineError}` : "",
-    `stdout (tail, secrets already masked as ***):\n${truncateTail(input.stdout) || "(empty)"}`,
-    `stderr (tail, secrets already masked as ***):\n${truncateTail(input.stderr) || "(empty)"}`,
+    input.engineError ? `engine error: ${clipUtf8(input.engineError, 1024, "head")}` : "",
+    `stdout (tail, secrets already masked as ***):\n${clipUtf8(input.stdout, 4096, "tail") || "(empty)"}`,
+    `stderr (tail, secrets already masked as ***):\n${clipUtf8(input.stderr, 4096, "tail") || "(empty)"}`,
     "",
     "Respond with ONLY minified JSON matching this TypeScript type, no prose outside the JSON:",
     `{"summary": string, "causes": Array<{"title": string, "detail": string, "confidence": "high"|"medium"|"low", "suggestion"?: string}>}`,
@@ -280,7 +310,9 @@ const DEFAULT_MODEL = "claude-sonnet-5";
  *
  * The budget is what makes configuring a key safe on a shared instance: this
  * is the only path that spends the operator's money, and it previously spent
- * it once per request with no cap, no concurrency limit and no timeout.
+ * it once per request with no cap, no concurrency limit and no timeout. With
+ * MAX_PROMPT_BYTES and `max_tokens` bounding each call, spend has a hard
+ * ceiling: calls per window x (prompt + reply) - see DEPLOY.md for the sums.
  * Running out of budget is deliberately not an error - the endpoint answers
  * with the offline explanation instead, so the feature degrades rather than
  * breaking.
@@ -288,6 +320,9 @@ const DEFAULT_MODEL = "claude-sonnet-5";
 export async function explainFailure(input: ExplainInput): Promise<FailureExplanation> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return explainFailureHeuristic(input);
+
+  const prompt = buildPrompt(input);
+  if (utf8.encode(prompt).length > MAX_PROMPT_BYTES) return explainFailureHeuristic(input);
 
   const lease = acquireAiCall();
   if (typeof lease === "string") return explainFailureHeuristic(input);
@@ -299,7 +334,7 @@ export async function explainFailure(input: ExplainInput): Promise<FailureExplan
       {
         model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
         max_tokens: 1024,
-        messages: [{ role: "user", content: buildPrompt(input) }],
+        messages: [{ role: "user", content: prompt }],
       },
       // `timeout` resets on every retry, so the SDK's own retries (up to 3
       // HTTP attempts for one logical call by default) could take up to 3x
