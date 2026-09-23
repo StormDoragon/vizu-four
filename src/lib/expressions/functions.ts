@@ -290,9 +290,10 @@ const PURE_FUNCTIONS: Record<string, PureFn> = {
 export function callBuiltin(name: string, args: JsonValue[], cwd: string | null): JsonValue {
   const lower = name.toLowerCase();
   if (lower === "hashfiles") return hashFiles(args, cwd);
-  const fn = PURE_FUNCTIONS[lower];
-  if (!fn) {
+  // Own keys only: the table is a plain object, so `constructor` - already
+  // lowercase - found `Object` here and ran it as a function.
+  if (!Object.hasOwn(PURE_FUNCTIONS, lower)) {
     throw new ExpressionFunctionError(`Unknown function '${name}()'`);
   }
-  return fn(args);
+  return PURE_FUNCTIONS[lower](args);
 }
