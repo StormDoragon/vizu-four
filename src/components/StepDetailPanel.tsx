@@ -75,8 +75,20 @@ export function StepDetailPanel({
 
   const lane = effectLane;
   const job = session.workflow.jobs[lane.jobId];
-  const step = job.steps[selection.stepIndex];
+  const step = job?.steps[selection.stepIndex];
   const record = lane.steps[selection.stepIndex];
+  // A selection can name a step that isn't there: the parser keeps a job
+  // whose `steps:` is empty, and the initial selection for its lane is step
+  // 0. Everything below reads the step unconditionally.
+  if (!step || !record) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-ink-600">
+        {lane.steps.length === 0
+          ? "This job has no steps - it finishes as soon as it starts."
+          : "Select a step in the graph to see its output."}
+      </div>
+    );
+  }
 
   async function reAnalyze() {
     setExplaining(true);
