@@ -81,15 +81,21 @@ export async function listWorkflowFiles(directory: string): Promise<WorkspaceWor
   const files: WorkspaceWorkflowFile[] = [];
   for (const name of ymlNames) {
     const full = path.join(workflowsDir, name);
-    const stat = await fs.stat(full);
-    // Skip rather than fail the whole listing over one outsized or
-    // non-regular file - one bad entry shouldn't hide every other workflow.
-    if (!stat.isFile() || stat.size > MAX_WORKFLOW_YAML_LENGTH) continue;
-    files.push({
-      relativePath: path.join(".github", "workflows", name),
-      name,
-      content: await fs.readFile(full, "utf8"),
-    });
+    // Skip rather than fail the whole listing over one bad entry - one
+    // shouldn't hide every other workflow. That covers an entry that can't
+    // be read at all (a dangling symlink, a permission error), not only an
+    // outsized or non-regular one: those threw, and failed the listing.
+    try {
+      const stat = await fs.stat(full);
+      if (!stat.isFile() || stat.size > MAX_WORKFLOW_YAML_LENGTH) continue;
+      files.push({
+        relativePath: path.join(".github", "workflows", name),
+        name,
+        content: await fs.readFile(full, "utf8"),
+      });
+    } catch {
+      continue;
+    }
   }
   return files;
 }
