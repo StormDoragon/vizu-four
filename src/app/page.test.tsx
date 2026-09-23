@@ -78,3 +78,25 @@ describe("HomePage - one-click failure demo", () => {
     expect(push).not.toHaveBeenCalled();
   });
 });
+
+describe("HomePage - footer", () => {
+  it("doesn't claim run: steps execute on a deployment that never runs them", async () => {
+    // The public demo is simulation-only. The footer said, unconditionally,
+    // that run: steps "execute for real ... on this machine" - false there,
+    // and alarming to read on someone else's server.
+    vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
+    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: true });
+    render(<HomePage />);
+
+    expect(await screen.findByText(/are never executed here/)).toBeInTheDocument();
+    expect(screen.queryByText(/execute for real/)).toBeNull();
+  });
+
+  it("still says run: steps execute for real where they do", async () => {
+    vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
+    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: false });
+    render(<HomePage />);
+
+    expect(await screen.findByText(/execute for real/)).toBeInTheDocument();
+  });
+});
