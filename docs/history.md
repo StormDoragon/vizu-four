@@ -2,7 +2,13 @@
 
 A complete record of work on the Actions Visual Debugger, beginning to end.
 
-**Branch:** `claude/intelligent-gauss-ddn9nu` · **38 commits** · 9,260 lines of TS/TSX across 74 files · **202 tests** in 15 files, all passing
+> **Snapshot.** This file stops at the end of Phase 4, when the branch
+> `claude/intelligent-gauss-ddn9nu` had **38 commits**, 9,260 lines of TS/TSX
+> across 74 files, and **202 tests** in 15 files, all passing. It isn't kept
+> current. Later work (the follow-up security review in
+> [#31](https://github.com/StormDoragon/vizu-four/pull/31), the full sweep in
+> [#32](https://github.com/StormDoragon/vizu-four/pull/32), and everything
+> since) is in [ROADMAP.md](../ROADMAP.md) and the pull request history.
 
 ---
 

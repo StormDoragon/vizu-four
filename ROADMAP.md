@@ -20,7 +20,15 @@ Performance:
 Correctness / UX:
 - Workspace listing no longer 500s on one unreadable entry (`de82804`); a job with no steps no longer crashes the debugger (`17e4182`); the pause-on-failure toggle and What-If deletions no longer silently misbehave (`0fed05e`, `36bb1d4`); the playground error caret lands on the right character (`bae094a`); run controls are disabled while a shared session awaits consent (`1dd8d94`); simulation-only wording is honest in the mock editor, simulated-action notes and the home footer (`2f08a56`, `73ea1be`, `b5f80b2`); and the app has an icon with legible graph controls in both themes (`adbfeae`).
 
-Local CI is **green on HEAD**: typecheck, lint, 714 tests, production build — and a headless-browser pass of every example, the failure demo, a zero-step workflow and the playground reports no page errors, console errors or 5xx responses. Formal sign-off still wants deploy-SHA confirmation on Render, and **#14** before any shared-host real `run:` execution.
+Local CI was **green on that HEAD**: typecheck, lint, 714 tests, production build — and a headless-browser pass of every example, the failure demo, a zero-step workflow and the playground reports no page errors, console errors or 5xx responses. Render is confirmed live on the merge commit (`2457151`).
+
+**Readiness pass (September 2026).** A follow-up closed the remaining release gaps:
+- **Verification in CI.** A GitHub Actions workflow now runs typecheck, lint, every test, a production build and a deployment check on Linux and macOS, Node 20/22/24, on every push. The deployment check (`npm run verify:deployment`) boots the production build in demo mode and confirms over HTTP that `run:` never executes, host browsing and the working-tree opt-in are refused, and every AI cost bound holds against a stand-in provider.
+- **AI spend was not actually bounded per call.** The call cap limited how many explanations were sent, not how large each one was: the step name, `uses:` value and engine error went into the prompt whole, so a 1 MB workflow made one capped call cost what a hundred should. Every field is now clipped by UTF-8 bytes, and a prompt over 16 KB is never sent. That gives spend a hard ceiling, which DEPLOY.md now spells out.
+- **Share links over ~16 KB were dead.** The token rode in the URL path, so the server answered 431 for any workflow over about 12 KB — and every opened link put the whole encoded session in server and host logs. New links carry it after the `#`, which browsers never send. Old links still open.
+- **Disclosures.** `PRIVACY.md` (what's kept, where, for how long, and what reaches Anthropic), `SECURITY.md` (private reporting, scope, known trade-offs), a readable-by-anyone warning in the share dialog, links from the app's footer, and an explicit no-license statement.
+
+**#14** remains required before any shared-host real `run:` execution.
 
 ---
 
