@@ -26,6 +26,20 @@ afterEach(() => {
 });
 
 describe("DebuggerApp", () => {
+  it("reports a failed pause-on-failure toggle instead of failing silently", async () => {
+    // Sessions live in memory: once one is reaped, or the server restarts,
+    // every call answers 404. Every other control surfaces that; this one
+    // left an unhandled rejection and a checkbox that just snapped back.
+    const user = userEvent.setup();
+    vi.spyOn(apiClient, "getSession").mockResolvedValue({ session: makeSessionView() });
+    vi.spyOn(apiClient, "applyWhatIf").mockRejectedValue(new Error("Session not found"));
+
+    render(<DebuggerApp sessionId="session-1" />);
+    await user.click(await screen.findByLabelText(/pause on failure/i));
+
+    expect(await screen.findByText("Session not found")).toBeInTheDocument();
+  });
+
   it("renders the parse-warning banner and dismisses it", async () => {
     const user = userEvent.setup();
     vi.spyOn(apiClient, "getSession").mockResolvedValue({
