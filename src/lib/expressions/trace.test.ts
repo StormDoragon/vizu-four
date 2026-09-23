@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateExpressionTraced } from "./trace";
 import { evaluateExpression, ExpressionEvalError, type EvalContext } from "./evaluator";
+import { sampleEvalContext } from "./sampleContext";
 
 function ctx(contexts: Record<string, unknown> = {}, status = { anyFailure: false, cancelled: false }): EvalContext {
   return { contexts: contexts as EvalContext["contexts"], status, cwd: process.cwd() };
@@ -160,5 +161,20 @@ describe("evaluateExpressionTraced - short-circuiting", () => {
     const traced = evaluateExpressionTraced("'value' || nope(1)", ctx());
     expect(traced.result).toBe("value");
     expect(traced.trace!.children[1].skipped).toBe(true);
+  });
+});
+
+describe("evaluateExpressionTraced on input too deep to walk", () => {
+  it("reports a chain of '!' that parses but overflows the walk, instead of throwing", () => {
+    // One parser frame per '!', several per node in the walk: at the
+    // playground's 8,000-character cap this parsed fine and then threw a
+    // RangeError out of the walk, which the route answered with a 500.
+    const src = "!".repeat(7990) + "true";
+    let outcome: ReturnType<typeof evaluateExpressionTraced> | undefined;
+    expect(() => {
+      outcome = evaluateExpressionTraced(src, sampleEvalContext());
+    }).not.toThrow();
+    expect(outcome?.error).toBeTruthy();
+    expect(outcome?.result).toBeUndefined();
   });
 });
