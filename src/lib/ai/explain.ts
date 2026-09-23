@@ -1,3 +1,4 @@
+import { maskSecrets, type SecretValues } from "../engine/masking";
 import { acquireAiCall, callTimeoutMs } from "./budget";
 
 export type Confidence = "high" | "medium" | "low";
@@ -177,9 +178,78 @@ export function explainFailureHeuristic(input: ExplainInput): FailureExplanation
   return { summary, causes, source: "heuristic" };
 }
 
-interface ClaudeExplainResponse {
-  summary: string;
-  causes: Array<{ title: string; detail: string; confidence?: Confidence; suggestion?: string }>;
+/**
+ * Masks every free-text field of an explanation input against the secrets a
+ * session holds *now*.
+ *
+ * Output is masked when it is captured, against the secrets known at that
+ * moment - so a value declared secret afterwards (someone spots a token in a
+ * log and adds it in What-If) is still sitting unmasked in the recorded
+ * output. Everywhere else that only shows it back to the person who has
+ * already seen it; this is the one path that sends it somewhere else - to a
+ * third-party API - and selecting a failed step fetches an explanation
+ * automatically. So it is masked again here, against the current set, on
+ * the way out.
+ */
+export function maskExplainInput(input: ExplainInput, secrets: SecretValues): ExplainInput {
+  const mask = (text: string | undefined) =>
+    text === undefined ? undefined : maskSecrets(text, secrets);
+  return {
+    ...input,
+    stepName: maskSecrets(input.stepName, secrets),
+    run: mask(input.run),
+    uses: mask(input.uses),
+    stdout: maskSecrets(input.stdout, secrets),
+    stderr: maskSecrets(input.stderr, secrets),
+    engineError: mask(input.engineError),
+    ifWarning: mask(input.ifWarning),
+    ifError: mask(input.ifError),
+  };
+}
+
+const CONFIDENCE_LEVELS: ReadonlySet<string> = new Set(["high", "medium", "low"]);
+
+/**
+ * The model's reply as an explanation the UI can render, or null to fall
+ * back to the heuristics.
+ *
+ * The reply is untrusted. It is shaped by the step's own output - whatever
+ * the debugged workflow printed, or a shared link's mocked stderr - and
+ * prompt injection there can steer it. Every field reaches the UI as a React
+ * child, where an object throws, so a crafted log could take down the
+ * debugger view for whoever selected the step. Each field is checked here
+ * instead: a cause without a string title and detail is dropped, an unknown
+ * confidence reads as "medium", and a reply with nothing usable left is
+ * treated as no reply.
+ */
+export function parseClaudeExplanation(text: string): FailureExplanation | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, ""));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { summary, causes } = parsed as Record<string, unknown>;
+  if (typeof summary !== "string" || summary.trim() === "" || !Array.isArray(causes)) return null;
+
+  const usable: FailureCause[] = [];
+  for (const cause of causes) {
+    if (typeof cause !== "object" || cause === null) continue;
+    const { title, detail, confidence, suggestion } = cause as Record<string, unknown>;
+    if (typeof title !== "string" || typeof detail !== "string") continue;
+    usable.push({
+      title,
+      detail,
+      confidence:
+        typeof confidence === "string" && CONFIDENCE_LEVELS.has(confidence)
+          ? (confidence as Confidence)
+          : "medium",
+      suggestion: typeof suggestion === "string" ? suggestion : undefined,
+    });
+    if (usable.length === 4) break;
+  }
+  return usable.length > 0 ? { summary, causes: usable, source: "claude" } : null;
 }
 
 function buildPrompt(input: ExplainInput): string {
@@ -241,22 +311,7 @@ export async function explainFailure(input: ExplainInput): Promise<FailureExplan
     );
     const textBlock = message.content.find((b): b is { type: "text"; text: string } => b.type === "text");
     if (!textBlock) return explainFailureHeuristic(input);
-
-    const jsonText = textBlock.text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(jsonText) as ClaudeExplainResponse;
-    if (!parsed.summary || !Array.isArray(parsed.causes) || parsed.causes.length === 0) {
-      return explainFailureHeuristic(input);
-    }
-    return {
-      summary: parsed.summary,
-      causes: parsed.causes.slice(0, 4).map((c) => ({
-        title: c.title,
-        detail: c.detail,
-        confidence: c.confidence ?? "medium",
-        suggestion: c.suggestion,
-      })),
-      source: "claude",
-    };
+    return parseClaudeExplanation(textBlock.text) ?? explainFailureHeuristic(input);
   } catch {
     return explainFailureHeuristic(input);
   } finally {

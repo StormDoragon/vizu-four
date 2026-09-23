@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquireAiCall, aiBudgetUsage, resetAiBudget } from "./budget";
-import { explainFailure, explainFailureHeuristic, type ExplainInput } from "./explain";
+import { explainFailure, explainFailureHeuristic, maskExplainInput, type ExplainInput } from "./explain";
 
 function input(overrides: Partial<ExplainInput> = {}): ExplainInput {
   return {
@@ -191,5 +191,90 @@ describe("budget", () => {
     expect(capturedOptions?.timeout).toBeUndefined();
 
     vi.doUnmock("@anthropic-ai/sdk");
+  });
+});
+
+describe("explainFailure with a reply that isn't shaped the way it was asked for", () => {
+  const failed: ExplainInput = {
+    stepName: "build",
+    run: "npm test",
+    exitCode: 1,
+    stdout: "",
+    stderr: "boom",
+  };
+
+  function replyWith(text: string) {
+    vi.doMock("@anthropic-ai/sdk", () => ({
+      default: class {
+        messages = { create: () => Promise.resolve({ content: [{ type: "text", text }] }) };
+      },
+    }));
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-used");
+  }
+
+  beforeEach(() => resetAiBudget());
+  afterEach(() => {
+    vi.doUnmock("@anthropic-ai/sdk");
+    vi.unstubAllEnvs();
+    resetAiBudget();
+  });
+
+  it("never hands the UI a cause whose fields aren't strings", async () => {
+    // Every field is rendered as a React child, where an object throws. The
+    // reply is shaped by the step's own output - which a crafted log or a
+    // shared link's mocked stderr controls - so it can't be trusted to be
+    // the shape it was asked for.
+    replyWith(
+      JSON.stringify({
+        summary: "It failed.",
+        causes: [
+          { title: { injected: true }, detail: "d", confidence: "high" },
+          { title: "Real cause", detail: "Real detail", confidence: "certain", suggestion: 42 },
+        ],
+      })
+    );
+    const explanation = await explainFailure(failed);
+
+    expect(explanation.source).toBe("claude");
+    for (const cause of explanation.causes) {
+      expect(typeof cause.title).toBe("string");
+      expect(typeof cause.detail).toBe("string");
+      expect(["high", "medium", "low"]).toContain(cause.confidence);
+      expect(cause.suggestion === undefined || typeof cause.suggestion === "string").toBe(true);
+    }
+    expect(explanation.causes.map((c) => c.title)).toEqual(["Real cause"]);
+  });
+
+  it("falls back to the heuristics when nothing in the reply is usable", async () => {
+    replyWith(JSON.stringify({ summary: { not: "a string" }, causes: [{ title: 1, detail: 2 }] }));
+    const explanation = await explainFailure(failed);
+    expect(explanation.source).toBe("heuristic");
+    expect(typeof explanation.summary).toBe("string");
+  });
+});
+
+describe("maskExplainInput", () => {
+  it("masks a value that only became a secret after the step's output was captured", () => {
+    // Captured output is masked against the secrets known at capture time.
+    // Declaring one afterwards leaves it in the record - and this input is
+    // what gets sent to a third-party API.
+    const token = "tok_live_1234567890";
+    const masked = maskExplainInput(
+      {
+        stepName: "deploy",
+        run: `curl -H 'Authorization: ${token}' https://example.test`,
+        exitCode: 1,
+        stdout: `using ${token}`,
+        stderr: `401 for ${token}`,
+        engineError: `failed with ${token}`,
+        ifError: `bad ${token}`,
+        timedOut: false,
+      },
+      [token]
+    );
+    expect(JSON.stringify(masked)).not.toContain(token);
+    expect(masked.stdout).toBe("using ***");
+    expect(masked.exitCode).toBe(1);
+    expect(masked.timedOut).toBe(false);
   });
 });

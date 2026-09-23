@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
 import { checkExplainLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
-import { explainFailure, type ExplainInput } from "@/lib/ai/explain";
+import { explainFailure, maskExplainInput, type ExplainInput } from "@/lib/ai/explain";
+import { secretsToMask } from "@/lib/engine/masking";
 import { findLane } from "@/lib/engine/session";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
@@ -41,19 +42,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const record = lane.steps[body.stepIndex];
   if (!step || !record) return errorResponse(404, "Unknown step index for this lane");
 
-  const input: ExplainInput = {
-    stepName: record.name,
-    run: step.run,
-    uses: step.uses,
-    shell: step.shell,
-    exitCode: record.exitCode ?? null,
-    stdout: record.stdout,
-    stderr: record.stderr,
-    engineError: record.engineError,
-    ifWarning: record.ifWarning,
-    ifError: record.ifError,
-    timedOut: record.engineError === "Step timed out",
-  };
+  // Re-masked against the secrets held now, not only those known when the
+  // output was captured: this is the one path that sends it off the server.
+  const input: ExplainInput = maskExplainInput(
+    {
+      stepName: record.name,
+      run: step.run,
+      uses: step.uses,
+      shell: step.shell,
+      exitCode: record.exitCode ?? null,
+      stdout: record.stdout,
+      stderr: record.stderr,
+      engineError: record.engineError,
+      ifWarning: record.ifWarning,
+      ifError: record.ifError,
+      timedOut: record.engineError === "Step timed out",
+    },
+    secretsToMask(session.config.secrets, session.retiredSecretValues)
+  );
 
   const explanation = await explainFailure(input);
   return NextResponse.json({ explanation });
