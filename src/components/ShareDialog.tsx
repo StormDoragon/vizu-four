@@ -40,6 +40,16 @@ export function ShareDialog({ url, onClose }: { url: string; onClose: () => void
           on now. <strong className="text-ink-400">Secret values are never included</strong> — if
           you set any, the recipient re-enters them in their own What-If tab.
         </p>
+        <p
+          data-testid="share-disclosure"
+          className="mb-3 rounded-md border border-status-breakpoint/40 bg-status-breakpoint/10 p-2 text-xs text-ink-300"
+        >
+          <strong className="text-ink-200">The link is the data.</strong> Everything above is
+          encoded into the link itself — encoded, not encrypted — so anyone who gets it can read
+          all of it, and it can&apos;t be revoked. It sits after the <code>#</code>, which browsers
+          don&apos;t send to a server, but it stays in browser history and wherever the link is
+          pasted. Take anything sensitive out of env/var overrides and mocks before sharing.
+        </p>
         <div className="flex gap-2">
           <input
             readOnly
