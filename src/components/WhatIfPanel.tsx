@@ -36,6 +36,17 @@ export function WhatIfPanel({
   });
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // The keys each section is showing - the only ones it may delete. Rows are
+  // loaded once, but overrides can reach the session afterwards (the saved-
+  // state restore applies them after the page loads; another tab on the same
+  // session can too). Diffing deletions against the session's *current* keys
+  // sent `null` for every one of those on the next Apply: deleted without
+  // ever being shown, and then the stored copy overwritten to match.
+  const [shownKeys, setShownKeys] = useState(() => ({
+    env: Object.keys(session.config.envOverrides),
+    vars: Object.keys(session.config.vars),
+    secrets: [...session.config.secretNames],
+  }));
 
   /** Diffs current rows against what was loaded, emitting `null` for keys
    * that were removed - a plain `rowsToRecord` only ever produces keys that
@@ -62,9 +73,9 @@ export function WhatIfPanel({
         vars?: Record<string, string | null>;
         secrets?: Record<string, string | null>;
       } = {};
-      const env = buildKeyedPatch(Object.keys(session.config.envOverrides), envRows);
+      const env = buildKeyedPatch(shownKeys.env, envRows);
       if (Object.keys(env).length > 0) patch.env = env;
-      const vars = buildKeyedPatch(Object.keys(session.config.vars), varRows);
+      const vars = buildKeyedPatch(shownKeys.vars, varRows);
       if (Object.keys(vars).length > 0) patch.vars = vars;
 
       // Secrets never come back from the server once set, so a blank value
@@ -78,12 +89,19 @@ export function WhatIfPanel({
       const currentSecretKeys = new Set(
         secretRows.map((r) => r.key.trim()).filter(Boolean)
       );
-      for (const key of session.config.secretNames) {
+      for (const key of shownKeys.secrets) {
         if (!currentSecretKeys.has(key)) secrets[key] = null;
       }
       if (Object.keys(secrets).length > 0) patch.secrets = secrets;
 
       const { session: updated } = await applyWhatIf(session.id, patch);
+      // What the rows show is now on the session, so it is what a later
+      // Apply may delete - still never a key some other change put there.
+      setShownKeys({
+        env: Object.keys(rowsToRecord(envRows)),
+        vars: Object.keys(rowsToRecord(varRows)),
+        secrets: updated.config.secretNames.filter((k) => currentSecretKeys.has(k)),
+      });
       onApplied(updated);
       setMessage("Applied — takes effect on the next step you run.");
     } catch (err) {
