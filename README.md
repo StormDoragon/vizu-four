@@ -19,7 +19,7 @@ prioritized checklist of what's next.
 | **Public demo** | [vizu-four.onrender.com](https://vizu-four.onrender.com) — **`VIZU_DEMO_MODE=1`** (`/api/config` → `{"simulationOnly":true}`). Real `run:` and host workspace browse are off. |
 | **Hardening** | Three review passes, all **merged**: the first audit (28 findings), a follow-up security review (**8 findings**, [#31](https://github.com/StormDoragon/vizu-four/pull/31)), and a full file-by-file sweep ([#32](https://github.com/StormDoragon/vizu-four/pull/32)). |
 | **Live re-checks** | Demo-compatible findings re-probed over HTTP: YAML bomb rejected, secret-as-key masked, expression response budget held, oversized `event`/secrets rejected, pending-step `env` matches the playground, non-owner sessions → 404. |
-| **Verification** | [CI](./.github/workflows/ci.yml) runs typecheck, lint, every test (real `run:` execution included), a production build and [`npm run verify:deployment`](./scripts/verify-deployment.mjs) on **Linux and macOS**, Node 20, 22 and 24. The deployment check boots the production build in demo mode and confirms, over HTTP, that `run:` never executes, host browsing is refused, and every AI cost bound holds (see [DEPLOY.md](./DEPLOY.md#what-a-key-can-cost-at-most)). Render is confirmed live on `2457151`, the #32 merge. |
+| **Verification** | [CI](./.github/workflows/ci.yml) runs typecheck, lint, every test (real `run:` execution included), a production build and [`npm run verify:deployment`](./scripts/verify-deployment.mjs) on **Linux and macOS** with Node 22 and 24, and repeats the build and deployment check on Node 20, which the demo still deploys on. The deployment check boots the production build in demo mode and confirms, over HTTP, that `run:` never executes, host browsing is refused, and every AI cost bound holds (see [DEPLOY.md](./DEPLOY.md#what-a-key-can-cost-at-most)). Render is confirmed live on `2457151`, the #32 merge. |
 | **Still open** | Container isolation ([#14](https://github.com/StormDoragon/vizu-four/issues/14)) remains a **hard prerequisite** before any shared host re-enables `run:`. Windows is not supported. |
 
 ## Live demo
@@ -56,9 +56,11 @@ failed step with no setup — it works the same way in a `VIZU_DEMO_MODE=1`
 deployment as it does locally, since the failure is a mocked step result
 rather than something that depends on `run:` actually executing.
 
-Requires Node.js 20+ and a Unix-like shell (`bash`) on PATH — `run:` steps
-are executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's
-own default. Windows/macOS runner emulation isn't implemented (see Scope).
+Requires Node.js 20.9+ to run it (Node 22.22.2+ or 24.15+ to run the test
+suite: Vitest 5 and jsdom 30 don't support Node 20, which reached end-of-life
+in April 2026) and a Unix-like shell (`bash`) on PATH — `run:` steps are
+executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's own
+default. Windows/macOS runner emulation isn't implemented (see Scope).
 
 ## What you can do
 

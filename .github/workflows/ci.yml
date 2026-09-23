@@ -17,16 +17,24 @@ jobs:
     # A branch in this repository is already checked on push, so a pull
     # request only needs its own run when it comes from a fork.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
-    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}${{ matrix.suite == 'runtime' && ' (runtime only)' || '' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         # Linux and macOS: `run:` steps need a Unix shell, so Windows isn't
-        # supported. Node 20 is what the demo deploys on (render.yaml).
+        # supported.
         os: [ubuntu-latest, macos-latest]
-        node: [20, 22, 24]
+        node: [22, 24]
+        suite: [full]
+        include:
+          # The demo still deploys on Node 20 (render.yaml), but the test
+          # toolchain doesn't run there (Vitest 5 and jsdom 30 need Node 22+),
+          # so Node 20 checks the production path only: build, then the
+          # deployment check against that build.
+          - { os: ubuntu-latest, node: 20, suite: runtime }
+          - { os: macos-latest, node: 20, suite: runtime }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -34,9 +42,12 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
+      - if: matrix.suite == 'full'
+        run: npm run typecheck
+      - if: matrix.suite == 'full'
+        run: npm run lint
+      - if: matrix.suite == 'full'
+        run: npm test
       - run: npm run build
       # Boots the production build the way the public demo runs it and
       # checks demo mode and every AI cost bound over HTTP.

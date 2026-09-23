@@ -50,7 +50,7 @@ free tier never runs.
 
 ## Requirements
 
-- Node.js **20+**
+- Node.js **20.9+** (Node 20 reached end-of-life in April 2026, so prefer 22 or 24; running the test suite needs 22.22.2+ or 24.15+)
 - Unix-like environment with `bash` on `PATH` (matches GitHub's default shell)
 - Outbound network only if you set `ANTHROPIC_API_KEY` for richer failure explanations
 

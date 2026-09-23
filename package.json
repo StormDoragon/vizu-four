@@ -13,7 +13,7 @@
     "url": "https://github.com/StormDoragon/vizu-four/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "dev": "next dev",
