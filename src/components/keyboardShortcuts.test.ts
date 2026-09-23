@@ -100,6 +100,23 @@ describe("controlAvailability", () => {
     });
   });
 
+  it("disables every control on a shared session awaiting execution consent", () => {
+    // The engine refuses every control path until the visitor consents, so a
+    // button (or shortcut) that fired one would only surface that refusal as
+    // an error banner - which is exactly what this function exists to avoid.
+    const awaiting = {
+      activeLaneId: "build::default",
+      lanes: { "build::default": { status: "ready" } },
+      awaitingExecutionConsent: true,
+    } as unknown as SessionView;
+    expect(controlAvailability(awaiting, false)).toEqual({
+      step: false,
+      continue: false,
+      runToEnd: false,
+      runAll: false,
+    });
+  });
+
   it("disables stepping on a lane still blocked on needs, but allows Run all", () => {
     const can = controlAvailability(session("blocked"), false);
     expect(can.step).toBe(false);

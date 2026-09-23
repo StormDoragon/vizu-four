@@ -74,6 +74,15 @@ export type ControlAvailability = Record<ControlAction, boolean>;
  * have had disabled (which would just surface an engine error banner).
  */
 export function controlAvailability(session: SessionView, busy: boolean): ControlAvailability {
+  // A shared session refuses every control path in the engine until the
+  // visitor consents, so nothing is available while it waits - otherwise a
+  // button (or its keyboard shortcut) would fire an action that comes
+  // straight back as the "hasn't been allowed to run yet" error banner,
+  // which is the exact thing this function exists to prevent. The consent
+  // banner, not a control, is what moves such a session forward.
+  if (session.awaitingExecutionConsent) {
+    return { step: false, continue: false, runToEnd: false, runAll: false };
+  }
   const lane = session.activeLaneId ? session.lanes[session.activeLaneId] : null;
   const canStep =
     !!lane && !TERMINAL.has(lane.status) && lane.status !== "blocked" && !busy;
