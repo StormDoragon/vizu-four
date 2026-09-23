@@ -58,7 +58,20 @@ export function MockOutputsEditor({
         stderr: fails ? stderr.trim() || undefined : undefined,
       });
       onUpdated(updated);
-      setMessage("Applied — takes effect next time this step runs.");
+      // Read back what the server kept rather than assuming it applied: a
+      // mock with no outputs and no failure changes nothing, so it is
+      // dropped. This used to say "Applied" regardless - and for a `run:`
+      // step, "mocked" means "not executed", so someone stubbing out a
+      // command with nothing filled in was told it was stubbed, and then it
+      // ran for real.
+      const kept = updated.mockOutputs[`${jobId}:${stepKey}`];
+      setMessage(
+        kept
+          ? "Applied — takes effect next time this step runs."
+          : isRunStep
+            ? "No mock is set: with no outputs and no failure there is nothing to stub, so this step will run normally. Add an output or make it fail to stub it out."
+            : "No mock is set: with no outputs and no failure there is nothing to stub."
+      );
     } catch (err) {
       setMessage((err as Error).message);
     } finally {
