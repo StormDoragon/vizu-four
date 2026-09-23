@@ -376,7 +376,7 @@ const HANDLERS: Record<string, Handler> = {
     return {
       outputs: { result: "" },
       conclusion: "success",
-      note: `Simulated: github-script is not executed (script starts with: ${script || "(empty)"}…). Use What-If to mock the \`result\` output if needed.`,
+      note: `Simulated: github-script is not executed (script starts with: ${script || "(empty)"}…). Use "Mock this step" to set its \`result\` output if a later step needs it.`,
     };
   },
 
@@ -439,8 +439,9 @@ function findHandler(uses: string): Handler | undefined {
 /**
  * Third-party and composite actions aren't executed (no Docker/container
  * action support in this MVP) — they're simulated as a no-op success with
- * empty outputs. Use a What-If override (or the upcoming Mock Outputs UI)
- * to mock any `steps.<id>.outputs.*` a later step depends on.
+ * empty outputs. Mock Outputs ("Mock this step" in the step panel) stubs any
+ * `steps.<id>.outputs.*` a later step depends on - What-If can't, since it
+ * only sets env, vars and secrets.
  */
 export function runSimulatedAction(
   uses: string,
@@ -455,6 +456,6 @@ export function runSimulatedAction(
   return {
     outputs: {},
     conclusion: "success",
-    note: `Simulated: '${uses}' is a third-party or composite action and isn't executed locally in this MVP. Outputs default to empty — use What-If (or Mock Outputs) to provide any outputs a downstream step depends on.`,
+    note: `Simulated: '${uses}' is a third-party or composite action and isn't executed locally in this MVP. Outputs default to empty — use "Mock this step" to provide any outputs a downstream step depends on.`,
   };
 }

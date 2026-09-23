@@ -354,6 +354,18 @@ describe("runSimulatedAction", () => {
     expect(result.outputs.tags).toContain("ghcr.io/org/app");
   });
 
+  it("points github-script's missing result at the panel that can mock it", () => {
+    const result = runSimulatedAction(
+      "actions/github-script@v7",
+      { script: "return 42" },
+      cwd,
+      artifactsDir
+    );
+    expect(result.outputs).toEqual({ result: "" });
+    expect(result.note).toContain("Mock this step");
+    expect(result.note).not.toContain("What-If");
+  });
+
   it("falls back gracefully for unknown third-party actions", () => {
     const result = runSimulatedAction(
       "some-org/some-action@v1",
@@ -364,6 +376,10 @@ describe("runSimulatedAction", () => {
     expect(result.conclusion).toBe("success");
     expect(result.outputs).toEqual({});
     expect(result.note).toContain("third-party or composite");
+    // What-If sets env, vars and secrets - never a step's outputs - so the
+    // note has to point at the panel that can.
+    expect(result.note).toContain("Mock this step");
+    expect(result.note).not.toContain("What-If");
   });
 
   it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
