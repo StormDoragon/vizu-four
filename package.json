@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Visual, AI-assisted step-through debugger for GitHub Actions workflows (local-first MVP).",
+  "license": "UNLICENSED",
+  "homepage": "https://vizu-four.onrender.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StormDoragon/vizu-four.git"
+  },
+  "bugs": {
+    "url": "https://github.com/StormDoragon/vizu-four/issues"
+  },
   "engines": {
     "node": ">=20"
   },
