@@ -2,7 +2,15 @@
 
 Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
 
-**Status (September 2026):** MVP + demo isolation shipped. The first codebase audit/hardening pass is complete (28 findings across earlier commits). A follow-up independent security review of `7b1f3cf` found **8 remaining issues**; all eight are **fixed and merged** (`53a34a6` / [PR #31](https://github.com/StormDoragon/vizu-four/pull/31), key-masking regression `63eb857`): secret-as-object-key masking, YAML alias bomb rejection, cross-stream log masking, StreamMasker hold-back cap, expression response budget, accumulated session-state bounds, pending-step playground `env:` parity, Claude `AbortSignal` deadline. Public demo remains simulation-only (`VIZU_DEMO_MODE=1`). Formal sign-off still wants deploy-SHA confirmation on Render, a clean local CI green run on HEAD, and **#14** before any shared-host real `run:` execution.
+**Status (September 2026):** MVP + demo isolation shipped. The first codebase audit/hardening pass is complete (28 findings across earlier commits). A follow-up independent security review of `7b1f3cf` found **8 remaining issues**; all eight are **fixed and merged** (`53a34a6` / [PR #31](https://github.com/StormDoragon/vizu-four/pull/31), key-masking regression `63eb857`): secret-as-object-key masking, YAML alias bomb rejection, cross-stream log masking, StreamMasker hold-back cap, expression response budget, accumulated session-state bounds, pending-step playground `env:` parity, Claude `AbortSignal` deadline. Public demo remains simulation-only (`VIZU_DEMO_MODE=1`).
+
+**Third review pass (September 2026, branch `claude/code-review-bug-fixes-nqi3ue`)** found a **critical** issue both earlier reviews missed, plus two lesser ones; all fixed with regression tests:
+
+- **Process-wide DoS via `Object.prototype` pollution** (`418ca19`). Client-chosen lane/job ids were looked up without an own-property check, so stepping lane `__proto__` wrote `status` onto `Object.prototype` — after which every route, for every visitor, answered 500 until restart. One anonymous request against one's own session was enough; reproduced against a demo-mode production build and re-verified fixed. The same root cause also silently disabled the retired-secret size bound (a secret named `__proto__` made its tally `NaN`), let `needs: constructor` pass validation and crash the session, and ran `uses: constructor@v1` with `Object` as its handler.
+- **Unbounded request bodies** (`61e42bb`). Every POST buffered and parsed the whole body before any size check ran; bodies are now capped at 4 MiB while still arriving, `Content-Length` or not.
+- **Breakpoints accepted any step key** (`418ca19`), growing an unbounded set; now validated like mock outputs, with share links skipping (not failing on) entries the server rejects.
+
+Local CI is **green on HEAD**: typecheck, lint, 682 tests, production build. Formal sign-off still wants deploy-SHA confirmation on Render, and **#14** before any shared-host real `run:` execution.
 
 ---
 
