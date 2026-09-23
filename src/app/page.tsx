@@ -37,6 +37,15 @@ jobs:
           exit 1
 `;
 
+const REPO_URL = "https://github.com/StormDoragon/vizu-four";
+
+// `HEAD` resolves to the default branch, so these survive a branch rename.
+const FOOTER_LINKS = [
+  { label: "README", href: `${REPO_URL}#readme` },
+  { label: "Privacy", href: `${REPO_URL}/blob/HEAD/PRIVACY.md` },
+  { label: "Security", href: `${REPO_URL}/blob/HEAD/SECURITY.md` },
+];
+
 const PLACEHOLDER = `name: CI
 on: [push]
 
@@ -329,18 +338,35 @@ export default function HomePage() {
       </div>
 
       <footer className="mt-auto pt-8 text-xs text-ink-500">
-        {simulationOnly ? (
-          <>
-            Simulation-only deployment: <code>run:</code> steps are never executed here - each
-            shows the command it would have run, and a mock decides its result.{" "}
-            <code>uses:</code> actions are simulated. See the README for full scope.
-          </>
-        ) : (
-          <>
-            Local-first MVP: <code>run:</code> steps execute for real in a scratch workspace on
-            this machine; <code>uses:</code> actions are simulated. See the README for full scope.
-          </>
-        )}
+        <p>
+          {simulationOnly ? (
+            <>
+              Simulation-only deployment: <code>run:</code> steps are never executed here - each
+              shows the command it would have run, and a mock decides its result.{" "}
+              <code>uses:</code> actions are simulated. See the README for full scope.
+            </>
+          ) : (
+            <>
+              Local-first MVP: <code>run:</code> steps execute for real in a scratch workspace on
+              this machine; <code>uses:</code> actions are simulated. See the README for full
+              scope.
+            </>
+          )}
+        </p>
+        {/* New tab: following a link away would lose whatever is pasted above. */}
+        <nav aria-label="About this app" className="mt-2 flex gap-3">
+          {FOOTER_LINKS.map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-ink-300 hover:underline"
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
       </footer>
     </main>
   );

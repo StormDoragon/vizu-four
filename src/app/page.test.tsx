@@ -92,6 +92,21 @@ describe("HomePage - footer", () => {
     expect(screen.queryByText(/execute for real/)).toBeNull();
   });
 
+  it("links the privacy notice and the security policy", async () => {
+    vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
+    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: true });
+    render(<HomePage />);
+
+    expect(await screen.findByRole("link", { name: "Privacy" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/PRIVACY\.md$/)
+    );
+    expect(screen.getByRole("link", { name: "Security" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/\/SECURITY\.md$/)
+    );
+  });
+
   it("still says run: steps execute for real where they do", async () => {
     vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
     vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: false });
