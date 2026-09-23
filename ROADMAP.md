@@ -4,13 +4,23 @@ Every item below is tracked as a GitHub issue (linked inline) so status stays vi
 
 **Status (September 2026):** MVP + demo isolation shipped. The first codebase audit/hardening pass is complete (28 findings across earlier commits). A follow-up independent security review of `7b1f3cf` found **8 remaining issues**; all eight are **fixed and merged** (`53a34a6` / [PR #31](https://github.com/StormDoragon/vizu-four/pull/31), key-masking regression `63eb857`): secret-as-object-key masking, YAML alias bomb rejection, cross-stream log masking, StreamMasker hold-back cap, expression response budget, accumulated session-state bounds, pending-step playground `env:` parity, Claude `AbortSignal` deadline. Public demo remains simulation-only (`VIZU_DEMO_MODE=1`).
 
-**Third review pass (September 2026, branch `claude/code-review-bug-fixes-nqi3ue`)** found a **critical** issue both earlier reviews missed, plus two lesser ones; all fixed with regression tests:
+**Third review pass (September 2026, branch `claude/code-review-bug-fixes-nqi3ue`)** was a full file-by-file sweep of the codebase — engine, expression engine, AI layer, every route, and every component — plus a headless-browser run of every flow. It found a **critical** security issue both earlier reviews missed and a spread of correctness, security-hardening, performance and UX bugs, all fixed with regression tests (or, for the visual ones, browser verification):
 
-- **Process-wide DoS via `Object.prototype` pollution** (`418ca19`). Client-chosen lane/job ids were looked up without an own-property check, so stepping lane `__proto__` wrote `status` onto `Object.prototype` — after which every route, for every visitor, answered 500 until restart. One anonymous request against one's own session was enough; reproduced against a demo-mode production build and re-verified fixed. The same root cause also silently disabled the retired-secret size bound (a secret named `__proto__` made its tally `NaN`), let `needs: constructor` pass validation and crash the session, and ran `uses: constructor@v1` with `Object` as its handler.
+Security / correctness:
+- **Process-wide DoS via `Object.prototype` pollution** (`418ca19`). Client-chosen lane/job ids were looked up without an own-property check, so stepping lane `__proto__` wrote `status` onto `Object.prototype` — after which every route, for every visitor, answered 500 until restart. One anonymous request against one's own session was enough; reproduced against a demo-mode production build and re-verified fixed. The same root cause also silently disabled the retired-secret size bound (a secret named `__proto__` made its tally `NaN`), let `needs: constructor` pass validation and crash the session, ran `uses: constructor@v1` with `Object` as its handler, and evaluated `constructor(1)` in an expression as a real call.
 - **Unbounded request bodies** (`61e42bb`). Every POST buffered and parsed the whole body before any size check ran; bodies are now capped at 4 MiB while still arriving, `Content-Length` or not.
+- **A late-declared secret was sent to the AI provider in the clear** (`4c11b2d`). The explain path is the one place step data leaves the server; it now re-masks against the secrets held now, and validates the model's reply before rendering it.
 - **Breakpoints accepted any step key** (`418ca19`), growing an unbounded set; now validated like mock outputs, with share links skipping (not failing on) entries the server rejects.
+- **Expression `!!!…` deep enough to overflow the walk** returned a 500 from the public evaluate endpoint (`c88b066`); now reported as an expression error.
 
-Local CI is **green on HEAD**: typecheck, lint, 682 tests, production build. Formal sign-off still wants deploy-SHA confirmation on Render, and **#14** before any shared-host real `run:` execution.
+Performance:
+- **Env resolution was O(keys × context) per step** (`a786591`) — a large `env:` block over a matrix could stall the event loop for minutes; ~9× faster now.
+- **A simulation-only run held the whole server** (`e90d977`): the run loop now yields between steps, so other visitors' requests are answered mid-run.
+
+Correctness / UX:
+- Workspace listing no longer 500s on one unreadable entry (`de82804`); a job with no steps no longer crashes the debugger (`17e4182`); the pause-on-failure toggle and What-If deletions no longer silently misbehave (`0fed05e`, `36bb1d4`); the playground error caret lands on the right character (`bae094a`); run controls are disabled while a shared session awaits consent (`1dd8d94`); simulation-only wording is honest in the mock editor, simulated-action notes and the home footer (`2f08a56`, `73ea1be`, `b5f80b2`); and the app has an icon with legible graph controls in both themes (`adbfeae`).
+
+Local CI is **green on HEAD**: typecheck, lint, 714 tests, production build — and a headless-browser pass of every example, the failure demo, a zero-step workflow and the playground reports no page errors, console errors or 5xx responses. Formal sign-off still wants deploy-SHA confirmation on Render, and **#14** before any shared-host real `run:` execution.
 
 ---
 
