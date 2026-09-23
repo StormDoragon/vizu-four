@@ -678,6 +678,23 @@ export async function controlStep(session: DebugSession, laneId: string): Promis
   }
 }
 
+/**
+ * Gives the event loop to whatever is queued - other visitors' requests -
+ * before the next step.
+ *
+ * A step with nothing to wait on (every `uses:` step, and every `run:` step
+ * in simulation-only mode) completes without ever leaving the microtask
+ * queue, so a loop of them never let an incoming request in: one "run all"
+ * held the whole server until the workflow finished. A real `run:` step
+ * already waits on its process, so this only makes the simulated path yield
+ * where execution would have anyway - which is also why the engine's
+ * existing guards for concurrent requests already cover what can happen
+ * during the yield.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 async function runLaneLoop(
   session: DebugSession,
   laneId: string,
@@ -712,6 +729,11 @@ async function runLaneLoop(
         lane.status = "paused";
         return;
       }
+      await yieldToEventLoop();
+      // Anything may have run during the yield - including a sibling matrix
+      // lane failing and fail-fast-cancelling this one, which leaves it
+      // terminal with its pointer at the end.
+      if (isTerminal(lane.status)) return;
     }
   } finally {
     // See controlStep: "running" must never survive a throw from below.

@@ -2286,3 +2286,65 @@ jobs:
     });
   });
 });
+
+describe("long runs and the event loop", () => {
+  // `uses:` steps are always simulated, so none of these steps waits on
+  // anything - the case that used to run start to finish inside one turn of
+  // the microtask queue, with no incoming request able to get a word in.
+  const manySteps = (n: number) => `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+${Array.from({ length: n }, () => "      - uses: actions/labeler@v5").join("\n")}
+`;
+
+  it("lets queued work run between steps of a run-all instead of after it", async () => {
+    const s = session(manySteps(20));
+    const lane = s.lanes["build::default"];
+    let stepsDoneWhenOtherWorkRan = -1;
+
+    const run = controlRunAll(s);
+    // Queued while the run is in flight. It can only see a partial run if
+    // the loop hands the event loop back between steps.
+    setImmediate(() => {
+      stepsDoneWhenOtherWorkRan = lane.pointer;
+    });
+    await run;
+
+    expect(lane.status).toBe("success");
+    expect(stepsDoneWhenOtherWorkRan).toBeGreaterThan(0);
+    expect(stepsDoneWhenOtherWorkRan).toBeLessThan(20);
+  });
+
+  it("ends a lane cleanly when a sibling's fail-fast cancels it during a yield", async () => {
+    // Mocks apply to a step across every matrix lane, so the failing step
+    // is gated on the matrix: only the n=2 lane runs it.
+    const s = session(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        n: [1, 2]
+    steps:
+      - if: matrix.n == 2
+        uses: actions/labeler@v5
+${Array.from({ length: 5 }, () => "      - uses: actions/labeler@v5").join("\n")}
+`);
+    const [first, second] = s.laneOrder;
+    setMockOutputs(s, "build", "step-0", { outputs: {}, exitCode: 1 });
+
+    // The first lane runs one step, then yields. While it waits, the second
+    // is stepped to its end one call at a time - none of which gives the
+    // event loop back, so the first lane cannot resume in between - and the
+    // second lane's failure fail-fast-cancels the first, still mid-run.
+    const running = controlRunToEnd(s, first);
+    for (let i = 0; i < 6; i++) await controlStep(s, second);
+    await running;
+
+    expect(s.lanes[second].jobResult).toBe("failure");
+    expect(s.lanes[first].status).toBe("cancelled");
+    expect(s.lanes[first].pointer).toBe(6);
+  });
+});
