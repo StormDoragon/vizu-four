@@ -165,3 +165,59 @@ jobs:
     expect(workflow!.jobs.build.steps[0].env).toEqual({ NODE_ENV: "test" });
   });
 });
+
+describe("parseWorkflow with names every object inherits", () => {
+  it.each(["constructor", "__proto__", "toString"])(
+    "reports needs: %s as an unknown job, not as one it found by inheritance",
+    (dep) => {
+      // `jobs` is a plain object, so `jobs[dep]` finds an inherited value
+      // for these - truthy, so the reference passed as valid and the typo
+      // (or worse) went unreported.
+      const { issues } = parseWorkflow(`
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    needs: ${dep}
+    steps: [{ run: echo a }]
+`);
+      expect(issues.some((i) => i.message.includes(`unknown job '${dep}'`))).toBe(true);
+    }
+  );
+});
+
+describe("parseWorkflow with a key named __proto__", () => {
+  // Assigning `map["__proto__"]` replaces the map's prototype instead of
+  // adding an entry, so these used to disappear without any issue at all.
+  it("reports a job named __proto__ instead of silently dropping it", () => {
+    const { workflow, issues } = parseWorkflow(`
+jobs:
+  __proto__:
+    runs-on: ubuntu-latest
+    steps: [{ run: echo lost }]
+  real:
+    runs-on: ubuntu-latest
+    steps: [{ run: echo hi }]
+`);
+    expect(issues.some((i) => i.severity === "error" && i.message.includes("jobs.__proto__"))).toBe(
+      true
+    );
+    expect(Object.keys(workflow!.jobs)).toEqual(["real"]);
+    // The map keeps its ordinary prototype rather than inheriting a job.
+    expect(Object.getPrototypeOf(workflow!.jobs)).toBe(Object.prototype);
+  });
+
+  it("reports a matrix axis named __proto__ instead of silently dropping it", () => {
+    const { workflow, issues } = parseWorkflow(`
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        __proto__: [1, 2]
+        node: [18, 20]
+    steps: [{ run: echo hi }]
+`);
+    expect(issues.some((i) => i.message.includes("matrix.__proto__"))).toBe(true);
+    expect(Object.keys(workflow!.jobs.build.strategy!.matrix!.axes)).toEqual(["node"]);
+  });
+});

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
 import { checkEvaluateLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
 import { buildEvalContext, resolveEffectiveEnv } from "@/lib/engine/contexts";
+import { findLane } from "@/lib/engine/session";
 import {
   maskObjectStrings,
   maskSecrets,
@@ -174,7 +175,7 @@ export async function POST(req: Request) {
     // secrets, so an unowned id has to fall through to the sample context
     // rather than quietly evaluate against someone else's session.
     const session = await getOwnedSession(sessionId);
-    const lane = session?.lanes[laneId];
+    const lane = session ? findLane(session, laneId) : undefined;
     if (session && lane) {
       // Includes retired values: a secret this session has since replaced or
       // deleted can still be sitting in the context this evaluates against.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOwnedSession } from "@/lib/engine/ownership";
 import { toSessionView } from "@/lib/engine/serialize";
-import { setMockOutputs } from "@/lib/engine/session";
+import { findWorkflowJob, findWorkflowStep, setMockOutputs } from "@/lib/engine/session";
 import type { StepMock } from "@/lib/engine/types";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
@@ -24,9 +24,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!body?.jobId || !body?.stepKey) {
     return errorResponse(400, "'jobId' and 'stepKey' are required");
   }
-  const job = session.workflow.jobs[body.jobId];
-  if (!job) return errorResponse(404, `Unknown job '${body.jobId}'`);
-  const step = job.steps.find((s) => s.key === body.stepKey);
+  if (!findWorkflowJob(session, body.jobId)) {
+    return errorResponse(404, `Unknown job '${body.jobId}'`);
+  }
+  const step = findWorkflowStep(session, body.jobId, body.stepKey);
   if (!step) return errorResponse(404, `Unknown step '${body.stepKey}' in job '${body.jobId}'`);
   if (!step.uses && step.run === undefined) {
     return errorResponse(400, "Step has neither 'run' nor 'uses', so there is nothing to mock");

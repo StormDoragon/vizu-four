@@ -42,3 +42,22 @@ jobs:
     expect(graph.cycles).toEqual([["a", "b"]]);
   });
 });
+
+describe("buildJobGraph with names every object inherits", () => {
+  it.each(["constructor", "__proto__", "toString"])(
+    "treats needs: %s like any other unknown dependency instead of throwing",
+    (dep) => {
+      // The inherited value passed the "does this job exist?" check, and
+      // the graph then called `.push` on it - a TypeError that failed every
+      // response for the session.
+      const graph = graphFor(`
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    needs: ${dep}
+    steps: [{ run: echo a }]
+`);
+      expect(graph.levels.flat()).toContain("a");
+    }
+  );
+});

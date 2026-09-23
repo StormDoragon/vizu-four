@@ -365,4 +365,17 @@ describe("runSimulatedAction", () => {
     expect(result.outputs).toEqual({});
     expect(result.note).toContain("third-party or composite");
   });
+
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "treats uses: %s@v1 as an unknown action, not as a handler it inherited",
+    (name) => {
+      // `HANDLERS` is a plain object, so looking one of these up returned
+      // an inherited function (or object) as if it were a handler: the step
+      // then "succeeded" with no outcome and no outputs, or threw.
+      const result = runSimulatedAction(`${name}@v1`, {}, cwd, artifactsDir);
+      expect(result.conclusion).toBe("success");
+      expect(result.outputs).toEqual({});
+      expect(result.note).toContain("third-party or composite");
+    }
+  );
 });

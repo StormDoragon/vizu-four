@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureOwnerId, getOwnedSession } from "@/lib/engine/ownership";
 import { checkExplainLimit, clientAddressFrom } from "@/lib/engine/rateLimit";
 import { explainFailure, type ExplainInput } from "@/lib/ai/explain";
+import { findLane } from "@/lib/engine/session";
 import { errorResponse, readJsonBody } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return errorResponse(400, "'laneId' and numeric 'stepIndex' are required");
   }
 
-  const lane = session.lanes[body.laneId];
+  const lane = findLane(session, body.laneId);
   if (!lane) return errorResponse(404, `Unknown lane '${body.laneId}'`);
   const job = session.workflow.jobs[lane.jobId];
   const step = job?.steps[body.stepIndex];

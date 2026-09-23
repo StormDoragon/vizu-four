@@ -74,6 +74,15 @@ function asIfExpr(v: unknown): string | undefined {
 }
 
 /**
+ * The one key a map built by assignment cannot hold: `map["__proto__"] = v`
+ * doesn't add an entry, it replaces the map's prototype. A job or matrix axis
+ * by that name therefore vanished without a word, and left the map it was
+ * meant to be in inheriting from it instead. Supporting the name would mean
+ * null-prototype maps through the whole engine, so it is refused - out loud.
+ */
+const UNUSABLE_KEY = "__proto__";
+
+/**
  * YAML 1.1 parsers historically coerce bare `on`/`off`/`yes`/`no` keys to
  * booleans, which famously breaks GitHub Actions' `on:` trigger key. js-yaml
  * 4's default schema does not do this for `on`, but we normalize defensively
@@ -84,6 +93,9 @@ function normalizeTopLevelKeys(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) {
+    // Not a workflow key GitHub accepts, and assigning it would let `jobs`
+    // be inherited through it rather than read from the workflow itself.
+    if (k === UNUSABLE_KEY) continue;
     if (k === "true" || k === "True") out["on"] = v;
     else out[k] = v;
   }
@@ -121,6 +133,13 @@ function parseMatrix(
           message: `jobs.${jobId}.strategy.matrix.exclude must be a list; ignoring`,
         });
       }
+      continue;
+    }
+    if (key === UNUSABLE_KEY) {
+      issues.push({
+        severity: "warning",
+        message: `jobs.${jobId}.strategy.matrix.${key}: '${key}' can't be used as a matrix axis name; ignoring axis`,
+      });
       continue;
     }
     if (Array.isArray(value)) {
@@ -287,6 +306,13 @@ export function parseWorkflow(source: string, sourcePath?: string): ParseResult 
 
   const jobs: Record<string, WorkflowJob> = {};
   for (const [jobId, rawJob] of Object.entries(normalized.jobs)) {
+    if (jobId === UNUSABLE_KEY) {
+      issues.push({
+        severity: "error",
+        message: `jobs.${jobId}: '${jobId}' can't be used as a job id; rename the job`,
+      });
+      continue;
+    }
     const job = parseJob(rawJob, jobId, issues);
     if (job) jobs[jobId] = job;
   }
@@ -295,10 +321,12 @@ export function parseWorkflow(source: string, sourcePath?: string): ParseResult 
     issues.push({ severity: "error", message: "Workflow defines zero valid jobs" });
   }
 
-  // Validate `needs` reference real jobs.
+  // Validate `needs` reference real jobs. An own-key check, not a truthy
+  // one: `jobs` is a plain object, so `jobs["constructor"]` finds `Object`
+  // and a `needs: constructor` passed as valid.
   for (const job of Object.values(jobs)) {
     for (const dep of job.needs) {
-      if (!jobs[dep]) {
+      if (!Object.hasOwn(jobs, dep)) {
         issues.push({
           severity: "error",
           message: `jobs.${job.id}.needs references unknown job '${dep}'`,

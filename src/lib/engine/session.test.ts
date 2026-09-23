@@ -7,9 +7,14 @@ import {
   applyWhatIf,
   controlContinue,
   controlRunAll,
+  controlRunToEnd,
   controlStep,
   createSession,
+  findLane,
+  findWorkflowJob,
+  findWorkflowStep,
   grantExecutionConsent,
+  setActiveLane,
   setBreakpoint,
   setMockOutputs,
 } from "./session";
@@ -2111,5 +2116,143 @@ jobs:
     const view = toSessionView(s);
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(view.lanes[s.laneOrder[0]].steps[0].envBefore).toBeUndefined();
+  });
+});
+
+describe("findWorkflowStep", () => {
+  const yaml = `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - id: compile
+        run: make
+      - run: make test
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+`;
+
+  it("finds a step by its id", () => {
+    expect(findWorkflowStep(session(yaml), "build", "compile")?.run).toBe("make");
+  });
+
+  it("finds an unnamed step by its positional key", () => {
+    expect(findWorkflowStep(session(yaml), "build", "step-1")?.run).toBe("make test");
+  });
+
+  it("scopes the lookup to the named job", () => {
+    // `step-0` exists in deploy, so a job-blind lookup would find it; under
+    // build, the first step is keyed by its id instead.
+    const s = session(yaml);
+    expect(findWorkflowStep(s, "deploy", "step-0")?.uses).toBe("actions/checkout@v4");
+    expect(findWorkflowStep(s, "build", "step-0")).toBeUndefined();
+  });
+
+  it("returns undefined for an unknown job or step rather than throwing", () => {
+    const s = session(yaml);
+    expect(findWorkflowStep(s, "build", "no-such-step")).toBeUndefined();
+    expect(findWorkflowStep(s, "no-such-job", "compile")).toBeUndefined();
+  });
+});
+
+/**
+ * Keys every plain object inherits a value for. Lanes, jobs and secrets are
+ * all plain objects indexed by strings a request (or a workflow file) chose,
+ * and a lookup that reads "truthy" as "exists" finds something for each of
+ * these - which is how stepping lane `__proto__` wrote `status` onto
+ * `Object.prototype`, giving every object in the process `status: "paused"`
+ * and failing every response the server built afterwards, for every visitor.
+ */
+const PROTOTYPE_KEYS = ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"];
+
+describe("keys that name Object.prototype members", () => {
+  const yaml = `
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`;
+
+  afterEach(() => {
+    // If a regression pollutes again, contain it to the test that caught it
+    // rather than letting it corrupt every test that runs afterwards.
+    for (const key of PROTOTYPE_KEYS) {
+      const inherited = ({} as Record<string, Record<string, unknown>>)[key];
+      if (inherited && Object.hasOwn(inherited, "status")) delete inherited.status;
+    }
+  });
+
+  it.each(PROTOTYPE_KEYS)("finds no lane, job or step called %j", (key) => {
+    const s = session(yaml);
+    expect(findLane(s, key)).toBeUndefined();
+    expect(findWorkflowJob(s, key)).toBeUndefined();
+    expect(findWorkflowStep(s, key, "step-0")).toBeUndefined();
+  });
+
+  it.each(PROTOTYPE_KEYS)(
+    "refuses lane %j outright instead of writing to what it inherits",
+    async (key) => {
+      const s = session(yaml);
+      const inherited = ({} as Record<string, object>)[key];
+
+      await expect(controlStep(s, key)).rejects.toThrow(EngineError);
+      await expect(controlContinue(s, key)).rejects.toThrow(EngineError);
+      await expect(controlRunToEnd(s, key)).rejects.toThrow(EngineError);
+      expect(() => setActiveLane(s, key)).toThrow(EngineError);
+
+      expect(Object.hasOwn(inherited, "status")).toBe(false);
+      expect(({} as Record<string, unknown>).status).toBeUndefined();
+      expect(s.activeLaneId).toBe("build::default");
+      // The real lane is untouched, and still steppable.
+      expect(s.lanes["build::default"].status).toBe("ready");
+      await controlStep(s, "build::default");
+      expect(s.lanes["build::default"].status).toBe("success");
+    }
+  );
+
+  it("still finds a job that is genuinely named after one", () => {
+    const s = session(`
+jobs:
+  constructor:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`);
+    expect(findWorkflowJob(s, "constructor")?.id).toBe("constructor");
+    expect(findWorkflowStep(s, "constructor", "step-0")?.run).toBe("echo hi");
+    expect(findLane(s, "constructor::default")?.jobId).toBe("constructor");
+  });
+
+  it.each(PROTOTYPE_KEYS)(
+    "retires only real secret values when a secret called %j is first set",
+    (key) => {
+      const s = session(yaml);
+      // Built the way JSON.parse builds a request body: an own property,
+      // which a `{ __proto__: ... }` literal would not be.
+      applyWhatIf(s, { secrets: Object.fromEntries([[key, "replacement-value"]]) });
+      // Nothing was set before, so nothing was retired - and in particular
+      // not the inherited object the lookup used to find in its place.
+      expect(s.retiredSecretValues).toEqual([]);
+    }
+  );
+
+  it("keeps the retired-secret size bound working after a secret called __proto__", () => {
+    const s = session(yaml);
+    applyWhatIf(s, { secrets: Object.fromEntries([["__proto__", "x"]]) });
+
+    // Rotating one secret retires each value it replaces. Two 300,000-char
+    // retirements pass the 500,000-char bound's first check and must fail
+    // its second. With `Object.prototype` in the retired list, its missing
+    // `.length` made the running total NaN - and `NaN > limit` is never
+    // true, so the bound silently stopped applying to this session.
+    applyWhatIf(s, { secrets: { TOKEN: "a".repeat(300_000) } });
+    applyWhatIf(s, { secrets: { TOKEN: "b".repeat(300_000) } });
+    expect(() => applyWhatIf(s, { secrets: { TOKEN: "c".repeat(300_000) } })).toThrow(
+      /retired more than .* characters/
+    );
   });
 });

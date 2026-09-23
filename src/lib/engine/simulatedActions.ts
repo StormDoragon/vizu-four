@@ -423,13 +423,15 @@ function actionName(uses: string): string {
  */
 function findHandler(uses: string): Handler | undefined {
   const name = actionName(uses);
-  if (HANDLERS[name]) return HANDLERS[name];
+  // Own keys only: `HANDLERS` is a plain object, so `uses: constructor@v1`
+  // used to find `Object` here and run it as though it were a handler.
+  if (Object.hasOwn(HANDLERS, name)) return HANDLERS[name];
   // Fallback: try dropping trailing path segments (actions/cache/restore → actions/cache)
   const parts = name.split("/");
   while (parts.length > 2) {
     parts.pop();
     const candidate = parts.join("/");
-    if (HANDLERS[candidate]) return HANDLERS[candidate];
+    if (Object.hasOwn(HANDLERS, candidate)) return HANDLERS[candidate];
   }
   return undefined;
 }
