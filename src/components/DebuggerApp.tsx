@@ -34,7 +34,7 @@ import {
   splitBreakpoint,
 } from "@/lib/debugPrefs";
 import { loadWorkflowSource } from "@/lib/workflowSourceCache";
-import { buildSharePayload, encodeSharePayload } from "@/lib/share";
+import { buildSharePayload, buildShareUrl, encodeSharePayload } from "@/lib/share";
 import { findFailures, type Selection } from "./types";
 import { focusedLaneLabel } from "./focusLane";
 
@@ -365,7 +365,7 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
     }
     const payload = buildSharePayload(session, yaml);
     const token = encodeSharePayload(payload);
-    setShareUrl(`${window.location.origin}/share/${token}`);
+    setShareUrl(buildShareUrl(window.location.origin, token));
   }
 
   if (loadError) {

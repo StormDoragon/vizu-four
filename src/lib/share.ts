@@ -152,6 +152,22 @@ export function encodeSharePayload(payload: SharePayload): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * The link a token is opened from. The token rides in the URL fragment,
+ * which browsers never send to a server: the whole encoded session stays
+ * out of request logs, proxies and `Referer` headers, and a large workflow
+ * isn't capped by the server's request-header limit - as a path segment, a
+ * token over ~16 KB (roughly a 12 KB workflow) was answered with a 431.
+ */
+export function buildShareUrl(origin: string, token: string): string {
+  return `${origin}/share#${token}`;
+}
+
+/** The token carried by a `location.hash` ("" when there is none). */
+export function tokenFromHash(hash: string): string {
+  return hash.startsWith("#") ? hash.slice(1) : hash;
+}
+
 /** Inverse of encodeSharePayload. Returns null for anything that isn't a
  * validly-encoded, validly-shaped payload, rather than throwing - a bad or
  * tampered-with link should read as "invalid link," not crash the page. */

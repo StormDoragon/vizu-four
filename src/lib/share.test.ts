@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildSharePayload, decodeSharePayload, encodeSharePayload, validateSharePayload, type SharePayload } from "./share";
+import {
+  buildSharePayload,
+  buildShareUrl,
+  decodeSharePayload,
+  encodeSharePayload,
+  tokenFromHash,
+  validateSharePayload,
+  type SharePayload,
+} from "./share";
 import { makeSessionView } from "@/components/testSupport/sessionFixture";
 import type { Lane } from "@/lib/engine/types";
 
@@ -58,6 +66,21 @@ describe("encodeSharePayload / decodeSharePayload", () => {
     for (const b of bytes) binary += String.fromCharCode(b);
     const token = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     expect(decodeSharePayload(token)).toBe(null);
+  });
+});
+
+describe("buildShareUrl / tokenFromHash", () => {
+  it("puts the token in the fragment, which browsers never send to the server", () => {
+    const token = encodeSharePayload(payload());
+    const url = new URL(buildShareUrl("https://example.test", token));
+    expect(url.pathname).toBe("/share");
+    expect(url.search).toBe("");
+    expect(decodeSharePayload(tokenFromHash(url.hash))).toEqual(payload());
+  });
+
+  it("reads no token from an empty hash", () => {
+    expect(tokenFromHash("")).toBe("");
+    expect(tokenFromHash("#")).toBe("");
   });
 });
 

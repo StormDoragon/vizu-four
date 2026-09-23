@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DebuggerApp } from "./DebuggerApp";
 import * as apiClient from "@/lib/apiClient";
 import * as workflowSourceCache from "@/lib/workflowSourceCache";
+import { decodeSharePayload, tokenFromHash } from "@/lib/share";
 import { makeSessionView } from "./testSupport/sessionFixture";
 
 let mockSearchParams = new URLSearchParams();
@@ -105,7 +106,10 @@ describe("DebuggerApp", () => {
     await user.click(screen.getByTestId("share-toggle"));
 
     const input = await screen.findByTestId("share-url");
-    expect((input as HTMLInputElement).value).toMatch(/\/share\//);
+    // The session rides in the fragment, which never reaches the server.
+    const url = new URL((input as HTMLInputElement).value);
+    expect(url.pathname).toBe("/share");
+    expect(decodeSharePayload(tokenFromHash(url.hash))?.yaml).toBe("name: CI\non: push\njobs: {}");
   });
 
   it("shows an error instead of a link when the workflow source isn't cached", async () => {
