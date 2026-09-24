@@ -11,29 +11,42 @@ permissions:
 
 jobs:
   verify:
+    name: Node ${{ matrix.node }}${{ matrix.suite == 'build' && ' (production build)' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Vitest 5 and jsdom 30 require Node 22 or newer. Render currently
+          # uses Node 20, so keep a separate production-build compatibility
+          # check for that runtime.
+          - { node: 22, suite: full }
+          - { node: 20, suite: build }
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Use Node.js 20
+      - name: Use Node.js ${{ matrix.node }}
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Type-check
+        if: matrix.suite == 'full'
         run: npm run typecheck
 
       - name: Lint
+        if: matrix.suite == 'full'
         run: npm run lint
 
       - name: Test
+        if: matrix.suite == 'full'
         run: npm test
 
       - name: Build
