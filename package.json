@@ -2,6 +2,7 @@
   "name": "actions-visual-debugger",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Visual, AI-assisted step-through debugger for GitHub Actions workflows (local-first MVP).",
   "engines": {
     "node": ">=20"

@@ -132,3 +132,7 @@ explanation.
 **Not built:** container action execution, GitHub run import, IDE extensions,
 team/SSO/billing, Windows/macOS runner emulation. Full scope notes and
 expression divergences remain in git history and [ROADMAP.md](./ROADMAP.md).
+
+## License
+
+Vizu Four is available under the [MIT License](./LICENSE).
