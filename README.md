@@ -11,6 +11,11 @@ blueprint. See [Scope](#scope-what-this-is-and-isnt) below for exactly what's
 built versus what would come later, and [ROADMAP.md](./ROADMAP.md) for the
 prioritized checklist of what's next.
 
+Before using or deploying it, read [SECURITY.md](./SECURITY.md),
+[PRIVACY.md](./PRIVACY.md), and [DEPLOY.md](./DEPLOY.md). Do not enter
+production secrets or confidential workflow data into the public demo or a
+share link.
+
 ## Status (September 2026)
 
 | Layer | State |
@@ -82,6 +87,12 @@ routes answer **404** (not 403) on ownership mismatch.
 **That is isolation, not authentication.** Deploying publicly with real
 execution requires sandboxing or disabling `run:` — the public demo runs with
 execution **off** (`VIZU_DEMO_MODE=1`).
+
+Workflow and debugging data can exist in server memory and browser storage,
+and share links are self-contained and reversible. Optional live failure
+explanations may send masked failure context to Anthropic when an operator
+configures an API key. See [PRIVACY.md](./PRIVACY.md) for the current data-flow
+and retention details.
 
 ### Hardening summary (latest)
 
