@@ -1,5 +1,8 @@
 # Privacy and data handling
 
+**Effective date:** September 23, 2026
+**Operator:** StormDoragon, the Vizu Four repository maintainer
+
 This notice describes the repository's current behavior. Vizu Four is an
 experimental, local-first MVP, not a hosted production service.
 
@@ -57,3 +60,6 @@ providers may process ordinary request metadata under their own policies.
 
 This notice should be updated whenever storage, analytics, authentication,
 hosting, or third-party data flows change.
+
+For non-sensitive privacy questions, open a GitHub issue. Report security
+concerns using the private process described in [SECURITY.md](./SECURITY.md).

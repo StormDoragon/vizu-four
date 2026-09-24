@@ -43,6 +43,7 @@ export async function listExamples(): Promise<ExampleWorkflow[]> {
 
 export interface DeploymentConfig {
   simulationOnly: boolean;
+  aiProviderEnabled?: boolean;
 }
 
 export async function getDeploymentConfig(): Promise<DeploymentConfig> {

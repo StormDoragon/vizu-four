@@ -85,11 +85,24 @@ describe("HomePage - footer", () => {
     // that run: steps "execute for real ... on this machine" - false there,
     // and alarming to read on someone else's server.
     vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
-    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: true });
+    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({
+      simulationOnly: true,
+      aiProviderEnabled: false,
+    });
     render(<HomePage />);
 
     expect(await screen.findByText(/are never executed here/)).toBeInTheDocument();
     expect(screen.queryByText(/execute for real/)).toBeNull();
+    expect(screen.getByText(/processed on this demo server/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Privacy and data handling/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("PRIVACY.md")
+    );
+    expect(screen.getByRole("link", { name: /Security boundaries/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("SECURITY.md")
+    );
+    expect(screen.getByText(/Anthropic-backed explanations are disabled/)).toBeInTheDocument();
   });
 
   it("still says run: steps execute for real where they do", async () => {

@@ -3,7 +3,7 @@ services:
     name: vizu-four
     runtime: node
     plan: free
-    branch: claude/intelligent-gauss-ddn9nu
+    branch: main
     buildCommand: npm ci && npm run build
     startCommand: npm start
     envVars:

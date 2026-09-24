@@ -1,4 +1,4 @@
-# Actions Visual Debugger (local-first MVP)
+# Vizu Four — Actions Visual Debugger (local-first MVP)
 
 A visual, step-through debugger for GitHub Actions workflows: set breakpoints on
 steps, inspect every context (`github`, `env`, `vars`, `secrets` (masked),

@@ -77,6 +77,7 @@ export default function HomePage() {
   // a real filesystem path from a file picker, so a text field is the
   // honest UI for what's actually happening).
   const [simulationOnly, setSimulationOnly] = useState(false);
+  const [aiProviderEnabled, setAiProviderEnabled] = useState(false);
   const [directory, setDirectory] = useState("");
   const [browsedDir, setBrowsedDir] = useState<string | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceWorkflowFile[]>([]);
@@ -89,8 +90,14 @@ export default function HomePage() {
   useEffect(() => {
     listExamples().then(setExamples).catch(() => setExamples([]));
     getDeploymentConfig()
-      .then((c) => setSimulationOnly(c.simulationOnly))
-      .catch(() => setSimulationOnly(false));
+      .then((c) => {
+        setSimulationOnly(c.simulationOnly);
+        setAiProviderEnabled(c.aiProviderEnabled ?? false);
+      })
+      .catch(() => {
+        setSimulationOnly(false);
+        setAiProviderEnabled(false);
+      });
   }, []);
 
   async function browse() {
@@ -176,10 +183,10 @@ export default function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Actions Visual Debugger</h1>
+          <h1 className="text-2xl font-semibold text-ink">Vizu Four</h1>
           <p className="mt-1 text-sm text-ink-400">
-            Paste a GitHub Actions workflow, then step through it locally with breakpoints, live
-            context inspection, matrix exploration, and what-if editing.
+            Visually step through GitHub Actions workflow logic with breakpoints, live context
+            inspection, matrix exploration, and What-If editing.
           </p>
         </div>
         <button
@@ -192,6 +199,43 @@ export default function HomePage() {
           {failureDemoLoading ? "Starting…" : "⚠ See a failure debugged (one click)"}
         </button>
       </header>
+
+      {simulationOnly && (
+        <aside
+          role="note"
+          className="rounded-lg border border-yellow-400/40 bg-yellow-400/10 p-4 text-sm text-yellow-100"
+        >
+          <p className="font-semibold">Hosted simulation-only demo</p>
+          <p className="mt-1 text-xs leading-relaxed text-yellow-100/80">
+            Pasted workflow data is processed on this demo server, and sessions may remain in
+            memory for about two hours. Do not submit secrets, confidential workflows, or personal
+            data. Shell commands are not executed here.
+          </p>
+          <p className="mt-2 flex gap-3 text-xs">
+            <a
+              href="https://github.com/StormDoragon/vizu-four/blob/main/PRIVACY.md"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-white"
+            >
+              Privacy and data handling
+            </a>
+            <a
+              href="https://github.com/StormDoragon/vizu-four/blob/main/SECURITY.md"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-white"
+            >
+              Security boundaries
+            </a>
+          </p>
+          <p className="mt-2 text-xs text-yellow-100/80">
+            Anthropic-backed explanations are {aiProviderEnabled ? "enabled" : "disabled"} on
+            this deployment. Failure analysis is requested only when you choose the explanation
+            action.
+          </p>
+        </aside>
+      )}
 
       {examples.length > 0 && (
         <div className="flex flex-wrap gap-2">

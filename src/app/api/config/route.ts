@@ -10,5 +10,8 @@ export const dynamic = "force-dynamic";
  * showing it and then failing every attempt with a 403.
  */
 export async function GET() {
-  return NextResponse.json({ simulationOnly: isSimulationOnly() });
+  return NextResponse.json({
+    simulationOnly: isSimulationOnly(),
+    aiProviderEnabled: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+  });
 }
