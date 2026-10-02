@@ -28,8 +28,9 @@ export function ReleaseApp() {
       controller.current = new AbortController();
       setBusy(true);
       const response = await fetch("/api/releases/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.current.signal });
-      const data = await response.json();
-      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Release analysis failed.");
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "Release analysis failed. Please try again.");
+      if (!data) throw new Error("Release analysis returned an unreadable response.");
       setResult(data as ReleaseResult);
     } catch (err) {
       if (!(err instanceof Error && err.name === "AbortError")) setError(err instanceof Error ? err.message : "Release analysis failed.");

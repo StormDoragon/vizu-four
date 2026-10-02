@@ -42,6 +42,11 @@ describe("release API", () => {
     for (let i = 0; i < 5; i++) expect((await POST(request())).status).toBe(200);
     const response = await POST(request()); expect(response.status).toBe(429); expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0); expect(collect).toHaveBeenCalledTimes(5);
   });
+  it("does not spend rate-limit quota on invalid requests", async () => {
+    for (let i = 0; i < 10; i++) expect((await POST(request({ ...input, base: "main...evil" }))).status).toBe(400);
+    for (let i = 0; i < 5; i++) expect((await POST(request())).status).toBe(200);
+    expect((await POST(request())).status).toBe(429);
+  });
   it("limits the instance even if cookies and addresses rotate", async () => {
     for (let i = 0; i < 20; i++) { owner.mockResolvedValue(`visitor${i}`); expect((await POST(request(input, { "x-forwarded-for": `10.0.0.${i}` }))).status).toBe(200); }
     owner.mockResolvedValue("another"); expect((await POST(request())).status).toBe(429); expect(collect).toHaveBeenCalledTimes(20);

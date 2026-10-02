@@ -11,5 +11,7 @@ export function releaseText(text: string, max = 1200): string {
 
 /** Notes are Markdown exports, not a way for source text to inject links or HTML. */
 export function markdownText(text: string): string {
-  return text.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}\[\]()<>!#|~]/g, "\\$&");
+  return text.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}\[\]()<>!#|~]/g, "\\$&")
+    // Break bare autolinks (URLs, www hosts, emails) and @mentions with a zero-width space.
+    .replace(/:\/\//g, ":\u200b//").replace(/\bwww\./gi, "www\u200b.").replace(/@/g, "@\u200b");
 }

@@ -28,8 +28,6 @@ export async function POST(req: Request) {
     } catch { return reply({ error: "Cross-origin release requests are not allowed." }, 403); }
   }
   if (req.headers.get("content-type")?.split(";")[0].trim() !== "application/json") return reply({ error: "Send an application/json request." }, 415);
-  const limit = checkReleaseLimit(await ensureOwnerId(), clientAddressFrom(req.headers));
-  if (!limit.allowed) return reply({ error: "Too many release requests. Try again later." }, 429, limit.retryAfterSeconds);
   const release = acquireReleaseSlot();
   if (!release) return reply({ error: "Release analysis is busy. Try again shortly." }, 429, 15);
   try {
@@ -37,6 +35,9 @@ export async function POST(req: Request) {
     const body = await readJsonBody<unknown>(req, 8192, bodySignal);
     if (bodySignal.aborted) throw new ReleaseError(408, "Request body timed out or was cancelled.");
     const input = parseReleaseInput(body);
+    // Spend the quota only on requests that will reach GitHub; the in-flight slot already bounds concurrency.
+    const limit = checkReleaseLimit(await ensureOwnerId(), clientAddressFrom(req.headers));
+    if (!limit.allowed) return reply({ error: "Too many release requests. Try again later." }, 429, limit.retryAfterSeconds);
     const collection = await collectRelease(input, fetch, req.signal);
     const analysis = await generateReleaseWording(analyzeRelease(collection), input.useAi, req.signal);
     return reply({ analysis, notes: renderNotes(analysis) });

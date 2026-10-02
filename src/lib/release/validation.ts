@@ -16,7 +16,7 @@ export function parseRepository(value: unknown): string {
 export function parseRef(value: unknown): string {
   if (typeof value !== "string" || value.length > 200) throw new ReleaseError(400, "Refs must be names or commit SHAs of at most 200 characters.");
   const ref = value.trim();
-  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$/.test(ref) || ref.includes("..") || ref.includes("//") || ref.endsWith(".") || ref.endsWith("/") || ref.split("/").some(p => p.startsWith(".") || p.endsWith(".lock"))) {
+  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_./+@-]*$/.test(ref) || ref.includes("..") || ref.includes("//") || ref.endsWith(".") || ref.endsWith("/") || ref.split("/").some(p => p.startsWith(".") || p.endsWith(".lock"))) {
     throw new ReleaseError(400, "Use a tag, branch name, or commit SHA; revision expressions and cross-repository refs are unsupported.");
   }
   return ref;

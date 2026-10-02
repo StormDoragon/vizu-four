@@ -34,6 +34,12 @@ describe("Release interface", () => {
     expect(screen.getByRole("button", { name: "Analyzing changes…" })).toBeDisabled(); expect(screen.getByRole("status")).toHaveTextContent("Collecting commits");
     complete({ ok: true, json: async () => response([]) }); await screen.findByText("These refs contain no new commits."); expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("shows a friendly error when the server returns a non-JSON response", async () => {
+    fetcher.mockResolvedValue({ ok: false, json: async () => { throw new SyntaxError("Unexpected token '<'"); } });
+    render(<ReleaseApp />); fill(); fireEvent.click(screen.getByRole("button", { name: "Analyze release" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Release analysis failed. Please try again.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Unexpected token");
+  });
   it("validates locally without a network call", async () => {
     render(<ReleaseApp />); fill(); fireEvent.change(screen.getByLabelText("Head ref"), { target: { value: "main...evil" } }); fireEvent.click(screen.getByRole("button", { name: "Analyze release" })); expect(await screen.findByRole("alert")).toHaveTextContent("Use a tag"); expect(fetcher).not.toHaveBeenCalled();
   });
