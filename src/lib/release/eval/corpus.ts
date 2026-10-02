@@ -82,6 +82,22 @@ const rows: Row[] = [
   ["br-plain-rename", "Rename --out flag to --output (breaking change)", { releaseWorthy: true, breakingChange: true }],
   ["br-not-breaking", "fix: avoid breaking the layout on narrow screens", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "The word 'breaking' is not a breaking change." }],
 
+  ["sec-xxe", "Disable external entities to prevent XXE", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-open-redirect", "Fix open redirect on the login callback", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-priv-esc", "Prevent privilege escalation through role import", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-token-exposed", "fix: session token was exposed in query strings", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-password-leak", "Password hashes leaked in debug endpoint", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-guard-expose-ui", "Add support for exposing theme tokens to plugins", { releaseWorthy: true, category: "added", securitySensitive: false }, { note: "Design tokens, not secrets: 'expose' next to 'tokens' must not alarm." }],
+  ["sec-guard-leak-memory", "Fix memory leak in the websocket client", { releaseWorthy: true, category: "fixed", securitySensitive: false }, { note: "A memory leak is not a secret leak." }],
+  ["sec-guard-sanitize-ui", "Add sanitize button to the cleanup toolbar", { releaseWorthy: true }, { note: "Known cost: 'sanitize' flags this for manual review (category/security not scored)." }],
+  ["br-bracket", "[BREAKING] Change default port to 8080", { releaseWorthy: true, breakingChange: true }],
+  ["br-colon-prefix", "BREAKING: remove the --legacy flag", { releaseWorthy: true, breakingChange: true }],
+  ["br-incompatible", "Switch to a new storage format, not backwards compatible", { releaseWorthy: true, breakingChange: true }],
+  ["br-lowercase-footer", "feat: new auth flow\n\nbreaking change: tokens expire hourly", { releaseWorthy: true, breakingChange: true }],
+  ["br-guard-bare-breaking", "Fix breaking layout on tablet screens", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "Bare 'breaking' is not a marker." }],
+  ["br-guard-links", "fix: stop breaking links in email templates", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+  ["br-guard-not-compatible", "Fix chart that was not compatible with dark mode", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+
   // Ambiguous / noisy
   ["am-update", "Update dependencies", exc(), { note: "Generic dependency updates are not user-facing." }],
   ["am-merge-conflict", "Fix merge conflicts", exc(), { note: "Starts with 'Fix' but is repo plumbing." }],

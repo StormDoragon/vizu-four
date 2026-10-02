@@ -11,7 +11,7 @@ const metrics = metricsBySource(results);
  * a change pass. Run `npx vitest run src/lib/release/eval --reporter=verbose --silent=false`
  * to print every miss.
  */
-const BASELINE = { falseExclusions: 17, falseInclusions: 5, securityMisses: 3, breakingMisses: 2, minCategoryAccuracy: 0.66 };
+const BASELINE = { falseExclusions: 12, falseInclusions: 5, securityMisses: 0, breakingMisses: 0, minCategoryAccuracy: 0.72 };
 
 describe("release classification evaluation", () => {
   it("has unique case ids and only declared sources", () => {

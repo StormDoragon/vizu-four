@@ -1,10 +1,20 @@
 import type { CollectedCommit, ReleaseAnalysis, ReleaseChange, ReleaseCollection } from "./types";
 import { markdownText } from "./text";
 
+/** Conventional Commits markers, plus explicit prose markers. Bare "breaking" is not a marker: "avoid breaking the layout" is a fix. */
+const BREAKING = /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANGE:\s*\S|BREAKING:\s*\S)|[(\[]\s*breaking(?: changes?)?\s*[)\]]|\b(?:backwards?|backward)[- ]incompatible\b|\bnot (?:backwards?|backward)[- ]compatible\b/i;
+/** Legacy keywords, plus unambiguous vulnerability classes and secret exposure (a leak/exposure verb near a secret noun, either order). */
+const SECRET = "(?:secrets?|api[ -]?keys?|passwords?|credentials?|private keys?|(?:session|auth\\w*|access|refresh|api|bearer|personal access) tokens?)";
+const SECURITY = new RegExp(
+  "\\b(security|vulnerabilit\\w*|CVE-\\d{4}-\\d+|credential|exploit|injection|XSS|CSRF|DoS|RCE|denial of service|path traversal|auth(?:entication)? bypass)\\b"
+  + "|\\b(?:SSRF|XXE|clickjacking|open redirect|privilege escalation|directory traversal|remote code execution|arbitrary code execution|sanitiz\\w*)\\b"
+  + `|\\b(?:leak\\w*|expos\\w*|disclos\\w*)\\b[^\\n]{0,40}\\b${SECRET}\\b`
+  + `|\\b${SECRET}\\b[^\\n]{0,40}\\b(?:leak\\w*|exposed|disclosed)\\b`, "i");
+
 export function reviewFlags(text: string) {
   return {
-    breakingChange: /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANGE:\s*\S)/.test(text),
-    securitySensitive: /\b(security|vulnerabilit\w*|CVE-\d{4}-\d+|credential|exploit|injection|XSS|CSRF|DoS|RCE|denial of service|path traversal|auth(?:entication)? bypass)\b/i.test(text),
+    breakingChange: BREAKING.test(text),
+    securitySensitive: SECURITY.test(text),
   };
 }
 

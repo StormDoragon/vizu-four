@@ -21,9 +21,12 @@ Next three implementation steps:
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
    *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
-   74-case **synthetic** corpus (hand-labeled probes, not real-world evidence)
-   with a regression ratchet. Baseline of the current rules: 17 false
-   exclusions, 5 false inclusions, 3 security misses, 2 breaking misses.
+   89-case **synthetic** corpus (hand-labeled probes, not real-world evidence)
+   with a regression ratchet. Security and breaking-change misses are fixed
+   (100% recall on the corpus, with guards against "memory leak", "theme
+   tokens", and bare "breaking"); remaining: 12 false exclusions (plain-English
+   verbs, prefixes), 5 false inclusions (CI/typo "Fix" noise), and 2 known
+   security false alarms ("security policy" docs, "credential manager").
    Still needed: maintainer-labeled real ranges (`source: "maintainer-reviewed"`)
    and an unsupported-claim measure for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while
