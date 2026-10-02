@@ -21,14 +21,38 @@ Next three implementation steps:
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
    *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
-   89-case **synthetic** corpus (hand-labeled probes, not real-world evidence)
-   with a regression ratchet. Security and breaking-change misses are fixed
-   (100% recall on the corpus, with guards against "memory leak", "theme
-   tokens", and bare "breaking"); remaining: 12 false exclusions (plain-English
-   verbs, prefixes), 5 false inclusions (CI/typo "Fix" noise), and 2 known
-   security false alarms ("security policy" docs, "credential manager").
-   Still needed: maintainer-labeled real ranges (`source: "maintainer-reviewed"`)
-   and an unsupported-claim measure for the opt-in AI wording.
+   136-case corpus. **Every case is synthetic**: hand-labeled development data
+   by the implementer, not evidence of real-world accuracy. `maintainer-reviewed`
+   cases are tracked separately and require provenance (repository, immutable
+   base/head SHAs, reviewer, date, and a link to the review record).
+
+   Current measurements (synthetic only; accepted mismatches are included):
+   - Security: 35 of 36 positives flagged; 1 miss, accepted (`sec-bare-token-gap`:
+     a bare "token" is not treated as a secret). 3 false alarms among 10
+     negatives: 2 pre-existing ("security policy" docs, "credential manager") and
+     1 accepted (`sec-guard-sanitize-ui`: any "sanitiz*" wording is flagged).
+   - Breaking: 22 of 23 positives flagged; 1 miss, accepted
+     (`br-incompatible-gap`: "incompatible with <runtime>" is also a bug report).
+     0 false alarms among 11 negatives.
+   - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 14 false exclusions
+     (plain-English verbs such as `Fixed`, `Support`, `Implement`; prefixes such
+     as emoji, `[feature]`, `PROJ-123:`; two accepted gaps above).
+
+   What the tests enforce: each required security/breaking positive is asserted
+   by id (35 and 22), each protected negative must keep its flag off per case
+   (7 security, 11 breaking), accepted mismatches are pinned to three named
+   cases, and the aggregate ratchet may not worsen. Ratios with no positives
+   print N/A, never 100%. Known limits: the "avoids/prevents" context for
+   "backwards-incompatible" looks back 30 characters; confusable letters
+   (e.g. Cyrillic for Latin) are not normalized.
+
+   Open maintainer decisions (not resolved by the implementer): whether a revert
+   belongs in release notes; whether typo-only fixes belong in technical notes;
+   a dependency-bump policy; whether unmarked removals count as breaking;
+   whether sanitize/UI and bare token/key wording are accepted review triggers;
+   whether "incompatible with <runtime>" means breaking.
+   Still needed: maintainer-labeled real ranges and an unsupported-claim measure
+   for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while
    preserving canonical evidence and security review markers.
 3. Add bounded, cached pagination and PR grouping with explicit completeness

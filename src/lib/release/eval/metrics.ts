@@ -1,53 +1,77 @@
 import { classifyChange } from "../analysis";
 import type { EvalCase, EvalSource } from "./types";
 
-export interface CaseResult { case: EvalCase; actual: ReturnType<typeof classifyChange>; failures: string[] }
-export interface Metrics {
-  total: number;
-  /** Excluded by the classifier although a maintainer would ship it. */
-  falseExclusions: number;
-  /** Included by the classifier although it should not appear in notes. */
-  falseInclusions: number;
-  inclusionAccuracy: number;
-  /** Over cases that specify a category. */
-  categoryAccuracy: number;
-  categoryCases: number;
-  /** Recall matters most for these two: a miss ships a risky change unflagged. */
-  securityRecall: number;
-  breakingRecall: number;
-  securityMisses: number;
-  breakingMisses: number;
+export interface CaseResult {
+  case: EvalCase;
+  actual: ReturnType<typeof classifyChange>;
+  /** Every disagreement with the label. All of them are scored. */
+  failures: string[];
+  /** The subset the case records as accepted. Still counted in every metric; the ratchet pins which cases may carry one. */
+  accepted: string[];
 }
 
-const ratio = (hit: number, total: number) => total === 0 ? 1 : hit / total;
+/** Ratios over an empty denominator are `null` and render as N/A; they are never reported as 100%. */
+export type Ratio = number | null;
+
+export interface Metrics {
+  total: number;
+  falseExclusions: number;
+  falseInclusions: number;
+  inclusionAccuracy: Ratio;
+  categoryCases: number;
+  categoryAccuracy: Ratio;
+  securityPositives: number;
+  securityMisses: number;
+  securityRecall: Ratio;
+  /** Cases that expect `securitySensitive: false` and were flagged anyway. */
+  securityFalseAlarms: number;
+  securityNegatives: number;
+  breakingPositives: number;
+  breakingMisses: number;
+  breakingRecall: Ratio;
+  breakingFalseAlarms: number;
+  breakingNegatives: number;
+  /** Cases whose scored disagreements are recorded as accepted (included in the counts above). */
+  acceptedCases: number;
+  openPolicyCases: number;
+}
+
+const ratio = (hit: number, total: number): Ratio => total === 0 ? null : hit / total;
 
 export function evaluateCase(c: EvalCase): CaseResult {
   const sha = "1".repeat(40);
   const actual = classifyChange({ sha, message: c.message, pullTitle: c.pullTitle, evidence: [{ id: `commit:${sha}`, kind: "commit", label: "1111111", url: "https://github.com/example/project/commit/" + sha }] });
-  const failures: string[] = [];
-  if (actual.releaseWorthy !== c.expected.releaseWorthy) failures.push(c.expected.releaseWorthy ? "false exclusion" : "false inclusion");
-  if (c.expected.category && actual.category !== c.expected.category) failures.push(`category ${actual.category} != ${c.expected.category}`);
-  if (c.expected.securitySensitive !== undefined && actual.securitySensitive !== c.expected.securitySensitive) failures.push(c.expected.securitySensitive ? "security miss" : "security false alarm");
-  if (c.expected.breakingChange !== undefined && actual.breakingChange !== c.expected.breakingChange) failures.push(c.expected.breakingChange ? "breaking miss" : "breaking false alarm");
-  return { case: c, actual, failures };
+  const all: string[] = [];
+  if (actual.releaseWorthy !== c.expected.releaseWorthy) all.push(c.expected.releaseWorthy ? "false exclusion" : "false inclusion");
+  if (c.expected.category && actual.category !== c.expected.category) all.push(`category ${actual.category} != ${c.expected.category}`);
+  if (c.expected.securitySensitive !== undefined && actual.securitySensitive !== c.expected.securitySensitive) all.push(c.expected.securitySensitive ? "security miss" : "security false alarm");
+  if (c.expected.breakingChange !== undefined && actual.breakingChange !== c.expected.breakingChange) all.push(c.expected.breakingChange ? "breaking miss" : "breaking false alarm");
+  const tolerated = (failure: string) => c.acceptedMismatch?.kinds.some(kind => failure === kind || (kind === "category" && failure.startsWith("category "))) === true;
+  return { case: c, actual, failures: all, accepted: all.filter(tolerated) };
 }
 
 export function computeMetrics(results: CaseResult[]): Metrics {
-  const has = (r: CaseResult, f: string) => r.failures.includes(f);
-  const security = results.filter(r => r.case.expected.securitySensitive);
-  const breaking = results.filter(r => r.case.expected.breakingChange);
+  const count = (rs: CaseResult[], failure: string) => rs.filter(r => r.failures.includes(failure)).length;
+  const securityPositive = results.filter(r => r.case.expected.securitySensitive === true);
+  const securityNegative = results.filter(r => r.case.expected.securitySensitive === false);
+  const breakingPositive = results.filter(r => r.case.expected.breakingChange === true);
+  const breakingNegative = results.filter(r => r.case.expected.breakingChange === false);
   const withCategory = results.filter(r => r.case.expected.category);
-  const falseExclusions = results.filter(r => has(r, "false exclusion")).length;
-  const falseInclusions = results.filter(r => has(r, "false inclusion")).length;
-  const securityMisses = security.filter(r => has(r, "security miss")).length;
-  const breakingMisses = breaking.filter(r => has(r, "breaking miss")).length;
+  const falseExclusions = count(results, "false exclusion");
+  const falseInclusions = count(results, "false inclusion");
+  const securityMisses = count(securityPositive, "security miss");
+  const breakingMisses = count(breakingPositive, "breaking miss");
   return {
     total: results.length, falseExclusions, falseInclusions,
     inclusionAccuracy: ratio(results.length - falseExclusions - falseInclusions, results.length),
     categoryCases: withCategory.length,
-    categoryAccuracy: ratio(withCategory.filter(r => !r.failures.some(f => f.startsWith("category"))).length, withCategory.length),
-    securityRecall: ratio(security.length - securityMisses, security.length), securityMisses,
-    breakingRecall: ratio(breaking.length - breakingMisses, breaking.length), breakingMisses,
+    categoryAccuracy: ratio(withCategory.filter(r => !r.failures.some(f => f.startsWith("category "))).length, withCategory.length),
+    securityPositives: securityPositive.length, securityMisses, securityRecall: ratio(securityPositive.length - securityMisses, securityPositive.length),
+    securityNegatives: securityNegative.length, securityFalseAlarms: count(securityNegative, "security false alarm"),
+    breakingPositives: breakingPositive.length, breakingMisses, breakingRecall: ratio(breakingPositive.length - breakingMisses, breakingPositive.length),
+    breakingNegatives: breakingNegative.length, breakingFalseAlarms: count(breakingNegative, "breaking false alarm"),
+    acceptedCases: results.filter(r => r.accepted.length).length,
+    openPolicyCases: results.filter(r => r.case.openPolicy).length,
   };
 }
 
@@ -58,12 +82,18 @@ export function metricsBySource(results: CaseResult[]): Record<EvalSource, Metri
   };
 }
 
+export const percent = (value: Ratio) => value === null ? "N/A" : `${(value * 100).toFixed(1)}%`;
+
 export function formatReport(results: CaseResult[]): string {
-  const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
-  const lines: string[] = [];
+  const lines: string[] = ["NOTE: synthetic cases are hand-labeled development data; they are not evidence of real-world accuracy."];
   for (const [source, m] of Object.entries(metricsBySource(results))) {
-    lines.push(`[${source}] n=${m.total} inclusion=${pct(m.inclusionAccuracy)} (false incl ${m.falseInclusions}, false excl ${m.falseExclusions}) category=${pct(m.categoryAccuracy)}/${m.categoryCases} security-recall=${pct(m.securityRecall)} breaking-recall=${pct(m.breakingRecall)}`);
+    lines.push(`[${source}] n=${m.total} inclusion=${percent(m.inclusionAccuracy)} (false incl ${m.falseInclusions}, false excl ${m.falseExclusions}) category=${percent(m.categoryAccuracy)}/${m.categoryCases}`
+      + ` security: ${m.securityMisses} misses/${m.securityPositives} positives (recall ${percent(m.securityRecall)}), ${m.securityFalseAlarms} false alarms/${m.securityNegatives} negatives`
+      + ` breaking: ${m.breakingMisses} misses/${m.breakingPositives} positives (recall ${percent(m.breakingRecall)}), ${m.breakingFalseAlarms} false alarms/${m.breakingNegatives} negatives`
+      + ` accepted=${m.acceptedCases} open-policy=${m.openPolicyCases}`);
   }
-  for (const r of results.filter(r => r.failures.length)) lines.push(`  ✗ ${r.case.id}: ${r.failures.join(", ")} — ${JSON.stringify((r.case.pullTitle ? r.case.pullTitle + " | " : "") + r.case.message.split("\n")[0])}`);
+  const show = (r: CaseResult) => JSON.stringify((r.case.pullTitle ? r.case.pullTitle + " | " : "") + r.case.message.split("\n")[0]);
+  for (const r of results.filter(r => r.failures.length)) lines.push(`  ${r.accepted.length ? "~ accepted" : "✗"} ${r.case.id}: ${r.failures.join(", ")} — ${show(r)}${r.accepted.length ? ` [${r.case.acceptedMismatch?.reason}]` : ""}`);
+  for (const r of results.filter(r => r.case.openPolicy)) lines.push(`  ? open policy ${r.case.id}: ${r.case.openPolicy}`);
   return lines.join("\n");
 }
