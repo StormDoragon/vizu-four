@@ -21,7 +21,7 @@ Next three implementation steps:
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
    *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
-   166-case corpus. **Every case is synthetic**: hand-labeled development data
+   173-case corpus. **Every case is synthetic**: hand-labeled development data
    by the implementer, not evidence of real-world accuracy. `maintainer-reviewed`
    cases are tracked separately; they require provenance (repository, immutable
    base/head SHAs, reviewer, date, review-record link) and must match every
@@ -40,23 +40,26 @@ Next three implementation steps:
      token/key and a secret is documented, not papered over. 3 false alarms among
      15 negatives: 2 pre-existing ("security policy" docs, "credential manager")
      and 1 accepted (`sec-guard-sanitize-ui`).
-   - Breaking: 30 of 31 positives flagged; 1 miss, accepted and pending
+   - Breaking: 35 of 36 positives flagged; 1 miss, accepted and pending
      (`br-incompatible-gap`: "incompatible with <runtime>" is also a bug report).
-     0 false alarms among 19 negatives.
+     0 false alarms among 21 negatives.
    - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 14 false exclusions
      (plain-English verbs such as `Fixed`, `Support`, `Implement`; prefixes such
      as emoji, `[feature]`, `PROJ-123:`; the accepted gaps above that are also
      excluded).
 
    What the tests enforce: each required security/breaking positive is asserted
-   by id (42 and 30); each protected negative must keep its flag off per case
-   (12 security, 19 breaking); accepted mismatches are pinned to five named
+   by id (42 and 35); each protected negative must keep its flag off per case
+   (12 security, 21 breaking); accepted mismatches are pinned to five named
    cases; the aggregate ratchet may not worsen; the report lists accepted and
    unaccepted failures separately; ratios with no positives print N/A, never
    100%. Negation ("avoid", "prevent", "don't", ...) looks back 30 characters
    within one clause: a `;` or `.` ends it, and it crosses a line break only when
    the previous line ends on the negator ("fix: do not" / "drop support ..."),
-   so "fix: prevent crashes; drop support for Node 16" is breaking. Known limits:
+   so "fix: prevent crashes; drop support for Node 16" is breaking. A phrase may
+   wrap once, with spaces around the break; a blank line never matches. Detection
+   is linear in message length (measured 2.0x per doubling from 0.2 MB to 7 MB;
+   a 1.8 MB single-line message takes ~35 ms). Known limits:
    a leading "fix" is not treated as evidence that compatibility is preserved; confusable letters (e.g. Cyrillic for Latin) are
    not normalized; "log/logs" next to a secret noun is flagged conservatively.
 

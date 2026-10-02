@@ -125,12 +125,52 @@ describe("breaking flag", () => {
       "fix: do not,\ndrop support for Node 16", "fix: prevent\nbackwards-incompatible output", "Avoid\ndropping support for Node 16", "fix: prevent crashes", "Do not drop\nsupport for Node 16",
     ])("negation holds within a clause and across a wrap that ends on the negator: does not flag %j", text => expect(breaking(text), text).toBe(false));
 
+    it.each([["trailing space", "Drop support \nfor Node 16"], ["leading space", "Drop support\n for Node 16"], ["spaces on both sides", "Drop support \n for Node 16"], ["several spaces", "Drop support  \n  for Node 16"]])(
+      "a phrase wrapped with %s still matches, in LF, CRLF and bare-CR form", (_name, lf) => {
+        for (const text of [lf, lf.replace(/\n/g, "\r\n"), lf.replace(/\n/g, "\r")]) expect(breaking(text), JSON.stringify(text)).toBe(true);
+      });
+    it.each(["Drop support\n\nfor Node 16", "Drop support\n  \nfor Node 16", "Drop support\r\n\r\nfor Node 16", "Drop support\r\n  \r\nfor Node 16", "Drop support \n\n for Node 16", "Drop support\n\t\nfor Node 16"])(
+      "a paragraph break inside the phrase never matches: does not flag %j", text => expect(breaking(text), text).toBe(false));
+    it("keeps negation across a wrap with spaces around it", () => {
+      expect(breaking("fix: do not \n drop support for Node 16")).toBe(false);
+      expect(breaking("fix: prevent crashes \n Drop support for Node 16")).toBe(true);
+    });
     it("does not let a blank or whitespace-only line carry negation to the next paragraph", () => {
       for (const gap of ["\n\n", "\n \n", "\n\t\n", "\r\n\r\n"]) expect(breaking(`fix: do not${gap}drop support for Node 16`), JSON.stringify(gap)).toBe(true);
     });
     it("keeps the 30-character window: a far negator does not reach the phrase", () => {
       expect(breaking("fix: avoid " + "x".repeat(40) + " drop support for Node 16")).toBe(true);
       expect(breaking("fix: avoid dropping now; drop support for Node 16")).toBe(true);
+    });
+  });
+  describe("negation scan is linear (R15)", () => {
+    // Large fixtures live here, not in the corpus. 50,000 repeats is roughly 1.8 MB on ONE line, the worst case
+    // for a per-match scan back to the previous newline (quadratic) and for a per-match prefix copy.
+    const BUDGET_MS = 2000;
+    it.each([
+      ["incompatibility", "avoid backwards-incompatible output; "],
+      ["support removal", "avoid dropping support for Node 16; "],
+    ])("a long run of negated %s is scanned in bounded time and stays unflagged", (_name, unit) => {
+      const text = unit.repeat(50_000);
+      const started = performance.now();
+      expect(breaking(text)).toBe(false);
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+    });
+    it.each([
+      ["incompatibility", "avoid backwards-incompatible output; "],
+      ["support removal", "avoid dropping support for Node 16; "],
+    ])("still finds a late new-line declaration after a long run of negated %s", (_name, unit) => {
+      const text = unit.repeat(50_000) + "\nDrop support for Node 16";
+      const started = performance.now();
+      expect(breaking(text)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+    });
+    it("handles many short lines in bounded time too", () => {
+      const text = "fix: avoid dropping support for Node 16\n".repeat(50_000);
+      const started = performance.now();
+      expect(breaking(text)).toBe(false);
+      expect(breaking(text + "Drop support for Node 16")).toBe(true);
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS * 2);
     });
   });
   it("bracket markers count only at the start or end of a line", () => {

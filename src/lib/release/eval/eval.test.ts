@@ -27,13 +27,15 @@ const BREAKING_POSITIVES = [
   "br-unicode-hyphen", "br-wrapped-lf", "br-wrapped-crlf", "br-footer-lf", "br-footer-crlf", "br-late-bare-cr-footer",
   "br-r10-ship", "br-r10-making", "br-r10-fixes-colon",
   "br-scope-semicolon-prevent", "br-scope-semicolon-preserve", "br-scope-newline-declaration", "br-scope-semicolon-incompat", "br-scope-wrapped-phrase",
+  "br-wrap-trailing-space", "br-wrap-leading-space", "br-wrap-both-spaces", "br-wrap-both-spaces-crlf", "br-wrap-both-spaces-cr",
 ];
 /** Protected negatives: each must keep its flag OFF. One broadened pattern cannot hide behind a gain elsewhere. */
 const SECURITY_GUARDS = ["sec-guard-expose-ui", "sec-guard-leak-memory", "sec-guard-parser-tokens", "sec-guard-design-tokens", "sec-guard-object-keys", "sec-guard-hardcoded-color", "sec-guard-memory-leak-keys",
   "sec-guard-parser-leak", "sec-guard-object-keys-exposed", "sec-guard-paragraph-lf", "sec-guard-paragraph-spaces", "sec-guard-paragraph-tab-crlf"];
 const BREAKING_GUARDS = ["br-not-breaking", "br-guard-bare-breaking", "br-guard-links", "br-guard-not-compatible", "br-guard-avoid", "br-guard-prevent", "br-guard-ensure", "br-guard-doc-bracket", "br-guard-doc-footer", "br-guard-label", "br-guard-remove-plain",
   "br-guard-fix-avoid", "br-guard-avoid-drop", "br-guard-dont-remove",
-  "br-scope-guard-do-not", "br-scope-guard-end-of-support", "br-scope-guard-wrapped-negator", "br-scope-guard-wrapped-prevent", "br-scope-guard-prevent-only"];
+  "br-scope-guard-do-not", "br-scope-guard-end-of-support", "br-scope-guard-wrapped-negator", "br-scope-guard-wrapped-prevent", "br-scope-guard-prevent-only",
+  "br-wrap-guard-blank", "br-wrap-guard-spaces-blank"];
 /** Cases allowed to carry an accepted mismatch. Adding to this list is a deliberate, reviewed edit. */
 /** The three "gap" cases and both "open" cases are PENDING maintainer decisions, not completed fixes. */
 const ACCEPTED = ["br-incompatible-gap", "sec-bare-token-gap", "sec-guard-sanitize-ui", "sec-open-keys-logs", "sec-open-token-logs"];

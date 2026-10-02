@@ -46,8 +46,12 @@ const BREAKING_FOOTER = /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANG
 /** A bracketed marker counts only where an author declares it: the start of a line (after an optional type prefix) or the end of a line. A mention in the middle of prose does not. */
 const BRACKET = "[(\\[]\\s*breaking(?:[-_ ]changes?)?\\s*[)\\]]";
 const BREAKING_BRACKET = new RegExp(`(?:^|\\n)(?:\\w+(?:\\([^\\n)]*\\))?:\\s*)?${BRACKET}|${BRACKET}[ \\t]*(?=\\n|$)`, "i");
-/** Between the words of a phrase: spaces, or ONE line wrap. A blank line is a paragraph break and never matches. */
-const WS = "(?: +|\\n(?!\\n))";
+/**
+ * Between the words of a phrase: spaces, or ONE line wrap with optional spaces on either side of it
+ * (normalization already turned tabs and Unicode spaces into plain spaces). A blank line is a paragraph
+ * break and never matches; whitespace-only lines were reduced to blank lines before matching.
+ */
+const WS = "(?: +| *\\n *(?!\\n))";
 const BREAKING_PROSE = new RegExp(`\\b(?:backwards?|backward)(?:-|${WS})incompatible\\b`, "gi");
 const NOT_COMPATIBLE = new RegExp(`\\bnot${WS}(?:backwards?|backward)(?:-|${WS})compatible\\b`, "i");
 const BREAKING_SUPPORT = new RegExp(`\\b(?:drop(?:s|ped|ping)?|remov(?:e|es|ed|ing))${WS}(?:support|compatibility)${WS}(?:for|of|with)\\b|\\bend${WS}of${WS}support\\b|\\bno${WS}longer${WS}(?:support\\w*|compatible${WS}with)\\b`, "gi");
@@ -59,25 +63,35 @@ const AVOIDS = new RegExp(`\\b${NEGATORS}\\b[^\\n.;]{0,30}$`, "i");
 /** A line that ends on a bare negator ("fix: do not"): its clause continues on the next line. */
 const TRAILING_NEGATOR = new RegExp(`\\b${NEGATORS}\\b[ \\t]*[,:]?[ \\t]*$`, "i");
 
-/**
- * Is the match at `index` negated? Negation never crosses a clause end (`;` or `.`) and never crosses a
- * line break unless the previous line ENDS on a negator, so a new declaration on its own line
- * ("fix: prevent crashes" / "Drop support for Node 16") does not borrow the previous line's negation.
- * The 30-character window is unchanged.
- */
-function negated(text: string, index: number): boolean {
-  const lineStart = index === 0 ? 0 : text.lastIndexOf("\n", index - 1) + 1;
-  const sameLine = text.slice(Math.max(lineStart, index - 40), index);
-  if (sameLine.trim()) return AVOIDS.test(sameLine);
-  if (lineStart === 0) return false;
-  const previousStart = lineStart === 1 ? 0 : text.lastIndexOf("\n", lineStart - 2) + 1;
-  return TRAILING_NEGATOR.test(text.slice(previousStart, lineStart - 1));
+/** Start offset of every line, computed once per scan: linear in the text, never per match. */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) starts.push(at + 1);
+  return starts;
 }
 
-/** True when `text` has a match of `pattern` that is not negated (see `negated`). */
+/**
+ * Is the match on line `line` (starting at `index`) negated? Negation never crosses a clause end (`;`
+ * or `.`) and never crosses a line break unless the previous line ENDS on a negator, so a new
+ * declaration on its own line ("fix: prevent crashes" / "Drop support for Node 16") does not borrow the
+ * previous line's negation. The 30-character window is unchanged.
+ */
+function negated(text: string, index: number, starts: number[], line: number): boolean {
+  const lineStart = starts[line];
+  const sameLine = text.slice(Math.max(lineStart, index - 40), index);
+  if (sameLine.trim()) return AVOIDS.test(sameLine);
+  if (line === 0) return false;
+  return TRAILING_NEGATOR.test(text.slice(starts[line - 1], lineStart - 1));
+}
+
+/** True when `text` has a match of `pattern` that is not negated (see `negated`). Linear: matches arrive in order, so the line pointer only moves forward. */
 function hasUnnegatedMatch(pattern: RegExp, text: string): boolean {
+  let starts: number[] | undefined;
+  let line = 0;
   for (const match of text.matchAll(pattern)) {
-    if (!negated(text, match.index)) return true;
+    starts ??= lineStarts(text);
+    while (line + 1 < starts.length && starts[line + 1] <= match.index) line++;
+    if (!negated(text, match.index, starts, line)) return true;
   }
   return false;
 }

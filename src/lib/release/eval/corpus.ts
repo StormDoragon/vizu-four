@@ -181,6 +181,14 @@ const rows: Row[] = [
   ["br-scope-guard-wrapped-negator", "fix: do not\ndrop support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "The negator ends the first line, so its clause continues onto the next." }],
   ["br-scope-guard-wrapped-prevent", "fix: prevent\nbackwards-incompatible output", { releaseWorthy: true, category: "fixed", breakingChange: false }],
   ["br-scope-guard-prevent-only", "fix: prevent crashes", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "Alone, this contains nothing breaking; pins how the two-line case above is read." }],
+  // Breaking: spaces around one line wrap (R16). Compact semantic cases only; large fixtures live in flags.test.ts.
+  ["br-wrap-trailing-space", "Drop support \nfor Node 16", { releaseWorthy: true, breakingChange: true }],
+  ["br-wrap-leading-space", "Drop support\n for Node 16", { releaseWorthy: true, breakingChange: true }],
+  ["br-wrap-both-spaces", "Drop support \n for Node 16", { releaseWorthy: true, breakingChange: true }],
+  ["br-wrap-both-spaces-crlf", "Drop support \r\n for Node 16", { releaseWorthy: true, breakingChange: true }, { note: "Must match the LF case." }],
+  ["br-wrap-both-spaces-cr", "Drop support \r for Node 16", { releaseWorthy: true, breakingChange: true }, { note: "Bare CR; must match the LF case." }],
+  ["br-wrap-guard-blank", "Drop support\n\nfor Node 16", { releaseWorthy: false, breakingChange: false }, { note: "A blank line is a paragraph break. The first line alone has no recognized verb, so the change is not included either." }],
+  ["br-wrap-guard-spaces-blank", "Drop support\n  \nfor Node 16", { releaseWorthy: false, breakingChange: false }, { note: "A whitespace-only line is a blank line." }],
   // Breaking: protected negatives, including negated support removal (R10/R11)
   ["br-guard-fix-avoid", "fix: avoid backwards-incompatible output", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "'fix' with an explicit avoid stays a negative." }],
   ["br-guard-avoid-drop", "fix: avoid dropping support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }],
