@@ -1,8 +1,8 @@
 /**
  * Spend and concurrency budget for live Claude calls.
  *
- * The explanation endpoint is the one place this app can spend the
- * operator's money, and it had no bound of any kind: with
+ * Debug explanations and Release wording share this instance-wide budget.
+ * The explanation endpoint originally had no bound of any kind: with
  * `ANTHROPIC_API_KEY` set, every request reached the provider, so anyone who
  * could reach the demo could drive the bill and the only limit was how fast
  * they could send requests.

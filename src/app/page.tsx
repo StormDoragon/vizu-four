@@ -14,6 +14,7 @@ import {
   type WorkspaceWorkflowFile,
 } from "@/lib/apiClient";
 import { saveWorkflowSource } from "@/lib/workflowSourceCache";
+import { ModuleNav } from "@/components/ModuleNav";
 
 // A dedicated, minimal workflow for the one-click failure demo. Its "Run
 // tests" step is mocked to fail (see startFailureDemo) rather than relying
@@ -181,6 +182,7 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
+      <ModuleNav active="debug" />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Vizu Four</h1>

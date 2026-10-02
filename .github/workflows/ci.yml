@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/release-intelligence-mvp]
   pull_request:
     branches: [main]
 
@@ -51,3 +51,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Smoke-test production server
+        run: node scripts/production-smoke.mjs

@@ -1,6 +1,6 @@
 # Privacy and data handling
 
-**Effective date:** September 23, 2026
+**Effective date:** September 30, 2026
 **Operator:** StormDoragon, the Vizu Four repository maintainer
 
 This notice describes the repository's current behavior. Vizu Four is an
@@ -50,6 +50,23 @@ Failure explanations use local heuristics by default. If the operator sets an
 optional explanation. Masking is a defense-in-depth control, not a guarantee
 that arbitrary workflow output contains no sensitive information. Operators
 should disclose whether the hosted deployment enables this optional provider.
+
+## Release Intelligence
+
+Release sends a public repository name and base/head refs to the application
+server, which requests public metadata from GitHub without credentials.
+Results are returned to the browser with `Cache-Control: no-store`; there is
+no release database or local-storage history. Navigating away discards the
+view. Copying Markdown places the selected draft on your clipboard.
+
+The existing anonymous owner cookie also scopes release request limits;
+per-owner/address counters are held in process memory. If you explicitly
+enable AI wording and the operator configured Anthropic, eligible public
+change titles and evidence identifiers are sent to Anthropic. Security-flagged
+changes are excluded from that prompt. Key absence, budget refusal, provider
+errors, and invalid output use deterministic wording. Detection and masking
+cannot guarantee arbitrary public metadata is free of sensitive information.
+Never supply tokens, private repository content, or personal data.
 
 ## Analytics and third parties
 

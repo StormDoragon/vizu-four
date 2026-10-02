@@ -3,8 +3,8 @@ import "./globals.css";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  title: "Vizu Four — Actions Visual Debugger",
-  description: "Local-first visual debugger for a supported subset of GitHub Actions workflows.",
+  title: "Vizu Four — Debug & Release Intelligence",
+  description: "Debug GitHub Actions workflows and draft evidence-backed release notes from public GitHub changes.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

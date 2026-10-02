@@ -26,6 +26,20 @@ long-term-support version exists yet.
 
 ## Current boundaries
 
+Release Intelligence accepts only public GitHub repositories and simple refs.
+Its server collector uses a fixed API origin, no credentials or redirects,
+bounded responses and deadlines, and no code execution or filesystem writes.
+Per-process request/concurrency limits protect the public demo; the optional
+AI path shares the debugger's spend budget. See README for numerical limits.
+
+Repository metadata and model output are untrusted. AI can only rewrite
+existing eligible changes, with exact per-change evidence IDs; application
+code owns source URLs and classification flags. Text is displayed as React
+text or a read-only textarea, and Markdown exports escape source formatting.
+Security-sensitive descriptions are withheld from exports. Evidence membership
+is not semantic verification; all drafts require human review. The feature
+does not inspect code for vulnerabilities or guarantee detection of secrets.
+
 - Real local execution is unsandboxed.
 - `uses:` action execution is simulated.
 - Windows and macOS runner emulation is not implemented.
