@@ -35,7 +35,7 @@ describe("Release interface", () => {
     complete({ ok: true, json: async () => response([]) }); await screen.findByText("These refs contain no new commits."); expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it("shows a friendly error when the server returns a non-JSON response", async () => {
-    fetcher.mockResolvedValue({ ok: false, json: async () => { throw new SyntaxError("Unexpected token '<'"); } });
+    fetcher.mockResolvedValue({ ok: false, status: 502, headers: new Headers({ "content-type": "text/html" }), json: async () => { throw new SyntaxError("Unexpected token '<'"); } });
     render(<ReleaseApp />); fill(); fireEvent.click(screen.getByRole("button", { name: "Analyze release" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Release analysis failed. Please try again.");
     expect(screen.getByRole("alert")).not.toHaveTextContent("Unexpected token");

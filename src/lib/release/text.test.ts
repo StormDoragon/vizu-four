@@ -11,3 +11,16 @@ describe("markdownText", () => {
     expect(out.replace(/​/g, "")).toBe("see https://evil.example www.evil.example a@b.co @octocat");
   });
 });
+
+describe("markdownText autolink cases", () => {
+  it.each([
+    ["@user", /@(?!​)/],
+    ["https://evil.example", /:\/\//],
+    ["www.example.com", /www\./],
+    ["foo@example.com", /@(?!​)/],
+  ])("neutralizes %s", (input, pattern) => {
+    const out = markdownText(input);
+    expect(out).not.toMatch(pattern);
+    expect(out.replace(/​/g, "")).toBe(input);
+  });
+});
