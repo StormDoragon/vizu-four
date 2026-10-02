@@ -22,10 +22,12 @@ export function normalizeForDetection(text: string): string {
     .replace(ZERO_WIDTH, "").replace(HYPHENS, "-").replace(SPACES, " ");
 }
 
+/** A line holding only spaces or tabs is a blank line, so it separates paragraphs like an empty one. */
+const blankLines = (text: string) => text.replace(/^[ \t]+$/gm, "");
+
 /** Joins ordinary wrapped lines (single newlines) so a phrase split by hard wrapping still matches. Blank lines stay separators. */
 function joinWrapped(text: string): string {
-  // A line holding only spaces or tabs is a blank line, so it separates paragraphs like an empty one.
-  return text.replace(/^[ \t]+$/gm, "").replace(/(?<!\n)\n(?!\n)/g, " ");
+  return text.replace(/(?<!\n)\n(?!\n)/g, " ");
 }
 
 const VULNERABILITY_TERMS = /\b(?:security|vulnerabilit\w*|CVE-\d{4}-\d+|credential|exploit|injection|XSS|CSRF|DoS|RCE|denial of service|path traversal|auth(?:entication)? bypass)\b|\b(?:SSRF|XXE|clickjacking|open redirect|privilege escalation|directory traversal|remote code execution|arbitrary code execution|sanitiz\w*|timing attacks?|buffer overflow|zip slip|prototype pollution|(?:unsafe|insecure) deserializ\w*|deserializ\w* of untrusted)\b/i;
@@ -44,28 +46,51 @@ const BREAKING_FOOTER = /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANG
 /** A bracketed marker counts only where an author declares it: the start of a line (after an optional type prefix) or the end of a line. A mention in the middle of prose does not. */
 const BRACKET = "[(\\[]\\s*breaking(?:[-_ ]changes?)?\\s*[)\\]]";
 const BREAKING_BRACKET = new RegExp(`(?:^|\\n)(?:\\w+(?:\\([^\\n)]*\\))?:\\s*)?${BRACKET}|${BRACKET}[ \\t]*(?=\\n|$)`, "i");
-const BREAKING_PROSE = /\b(?:backwards?|backward)[- ]incompatible\b/gi;
-const BREAKING_SUPPORT = /\b(?:drop(?:s|ped|ping)?|remov(?:e|es|ed|ing)) (?:support|compatibility) (?:for|of|with)\b|\bend of support\b|\bno longer (?:support\w*|compatible with)\b/gi;
-/** Words just before "backwards-incompatible" that mean the change avoids or repairs it, not introduces it. */
-const AVOIDS = /(?:\b(?:avoid\w*|prevent\w*|without|never|not|no|restor\w*|preserv\w*|maintain\w*|keep\w*|ensur\w*|stop\w*)|\b(?:don|doesn|didn|won|can)'?t)\b[^\n.]{0,30}$/i;
+/** Between the words of a phrase: spaces, or ONE line wrap. A blank line is a paragraph break and never matches. */
+const WS = "(?: +|\\n(?!\\n))";
+const BREAKING_PROSE = new RegExp(`\\b(?:backwards?|backward)(?:-|${WS})incompatible\\b`, "gi");
+const NOT_COMPATIBLE = new RegExp(`\\bnot${WS}(?:backwards?|backward)(?:-|${WS})compatible\\b`, "i");
+const BREAKING_SUPPORT = new RegExp(`\\b(?:drop(?:s|ped|ping)?|remov(?:e|es|ed|ing))${WS}(?:support|compatibility)${WS}(?:for|of|with)\\b|\\bend${WS}of${WS}support\\b|\\bno${WS}longer${WS}(?:support\\w*|compatible${WS}with)\\b`, "gi");
 
-/** True when `text` has a match of `pattern` that is not preceded (within 40 characters) by avoidance or negation. */
+/** Words that mean a change avoids, repairs or refuses something rather than introducing it. */
+const NEGATORS = "(?:avoid\\w*|prevent\\w*|without|never|not|no|restor\\w*|preserv\\w*|maintain\\w*|keep\\w*|ensur\\w*|stop\\w*|(?:don|doesn|didn|won|can)'?t)";
+/** A negator followed by at most 30 characters of the SAME clause. `.`, `;` and a line break all end the clause. */
+const AVOIDS = new RegExp(`\\b${NEGATORS}\\b[^\\n.;]{0,30}$`, "i");
+/** A line that ends on a bare negator ("fix: do not"): its clause continues on the next line. */
+const TRAILING_NEGATOR = new RegExp(`\\b${NEGATORS}\\b[ \\t]*[,:]?[ \\t]*$`, "i");
+
+/**
+ * Is the match at `index` negated? Negation never crosses a clause end (`;` or `.`) and never crosses a
+ * line break unless the previous line ENDS on a negator, so a new declaration on its own line
+ * ("fix: prevent crashes" / "Drop support for Node 16") does not borrow the previous line's negation.
+ * The 30-character window is unchanged.
+ */
+function negated(text: string, index: number): boolean {
+  const lineStart = index === 0 ? 0 : text.lastIndexOf("\n", index - 1) + 1;
+  const sameLine = text.slice(Math.max(lineStart, index - 40), index);
+  if (sameLine.trim()) return AVOIDS.test(sameLine);
+  if (lineStart === 0) return false;
+  const previousStart = lineStart === 1 ? 0 : text.lastIndexOf("\n", lineStart - 2) + 1;
+  return TRAILING_NEGATOR.test(text.slice(previousStart, lineStart - 1));
+}
+
+/** True when `text` has a match of `pattern` that is not negated (see `negated`). */
 function hasUnnegatedMatch(pattern: RegExp, text: string): boolean {
   for (const match of text.matchAll(pattern)) {
-    if (!AVOIDS.test(text.slice(Math.max(0, match.index - 40), match.index))) return true;
+    if (!negated(text, match.index)) return true;
   }
   return false;
 }
 
 function introducesIncompatibility(text: string): boolean {
-  return /\bnot (?:backwards?|backward)[- ]compatible\b/i.test(text) || hasUnnegatedMatch(BREAKING_PROSE, text);
+  return NOT_COMPATIBLE.test(text) || hasUnnegatedMatch(BREAKING_PROSE, text);
 }
 
 export function reviewFlags(text: string) {
-  const lines = normalizeForDetection(text);
+  const lines = blankLines(normalizeForDetection(text));
   const prose = joinWrapped(lines);
   return {
-    breakingChange: BREAKING_FOOTER.test(lines) || BREAKING_BRACKET.test(lines) || hasUnnegatedMatch(BREAKING_SUPPORT, prose) || introducesIncompatibility(prose),
+    breakingChange: BREAKING_FOOTER.test(lines) || BREAKING_BRACKET.test(lines) || hasUnnegatedMatch(BREAKING_SUPPORT, lines) || introducesIncompatibility(lines),
     securitySensitive: VULNERABILITY_TERMS.test(prose) || SECRET_EXPOSURE.test(prose),
   };
 }

@@ -170,6 +170,17 @@ const rows: Row[] = [
   ["br-r10-ship", "fix: ship backwards-incompatible output", { releaseWorthy: true, breakingChange: true }],
   ["br-r10-making", "Fix the API by making it backwards incompatible", { releaseWorthy: true, breakingChange: true }],
   ["br-r10-fixes-colon", "Fixes: backwards-incompatible rename of --out", { releaseWorthy: true, breakingChange: true }],
+  // Breaking: scope of negation. A clause end (;) or a new line starts a new declaration. (R14)
+  ["br-scope-semicolon-prevent", "fix: prevent crashes; drop support for Node 16", { releaseWorthy: true, breakingChange: true }],
+  ["br-scope-semicolon-preserve", "fix: preserve logging; drop support for Node 16", { releaseWorthy: true, breakingChange: true }],
+  ["br-scope-newline-declaration", "fix: prevent crashes\nDrop support for Node 16", { releaseWorthy: true, breakingChange: true }, { note: "A new line is a new declaration; it does not borrow the previous line's 'prevent'." }],
+  ["br-scope-semicolon-incompat", "fix: prevent crashes; ship backwards-incompatible output", { releaseWorthy: true, breakingChange: true }],
+  ["br-scope-wrapped-phrase", "Drop support\nfor Node 16", { releaseWorthy: true, breakingChange: true }, { note: "A phrase split by ONE line wrap still matches." }],
+  ["br-scope-guard-do-not", "fix: do not drop support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+  ["br-scope-guard-end-of-support", "fix: prevent end of support warnings", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+  ["br-scope-guard-wrapped-negator", "fix: do not\ndrop support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "The negator ends the first line, so its clause continues onto the next." }],
+  ["br-scope-guard-wrapped-prevent", "fix: prevent\nbackwards-incompatible output", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+  ["br-scope-guard-prevent-only", "fix: prevent crashes", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "Alone, this contains nothing breaking; pins how the two-line case above is read." }],
   // Breaking: protected negatives, including negated support removal (R10/R11)
   ["br-guard-fix-avoid", "fix: avoid backwards-incompatible output", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "'fix' with an explicit avoid stays a negative." }],
   ["br-guard-avoid-drop", "fix: avoid dropping support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }],

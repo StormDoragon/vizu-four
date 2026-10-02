@@ -113,6 +113,26 @@ describe("breaking flag", () => {
     "docs: show BREAKING CHANGE: footer", "Fix chart that was not compatible with dark mode", "Support removal of items from the cart",
   ])("does not flag %s", text => expect(breaking(text), text).toBe(false));
 
+  describe("scope of negation", () => {
+    it.each([
+      "fix: prevent crashes; drop support for Node 16", "fix: preserve logging; drop support for Node 16", "fix: prevent crashes\nDrop support for Node 16", "fix: prevent crashes\r\nDrop support for Node 16",
+      "fix: prevent crashes\rDrop support for Node 16", "Drop support for Node 16", "Drop support\nfor Node 16", "Drop support\r\nfor Node 16", "Drop\nsupport for Node 16",
+      "fix: prevent crashes; ship backwards-incompatible output", "fix: avoid crashes.\nDrop support for Node 16", "fix: keep logging\n\nDrop support for Node 16",
+    ])("a clause end or a new line starts a new declaration: flags %j", text => expect(breaking(text), text).toBe(true));
+
+    it.each([
+      "fix: do not drop support for Node 16", "fix: avoid dropping support for Node 16", "fix: prevent end of support warnings", "fix: do not\ndrop support for Node 16", "fix: do not\r\ndrop support for Node 16",
+      "fix: do not,\ndrop support for Node 16", "fix: prevent\nbackwards-incompatible output", "Avoid\ndropping support for Node 16", "fix: prevent crashes", "Do not drop\nsupport for Node 16",
+    ])("negation holds within a clause and across a wrap that ends on the negator: does not flag %j", text => expect(breaking(text), text).toBe(false));
+
+    it("does not let a blank or whitespace-only line carry negation to the next paragraph", () => {
+      for (const gap of ["\n\n", "\n \n", "\n\t\n", "\r\n\r\n"]) expect(breaking(`fix: do not${gap}drop support for Node 16`), JSON.stringify(gap)).toBe(true);
+    });
+    it("keeps the 30-character window: a far negator does not reach the phrase", () => {
+      expect(breaking("fix: avoid " + "x".repeat(40) + " drop support for Node 16")).toBe(true);
+      expect(breaking("fix: avoid dropping now; drop support for Node 16")).toBe(true);
+    });
+  });
   it("bracket markers count only at the start or end of a line", () => {
     expect(breaking("[breaking] x")).toBe(true); expect(breaking("x\n[breaking] y")).toBe(true); expect(breaking("x [breaking]\ny")).toBe(true);
     expect(breaking("use [breaking] tags for x")).toBe(false);
