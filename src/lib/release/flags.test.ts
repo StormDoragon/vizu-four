@@ -131,6 +131,13 @@ describe("breaking flag", () => {
       });
     it.each(["Drop support\n\nfor Node 16", "Drop support\n  \nfor Node 16", "Drop support\r\n\r\nfor Node 16", "Drop support\r\n  \r\nfor Node 16", "Drop support \n\n for Node 16", "Drop support\n\t\nfor Node 16"])(
       "a paragraph break inside the phrase never matches: does not flag %j", text => expect(breaking(text), text).toBe(false));
+    it("matches a wrapped incompatibility with a space after the break (R16)", () => {
+      expect(breaking("This is backwards\n incompatible")).toBe(true);
+      expect(breaking("This is backwards\r\n incompatible")).toBe(true);
+      expect(breaking("This is backwards\r incompatible")).toBe(true);
+      expect(breaking("This is backwards \n incompatible")).toBe(true);
+      expect(breaking("This is backwards\n\nincompatible")).toBe(false);
+    });
     it("keeps negation across a wrap with spaces around it", () => {
       expect(breaking("fix: do not \n drop support for Node 16")).toBe(false);
       expect(breaking("fix: prevent crashes \n Drop support for Node 16")).toBe(true);
@@ -171,6 +178,47 @@ describe("breaking flag", () => {
       expect(breaking(text)).toBe(false);
       expect(breaking(text + "Drop support for Node 16")).toBe(true);
       expect(performance.now() - started).toBeLessThan(BUDGET_MS * 2);
+    });
+  });
+  describe("trailing-negator scan has no quadratic backtracking (R17)", () => {
+    const BUDGET_MS = 2000;
+    // A bare negator followed by a long run of spaces, then a non-space: the shape that made two adjacent
+    // `[ \t]*` runs (with an optional comma between them) split the same spaces every possible way.
+    const support = (spaces: number) => "avoid" + " ".repeat(spaces) + "x\nDrop support for Node 16";
+    const incompat = (spaces: number) => "avoid" + " ".repeat(spaces) + "x\nbackwards-incompatible output";
+
+    it.each([8_000, 16_000, 32_000, 64_000, 128_000])("flags a new-line declaration after a negator and %i spaces, in bounded time", spaces => {
+      for (const make of [support, incompat]) {
+        const text = make(spaces);
+        const started = performance.now();
+        expect(breaking(text)).toBe(true);
+        expect(performance.now() - started, `${spaces} spaces`).toBeLessThan(BUDGET_MS);
+      }
+    });
+    it("handles the exact 64,000-space reproduction", () => {
+      const text = "avoid" + " ".repeat(64_000) + "x\nDrop support for Node 16";
+      expect(text.length).toBe(64_031);
+      const started = performance.now();
+      expect(breaking(text)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+    });
+    it.each(["fix: do not\nDrop support for Node 16", "fix: do not,\nDrop support for Node 16", "fix: do not   ,   \nDrop support for Node 16", "fix: do not:\nDrop support for Node 16", "fix: do not  \r\nDrop support for Node 16"])(
+      "a negator that ends the previous line, with optional punctuation and spaces, still negates: does not flag %j", text => expect(breaking(text), text).toBe(false));
+    it("does not let a negator followed by more words, or by a long gap and text, negate the next line", () => {
+      expect(breaking("fix: do not crash\nDrop support for Node 16")).toBe(true);
+      expect(breaking("fix: do not" + " ".repeat(5_000) + "x\nDrop support for Node 16")).toBe(true);
+    });
+    it("stays fast on hostile shapes: long runs of one character class next to each phrase's first word", () => {
+      const n = 64_000;
+      const shapes = [
+        " ".repeat(n) + "x", "\t".repeat(n) + "x", "\n".repeat(n), " \n".repeat(n / 2), "\r".repeat(n), "drop" + " ".repeat(n) + "x", "backwards" + " ".repeat(n) + "x",
+        "not" + " ".repeat(n) + "backwards", "leak" + " ".repeat(n) + "x", "leaked ".repeat(n / 7), "API key ".repeat(n / 8), "feat(" + "a".repeat(n), "[breaking ".repeat(n / 10),
+        "do not" + " ".repeat(n) + "\ndrop support for x", "not\n".repeat(n / 4) + "drop support", "end of ".repeat(n / 7),
+      ];
+      const started = performance.now();
+      for (const text of shapes) reviewFlags(text);
+      // 16 inputs of 64,000 characters. Measured at ~5 ms total; the budget only catches super-linear behaviour.
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS);
     });
   });
   it("bracket markers count only at the start or end of a line", () => {

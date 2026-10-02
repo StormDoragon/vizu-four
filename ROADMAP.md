@@ -58,8 +58,12 @@ Next three implementation steps:
    the previous line ends on the negator ("fix: do not" / "drop support ..."),
    so "fix: prevent crashes; drop support for Node 16" is breaking. A phrase may
    wrap once, with spaces around the break; a blank line never matches. Detection
-   is linear in message length (measured 2.0x per doubling from 0.2 MB to 7 MB;
-   a 1.8 MB single-line message takes ~35 ms). Known limits:
+   time was measured linear on these input families, not proven for every input:
+   repeated negated phrases (2.0x per doubling, 0.2 MB to 7 MB; a 1.8 MB
+   single-line message takes ~35 ms), a negator followed by a long run of spaces
+   (64,000 spaces: ~1 ms, after a quadratic backtracking bug was fixed), and a
+   battery of 30 hostile 64 KB shapes (each under 5 ms). Regexes use bounded
+   repeats and no unrestricted `.*`. Known limits:
    a leading "fix" is not treated as evidence that compatibility is preserved; confusable letters (e.g. Cyrillic for Latin) are
    not normalized; "log/logs" next to a secret noun is flagged conservatively.
 

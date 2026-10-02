@@ -61,7 +61,9 @@ const NEGATORS = "(?:avoid\\w*|prevent\\w*|without|never|not|no|restor\\w*|prese
 /** A negator followed by at most 30 characters of the SAME clause. `.`, `;` and a line break all end the clause. */
 const AVOIDS = new RegExp(`\\b${NEGATORS}\\b[^\\n.;]{0,30}$`, "i");
 /** A line that ends on a bare negator ("fix: do not"): its clause continues on the next line. */
-const TRAILING_NEGATOR = new RegExp(`\\b${NEGATORS}\\b[ \\t]*[,:]?[ \\t]*$`, "i");
+// Punctuation is mandatory INSIDE the optional group, so the two space runs can never split the same spaces
+// more than one way (an optional comma between two `[ \\t]*` runs backtracks quadratically).
+const TRAILING_NEGATOR = new RegExp(`\\b${NEGATORS}\\b[ \\t]*(?:[,:][ \\t]*)?$`, "i");
 
 /** Start offset of every line, computed once per scan: linear in the text, never per match. */
 function lineStarts(text: string): number[] {
