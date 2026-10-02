@@ -47,6 +47,15 @@ describe("eval metrics", () => {
     expect(m.securityFalseAlarms).toBe(1); expect(m.acceptedCases).toBe(1);
     expect(formatReport([accepted])).toContain("~ accepted a");
   });
+  it("lists accepted and unaccepted failures on separate lines, even for the same case", () => {
+    const both = evaluateCase(make("both", "Add sanitize button", { releaseWorthy: false, securitySensitive: false }, { acceptedMismatch: { kinds: ["security false alarm"], reason: "Conservative flagging is intentional here." } }));
+    const lines = formatReport([both]).split("\n");
+    expect(lines).toContain('  ✗ both: false inclusion — "Add sanitize button"');
+    expect(lines.some(l => l.startsWith("  ~ accepted both: security false alarm"))).toBe(true);
+    expect(lines.some(l => l.startsWith("  ✗ both:") && l.includes("security false alarm"))).toBe(false);
+    expect(lines.some(l => l.startsWith("  ~ accepted both:") && l.includes("false inclusion"))).toBe(false);
+    expect(computeMetrics([both])).toMatchObject({ unacceptedCases: 1, acceptedCases: 1 });
+  });
   it("does not let an accepted kind excuse a different failure", () => {
     const r = evaluateCase(make("a", "Add sanitize button", { releaseWorthy: false, securitySensitive: false }, { acceptedMismatch: { kinds: ["security false alarm"], reason: "Conservative flagging is intentional here." } }));
     expect(r.failures).toEqual(expect.arrayContaining(["security false alarm", "false inclusion"]));

@@ -36,6 +36,7 @@ describe("security flag: secret exposure in either order", () => {
     // verb first
     "Stop leaking API keys in logs", "Prevent exposure of session tokens", "Stop printing the private key", "Stop dumping access keys", "Remove hardcoded secret", "Stop logging passwords", "Disclosure of credentials",
     // noun first
+    "API-key leaked in logs", `API${cp(0x2011)}key leaked in logs`, "apikey exposed in logs", "API keys are in the logs", "Remove API keys from the logs", "Stop writing the API key to the log", "API key logged on startup", "Stop logging API keys", "Print the api key",
     "Secrets exposure in build logs", "Password disclosure through errors", "API key leak in crash reports", "Session token exposure in headers", "Bearer tokens logged on 401", "Access keys dumped by debug endpoint", "Credentials hard-coded in config", "Private key printed to console",
   ])("flags %s", text => expect(security(text)).toBe(true));
 
@@ -68,6 +69,15 @@ describe("line endings and wrapping", () => {
     expect(security("Stop leaking memory.\n\nUpdate API keys docs")).toBe(false);
     expect(security("Fix leak\n\nAPI keys")).toBe(false);
   });
+  it.each([
+    ["LF blank line", "\n\n"], ["CRLF blank line", "\r\n\r\n"], ["spaces-only line", "\n   \n"], ["tab-only line", "\n\t\n"], ["CRLF spaces-only line", "\r\n  \r\n"], ["CRLF tab-only line", "\r\n\t\t\r\n"], ["bare-CR spaces-only line", "\r \r"], ["non-breaking-space-only line", "\n" + cp(0x00a0, 0x00a0) + "\n"],
+  ])("a %s is a paragraph break that exposure phrases do not bridge", (_name, gap) => {
+    expect(security(`Fix memory leak.${gap}Update API keys docs`)).toBe(false);
+    expect(security(`Stop leaking${gap}API keys`)).toBe(false);
+  });
+  it.each([["LF", "\n"], ["CRLF", "\r\n"], ["bare CR", "\r"], ["trailing spaces", " \n"], ["trailing tab", "\t\n"]])("a single %s still joins a wrapped phrase", (_name, wrap) => {
+    expect(security(`Stop leaking${wrap}API keys`)).toBe(true);
+  });
   it("keeps footer line structure: a footer must start a line", () => {
     expect(breaking("docs: show BREAKING CHANGE: example")).toBe(false);
     expect(breaking("feat: x\nBREAKING CHANGE: y")).toBe(true);
@@ -88,6 +98,14 @@ describe("breaking flag", () => {
     "Drop support for Node 16", "Dropped support for Python 3.8", "Remove support for the legacy format", "Removing compatibility with v1", "End of support for v1 configs", "The client no longer supports Node 16",
     "A new format, not backwards compatible", "A new format (backwards-incompatible)", "backward incompatible storage change",
   ])("flags %s", text => expect(breaking(text), text).toBe(true));
+
+  it.each(["fix: ship backwards-incompatible output", "Fix the API by making it backwards incompatible", "Fixes: backwards-incompatible rename of --out", "Fixed config loading; now backwards incompatible"])(
+    "a leading fix is not evidence of preserved compatibility: flags %s", text => expect(breaking(text), text).toBe(true));
+
+  it.each([
+    "fix: avoid backwards-incompatible output", "fix: avoid dropping support for Node 16", "fix: don't remove support for Python 3.8", "Do not remove support for Node 16", "Avoid ending support for v1",
+    "Prevent dropping support for Python 3.8", "We won't drop support for Node 16", "Restore support for Node 16", "Keep support for the legacy format; do not remove support for v1",
+  ])("negation applies to support removal and incompatibility: does not flag %s", text => expect(breaking(text), text).toBe(false));
 
   it.each([
     "Avoid backwards-incompatible changes", "Prevent backward incompatible behavior", "Add a test ensuring no backwards-incompatible behavior", "Never ship a backwards incompatible change", "Fix: avoid breaking the layout",

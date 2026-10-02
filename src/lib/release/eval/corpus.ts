@@ -107,6 +107,22 @@ const rows: Row[] = [
   ["sec-nb-space", `Stop leaking${NB_SPACE}API keys`, { releaseWorthy: true, securitySensitive: true }, { note: "Non-breaking space normalizes to a space." }],
   ["sec-late-footer", `fix: tighten handling\n\n${LATE_FILLER}\nThis also closes an authentication bypass.`, { releaseWorthy: true, securitySensitive: true }, { note: "Marker after more than 1200 characters; detection runs before truncation." }],
   ["sec-bare-token-gap", "Stop logging tokens in request traces", { releaseWorthy: true, securitySensitive: true }, { acceptedMismatch: { kinds: ["security miss", "false exclusion", "category"], reason: "A bare 'token' is also design/parser vocabulary and is deliberately not treated as a secret." }, openPolicy: "Whether unqualified token/key logging should alarm is a maintainer decision." }],
+  // Security: R9 spellings and log vocabulary
+  ["sec-r9-hyphen", "API-key leaked in logs", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-r9-nb-hyphen", `API${NB_HYPHEN}key leaked in logs`, { releaseWorthy: true, securitySensitive: true }, { note: "U+2011 non-breaking hyphen normalizes to '-'." }],
+  ["sec-r9-nospace", "apikey exposed in logs", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-r9-logs", "Remove API keys from the logs", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-r9-log", "Stop writing the API key to the log", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-r9-logged", "API key logged on startup", { releaseWorthy: true, securitySensitive: true }],
+  ["sec-r9-logging", "Stop logging API keys", { releaseWorthy: true, securitySensitive: true }],
+  // Security: unresolved boundary. The two reproductions are kept verbatim, with their harder look-alike negatives beside them.
+  ["sec-open-token-logs", "fix: token leaked in logs", { releaseWorthy: true, securitySensitive: true }, { acceptedMismatch: { kinds: ["security miss"], reason: "PENDING maintainer decision, not a completed fix: a bare 'token' is also parser/design vocabulary, so it is not treated as a secret." }, openPolicy: "Should an unqualified token/key beside an exposure verb and a sink such as 'logs' alarm? Needs a maintainer decision." }],
+  ["sec-open-keys-logs", "fix: keys exposed in logs", { releaseWorthy: true, securitySensitive: true }, { acceptedMismatch: { kinds: ["security miss"], reason: "PENDING maintainer decision, not a completed fix: a bare 'keys' is also ordinary object/map vocabulary." }, openPolicy: "Same boundary as sec-open-token-logs." }],
+  ["sec-guard-parser-leak", "fix: parser tokens leaked into the AST", { releaseWorthy: true, category: "fixed", securitySensitive: false }, { note: "Same shape as sec-open-token-logs; must stay unflagged until the boundary is decided." }],
+  ["sec-guard-object-keys-exposed", "fix: object keys exposed in the debug view", { releaseWorthy: true, category: "fixed", securitySensitive: false }, { note: "Same shape as sec-open-keys-logs; must stay unflagged until the boundary is decided." }],
+  ["sec-guard-paragraph-lf", "Fix memory leak.\n\nUpdate API keys docs", { releaseWorthy: true, securitySensitive: false }, { note: "Blank line separates paragraphs." }],
+  ["sec-guard-paragraph-spaces", "Fix memory leak.\n  \nUpdate API keys docs", { releaseWorthy: true, securitySensitive: false }, { note: "A whitespace-only line is a blank line." }],
+  ["sec-guard-paragraph-tab-crlf", "Fix memory leak.\r\n\t\r\nUpdate API keys docs", { releaseWorthy: true, securitySensitive: false }, { note: "Tab-only line, CRLF." }],
   // Security: protected negatives (R1/R5)
   ["sec-guard-parser-tokens", "Add a debug view that prints parser tokens", { releaseWorthy: true, category: "added", securitySensitive: false }],
   ["sec-guard-design-tokens", "Add an export that dumps design tokens to JSON", { releaseWorthy: true, category: "added", securitySensitive: false }],
@@ -150,6 +166,14 @@ const rows: Row[] = [
   ["br-footer-crlf", "feat: new auth\r\n\r\nBREAKING CHANGE: tokens expire hourly", { releaseWorthy: true, breakingChange: true }, { note: "Must match the LF case." }],
   ["br-late-bare-cr-footer", `feat: new auth\r${LATE_FILLER}\rBREAKING CHANGE: tokens expire hourly`, { releaseWorthy: true, breakingChange: true }, { note: "Footer after more than 1200 characters, separated by a bare CR." }],
   ["br-incompatible-gap", "Now incompatible with Node 16", { releaseWorthy: true, breakingChange: true }, { acceptedMismatch: { kinds: ["breaking miss", "false exclusion", "category"], reason: "'Incompatible with X' is equally a bug report (\"fix plugin incompatible with Node 20\"); not flagged." }, openPolicy: "Whether 'incompatible with <runtime>' should mean breaking is a maintainer decision." }],
+  // Breaking: R10 positives. A leading "fix" does not make an introduced incompatibility safe.
+  ["br-r10-ship", "fix: ship backwards-incompatible output", { releaseWorthy: true, breakingChange: true }],
+  ["br-r10-making", "Fix the API by making it backwards incompatible", { releaseWorthy: true, breakingChange: true }],
+  ["br-r10-fixes-colon", "Fixes: backwards-incompatible rename of --out", { releaseWorthy: true, breakingChange: true }],
+  // Breaking: protected negatives, including negated support removal (R10/R11)
+  ["br-guard-fix-avoid", "fix: avoid backwards-incompatible output", { releaseWorthy: true, category: "fixed", breakingChange: false }, { note: "'fix' with an explicit avoid stays a negative." }],
+  ["br-guard-avoid-drop", "fix: avoid dropping support for Node 16", { releaseWorthy: true, category: "fixed", breakingChange: false }],
+  ["br-guard-dont-remove", "fix: don't remove support for Python 3.8", { releaseWorthy: true, category: "fixed", breakingChange: false }],
   // Breaking: protected negatives (R3/R4)
   ["br-guard-avoid", "Add a check that avoids backwards-incompatible changes in the parser", { releaseWorthy: true, breakingChange: false }],
   ["br-guard-prevent", "Add a guard to prevent backward incompatible behavior when upgrading", { releaseWorthy: true, breakingChange: false }],

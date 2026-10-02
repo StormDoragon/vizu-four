@@ -31,12 +31,16 @@ export interface Metrics {
   breakingRecall: Ratio;
   breakingFalseAlarms: number;
   breakingNegatives: number;
-  /** Cases whose scored disagreements are recorded as accepted (included in the counts above). */
+  /** Cases with at least one failure recorded as accepted (included in the counts above). */
   acceptedCases: number;
+  /** Cases with at least one failure that is NOT accepted. */
+  unacceptedCases: number;
   openPolicyCases: number;
 }
 
 const ratio = (hit: number, total: number): Ratio => total === 0 ? null : hit / total;
+/** Failures a case does not record as accepted. */
+export const unaccepted = (r: CaseResult) => r.failures.filter(f => !r.accepted.includes(f));
 
 export function evaluateCase(c: EvalCase): CaseResult {
   const sha = "1".repeat(40);
@@ -71,6 +75,7 @@ export function computeMetrics(results: CaseResult[]): Metrics {
     breakingPositives: breakingPositive.length, breakingMisses, breakingRecall: ratio(breakingPositive.length - breakingMisses, breakingPositive.length),
     breakingNegatives: breakingNegative.length, breakingFalseAlarms: count(breakingNegative, "breaking false alarm"),
     acceptedCases: results.filter(r => r.accepted.length).length,
+    unacceptedCases: results.filter(r => unaccepted(r).length).length,
     openPolicyCases: results.filter(r => r.case.openPolicy).length,
   };
 }
@@ -90,10 +95,12 @@ export function formatReport(results: CaseResult[]): string {
     lines.push(`[${source}] n=${m.total} inclusion=${percent(m.inclusionAccuracy)} (false incl ${m.falseInclusions}, false excl ${m.falseExclusions}) category=${percent(m.categoryAccuracy)}/${m.categoryCases}`
       + ` security: ${m.securityMisses} misses/${m.securityPositives} positives (recall ${percent(m.securityRecall)}), ${m.securityFalseAlarms} false alarms/${m.securityNegatives} negatives`
       + ` breaking: ${m.breakingMisses} misses/${m.breakingPositives} positives (recall ${percent(m.breakingRecall)}), ${m.breakingFalseAlarms} false alarms/${m.breakingNegatives} negatives`
-      + ` accepted=${m.acceptedCases} open-policy=${m.openPolicyCases}`);
+      + ` | cases with unaccepted failures=${m.unacceptedCases}, with accepted failures=${m.acceptedCases}, open-policy=${m.openPolicyCases}`);
   }
   const show = (r: CaseResult) => JSON.stringify((r.case.pullTitle ? r.case.pullTitle + " | " : "") + r.case.message.split("\n")[0]);
-  for (const r of results.filter(r => r.failures.length)) lines.push(`  ${r.accepted.length ? "~ accepted" : "✗"} ${r.case.id}: ${r.failures.join(", ")} — ${show(r)}${r.accepted.length ? ` [${r.case.acceptedMismatch?.reason}]` : ""}`);
+  // Unaccepted and accepted failures are listed separately, even for the same case, so neither hides the other.
+  for (const r of results.filter(r => unaccepted(r).length)) lines.push(`  ✗ ${r.case.id}: ${unaccepted(r).join(", ")} — ${show(r)}`);
+  for (const r of results.filter(r => r.accepted.length)) lines.push(`  ~ accepted ${r.case.id}: ${r.accepted.join(", ")} — ${show(r)} [${r.case.acceptedMismatch?.reason}]`);
   for (const r of results.filter(r => r.case.openPolicy)) lines.push(`  ? open policy ${r.case.id}: ${r.case.openPolicy}`);
   return lines.join("\n");
 }

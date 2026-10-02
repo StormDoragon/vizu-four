@@ -21,36 +21,49 @@ Next three implementation steps:
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
    *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
-   136-case corpus. **Every case is synthetic**: hand-labeled development data
+   156-case corpus. **Every case is synthetic**: hand-labeled development data
    by the implementer, not evidence of real-world accuracy. `maintainer-reviewed`
-   cases are tracked separately and require provenance (repository, immutable
-   base/head SHAs, reviewer, date, and a link to the review record).
+   cases are tracked separately; they require provenance (repository, immutable
+   base/head SHAs, reviewer, date, review-record link) and must match every
+   stated label, with no accepted mismatches. A well-formed provenance record is
+   a pointer, not proof: the gate cannot verify that a human actually reviewed
+   anything.
 
-   Current measurements (synthetic only; accepted mismatches are included):
-   - Security: 35 of 36 positives flagged; 1 miss, accepted (`sec-bare-token-gap`:
-     a bare "token" is not treated as a secret). 3 false alarms among 10
-     negatives: 2 pre-existing ("security policy" docs, "credential manager") and
-     1 accepted (`sec-guard-sanitize-ui`: any "sanitiz*" wording is flagged).
-   - Breaking: 22 of 23 positives flagged; 1 miss, accepted
+   Current measurements (synthetic only; accepted mismatches are counted):
+   - Security: 42 of 45 positives flagged; 3 misses, all accepted and **pending
+     maintainer decisions, not completed fixes**: `sec-bare-token-gap` ("Stop
+     logging tokens in request traces"), and the original reproductions
+     `sec-open-token-logs` ("fix: token leaked in logs") and `sec-open-keys-logs`
+     ("fix: keys exposed in logs"). Their look-alike negatives ("fix: parser
+     tokens leaked into the AST", "fix: object keys exposed in the debug view")
+     are kept as guards and must stay unflagged, so the boundary between a bare
+     token/key and a secret is documented, not papered over. 3 false alarms among
+     15 negatives: 2 pre-existing ("security policy" docs, "credential manager")
+     and 1 accepted (`sec-guard-sanitize-ui`).
+   - Breaking: 25 of 26 positives flagged; 1 miss, accepted and pending
      (`br-incompatible-gap`: "incompatible with <runtime>" is also a bug report).
-     0 false alarms among 11 negatives.
+     0 false alarms among 14 negatives.
    - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 14 false exclusions
      (plain-English verbs such as `Fixed`, `Support`, `Implement`; prefixes such
-     as emoji, `[feature]`, `PROJ-123:`; two accepted gaps above).
+     as emoji, `[feature]`, `PROJ-123:`; the accepted gaps above that are also
+     excluded).
 
    What the tests enforce: each required security/breaking positive is asserted
-   by id (35 and 22), each protected negative must keep its flag off per case
-   (7 security, 11 breaking), accepted mismatches are pinned to three named
-   cases, and the aggregate ratchet may not worsen. Ratios with no positives
-   print N/A, never 100%. Known limits: the "avoids/prevents" context for
-   "backwards-incompatible" looks back 30 characters; confusable letters
-   (e.g. Cyrillic for Latin) are not normalized.
+   by id (42 and 25); each protected negative must keep its flag off per case
+   (12 security, 14 breaking); accepted mismatches are pinned to five named
+   cases; the aggregate ratchet may not worsen; the report lists accepted and
+   unaccepted failures separately; ratios with no positives print N/A, never
+   100%. Known limits: the negation context ("avoid", "prevent", "don't", ...)
+   looks back 30 characters; a leading "fix" is not treated as evidence that
+   compatibility is preserved; confusable letters (e.g. Cyrillic for Latin) are
+   not normalized; "log/logs" next to a secret noun is flagged conservatively.
 
    Open maintainer decisions (not resolved by the implementer): whether a revert
    belongs in release notes; whether typo-only fixes belong in technical notes;
    a dependency-bump policy; whether unmarked removals count as breaking;
-   whether sanitize/UI and bare token/key wording are accepted review triggers;
-   whether "incompatible with <runtime>" means breaking.
+   whether sanitize/UI wording and bare token/key wording (including the two
+   reproductions above) are accepted review triggers; whether "incompatible
+   with <runtime>" means breaking.
    Still needed: maintainer-labeled real ranges and an unsupported-claim measure
    for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while

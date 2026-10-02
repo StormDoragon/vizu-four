@@ -15,7 +15,7 @@ const SECURITY_INPUTS = [
   "Stop a timing attack on the zebra login", "Fix buffer overflow in the zebra decoder", "Prevent zip slip in zebra archives", "Fix prototype pollution in zebra merge",
   "Replace unsafe deserialization of zebra cookies", "Fix insecure deserialization in the zebra importer", "Secrets exposure in zebra build logs", "Password disclosure through zebra error pages",
   "API key leak in zebra crash reports", "Session token exposure in the zebra referrer", "Bearer tokens logged on zebra 401s", "Access keys dumped by the zebra debug endpoint",
-  "Stop printing the zebra private key", "Remove hardcoded secret from the zebra deploy script", "Credentials hard-coded in the zebra sample config", "Stop leaking\nzebra API keys in logs",
+  "Stop printing the zebra private key", "zebra API-key leaked in logs", `zebra API${String.fromCodePoint(0x2011)}key leaked in logs`, "zebra apikey exposed in logs", "Remove zebra API keys from the logs", "Stop logging zebra API keys", "Remove hardcoded secret from the zebra deploy script", "Credentials hard-coded in the zebra sample config", "Stop leaking\nzebra API keys in logs",
 ];
 const SAFE = "feat: add CSV export";
 const BREAKING = "Drop support for Node 16";
