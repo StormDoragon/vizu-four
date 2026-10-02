@@ -1,4 +1,87 @@
-# Vizu Four — Actions Visual Debugger (local-first MVP)
+# Vizu Four — Debug & Release Intelligence
+
+Vizu has two modules: **Debug** for GitHub Actions workflows and **Release**
+for evidence-backed release drafts from public GitHub repositories.
+
+## Release Intelligence MVP
+
+Open **Release** in the navigation (`/release`). Enter `owner/repository` or
+an HTTPS GitHub repository URL, a base tag/branch/SHA, and a head ref. Click
+**Analyze release**, inspect included and excluded changes and their sources,
+then switch between **Technical** and **Customer** notes and copy Markdown.
+Nothing is automatically published.
+
+`POST /api/releases/analyze` accepts only:
+
+```json
+{"repository":"owner/repository","base":"v1.0.0","head":"main","useAi":false}
+```
+
+The server resolves refs to immutable SHAs, checks that the repository is
+public, and uses GitHub's compare and commit-associated PR APIs. It sends no
+GitHub credentials, follows no redirects, downloads no repository, and runs
+no repository code. Links are constructed from collected SHAs, PR numbers,
+and file paths, never taken from model output. Removed files link to base;
+other files link to head. Files are comparison-level evidence, not evidence
+attributed to an individual commit.
+
+One canonical analysis contains each change's category, impact, importance,
+confidence, securitySensitive, breakingChange, releaseWorthy, reason, and
+evidence. Deterministic conventional-commit/merged-PR-title rules distinguish
+features, fixes, performance, docs, internal maintenance, and unknown changes.
+Simple Add/Fix/Improve-style titles also qualify, with lower confidence;
+CI, test, build, and tooling scopes remain internal unless flagged for review.
+Unknown items are retained for review but excluded from notes. Explicit
+breaking and security signals override maintenance filtering. Both audiences
+are derived from that analysis. Security-sensitive descriptions are withheld
+from exports and AI prompts; technical notes retain a review placeholder.
+
+AI wording is **opt-in per request**. If `ANTHROPIC_API_KEY` is configured,
+eligible public titles are sent to Anthropic. Release shares Debug's
+`VIZU_AI_MAX_CALLS_PER_WINDOW`, `VIZU_AI_MAX_CONCURRENT`,
+`VIZU_AI_TIMEOUT_MS`, and `ANTHROPIC_MODEL` configuration. Release caps the
+AI deadline at 20 seconds, disables provider retries, and caps output at
+4096 tokens. Untrusted output must match the expected shape, exact change
+membership, bounded strings, and evidence IDs belonging to the same change.
+It cannot set flags, categories, release-worthiness, or URLs. No key, exhausted
+budget, timeout, incomplete output, or failed validation yields deterministic
+notes with a visible explanation instead.
+
+### Release limits and caveats
+
+- At most **40 commits**, with head descending from base. Larger, divergent,
+  and incomplete comparisons fail explicitly; use a smaller range. Revision
+  expressions and cross-repository comparisons are unsupported.
+- At most **14 GitHub calls** per analysis: repository check, two ref lookups,
+  comparison, and PR enrichment for the **first 10 commits**. Each association
+  reads at most 10 PRs. Only a merged, same-repository PR whose merge SHA is
+  the collected commit can supply its title. Enrichment failure is visible;
+  direct commits still work. Multiple commits from a PR are not grouped.
+- GitHub collection has a **15-second total deadline**, **2 MiB per response**,
+  no retries, and at most **300 comparison files**. Potential file/PR
+  truncation is disclosed. Commit messages are capped at 1200 characters and
+  PR titles at 300, with warnings about omitted context. Security/breaking
+  signals are detected before truncation. Large diff responses can hit the byte limit even
+  with fewer than 40 commits; file patches are discarded, not analyzed.
+- Release has independent limits: **5 requests/visitor**, **10/address**, and
+  **20/instance per 10 minutes**, with **2 concurrent analyses**, **8 KiB
+  request bodies**, and a **5-second body-read deadline**. Limits are in-memory
+  per process; multi-instance deployments need a shared limiter. The address
+  limit depends on a trusted proxy; the global cap does not. GitHub's anonymous
+  allowance can be exhausted sooner and produces an actionable error.
+- Impact is inferred from metadata. Evidence verifies source membership,
+  **not the truth of a claim**. AI may still misinterpret a real source.
+  Conventional messages may omit important changes; unknown or misleading
+  messages require manual review. Security detection and token redaction are
+  heuristic, not a secret scanner. Never submit credentials.
+- Deterministic customer notes remove conventional prefixes; AI can improve
+  language but does not inspect diffs or establish business outcomes.
+- No persistence, private repositories, GitHub App, auth, billing, webhooks,
+  hosted changelog, Slack, or automatic publishing. Results live in the
+  current browser view; copy them before navigating away.
+
+The existing debugger's execution, ownership, consent, and secret-masking
+boundaries remain in place. Public deployments still require `VIZU_DEMO_MODE=1`.
 
 A visual, step-through debugger for GitHub Actions workflows: set breakpoints on
 steps, inspect every context (`github`, `env`, `vars`, `secrets` (masked),
@@ -65,6 +148,20 @@ are executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's
 own default. Windows/macOS runner emulation isn't implemented (see Scope).
 
 ## What you can do
+
+### Verification
+
+CI runs the entire typecheck, lint, and Vitest suite on Ubuntu with Node 22.
+It also builds on Node 20, matching the runtime pinned in `render.yaml`.
+Both jobs start the production server and run `node scripts/production-smoke.mjs`
+after `npm run build`. This checks Release collection, canonical evidence,
+both note outputs, no-key fallback, and Debug session ownership and demo
+simulation through real HTTP routes. A test-only Node preload supplies fixed
+GitHub API responses, so CI requires neither credentials nor live API quota.
+Live GitHub and paid Anthropic behavior still need separate integration checks.
+Release tests cover LF/CRLF metadata and case-sensitive, Unicode, and escaped
+GitHub paths without using the host filesystem's path conventions. The full
+test suite needs Node 22+ and Bash; Node 20 is checked as a production runtime.
 
 See the full feature list in the repository (graph, breakpoints, context
 inspector, matrix explorer, expression playground, What-If, mocks, workspace

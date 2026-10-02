@@ -4,6 +4,7 @@ import type { SessionView } from "@/lib/engine/serialize";
 import type { ControlAction } from "@/lib/apiClient";
 import { controlAvailability, shortcutHint } from "./keyboardShortcuts";
 import { ThemeToggle } from "./ThemeToggle";
+import { ModuleNav } from "./ModuleNav";
 
 export function TopBar({
   session,
@@ -38,6 +39,7 @@ export function TopBar({
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-bg-border bg-bg-panel px-4 py-2">
+      <ModuleNav active="debug" />
       <button onClick={onNewSession} className="text-sm text-ink-400 hover:text-ink">
         ← New session
       </button>

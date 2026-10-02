@@ -1,6 +1,36 @@
-# Prioritized Checklist — Actions Visual Debugger (`vizu-four`)
+# Prioritized Checklist — Vizu Debug & Release (`vizu-four`)
 
-Every item below is tracked as a GitHub issue (linked inline) so status stays visible outside this file.
+## Release Intelligence — first integrated MVP
+
+Implemented locally alongside Debug; this entry does not claim a deployment:
+
+- [x] Public repository + base/head flow and module navigation.
+- [x] Bounded server-side public GitHub collection with immutable evidence links.
+- [x] Deterministic classification, exclusions, and one typed canonical analysis.
+- [x] Opt-in Anthropic wording with the shared AI budget and deterministic fallback.
+- [x] Technical/customer Markdown, evidence inspection, and security review handling.
+- [x] Validation, collection, evidence, AI, API, and UI regression tests.
+
+Current limits: 40 commits, 10 PR lookups, 14 total GitHub requests, 300 files,
+metadata-only impact, no grouping, no persistent result history. See README
+for exact time, body, concurrency, and request limits. Release never executes
+repository code and does not change the simulation-only public-debugger policy.
+
+Next three implementation steps:
+
+1. Evaluate a maintainer-reviewed set of real release ranges; measure false
+   inclusion/exclusion and unsupported claims, then refine classification.
+2. Add local draft editing and explicit include/exclude overrides while
+   preserving canonical evidence and security review markers.
+3. Add bounded, cached pagination and PR grouping with explicit completeness
+   tracking; introduce a shared limiter before supporting multiple instances.
+
+Private access, GitHub App installation, authentication, billing, webhooks,
+hosted changelogs, Slack, and publishing remain outside this MVP.
+
+---
+
+The historical Debug items below are tracked as GitHub issues (linked inline).
 
 **Status (September 2026):** MVP + demo isolation shipped. The first codebase audit/hardening pass is complete (28 findings across earlier commits). A follow-up independent security review of `7b1f3cf` found **8 remaining issues**; all eight are **fixed and merged** (`53a34a6` / [PR #31](https://github.com/StormDoragon/vizu-four/pull/31), key-masking regression `63eb857`): secret-as-object-key masking, YAML alias bomb rejection, cross-stream log masking, StreamMasker hold-back cap, expression response budget, accumulated session-state bounds, pending-step playground `env:` parity, Claude `AbortSignal` deadline. Public demo remains simulation-only (`VIZU_DEMO_MODE=1`).
 

@@ -26,9 +26,10 @@ export const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
  * Checking only the header would be no bound at all, since nothing obliges a
  * client to send an honest one.
  */
-async function readBoundedText(req: Request): Promise<string | null> {
+async function readBoundedText(req: Request, maxBytes: number, signal?: AbortSignal): Promise<string | null> {
+  if (signal?.aborted) return null;
   const declared = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_REQUEST_BODY_BYTES) return null;
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
 
   const body = req.body;
   if (!body) {
@@ -37,13 +38,15 @@ async function readBoundedText(req: Request): Promise<string | null> {
     // only guard available, so re-check the materialized length too.
     try {
       const text = await req.text();
-      return text.length > MAX_REQUEST_BODY_BYTES ? null : text;
+      return new TextEncoder().encode(text).byteLength > maxBytes ? null : text;
     } catch {
       return null;
     }
   }
 
   const reader = body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal?.addEventListener("abort", cancel, { once: true });
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
@@ -52,7 +55,7 @@ async function readBoundedText(req: Request): Promise<string | null> {
       if (done) break;
       if (!value) continue;
       total += value.byteLength;
-      if (total > MAX_REQUEST_BODY_BYTES) {
+      if (total > maxBytes) {
         await reader.cancel().catch(() => {});
         return null;
       }
@@ -60,7 +63,12 @@ async function readBoundedText(req: Request): Promise<string | null> {
     }
   } catch {
     return null;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    reader.releaseLock();
   }
+
+  if (signal?.aborted) return null;
 
   const joined = new Uint8Array(total);
   let at = 0;
@@ -79,8 +87,8 @@ async function readBoundedText(req: Request): Promise<string | null> {
  * body cannot be used", and both are the client's fault. Keeping one failure
  * mode is what lets the bound live here instead of in nine routes.
  */
-export async function readJsonBody<T>(req: Request): Promise<T | null> {
-  const text = await readBoundedText(req);
+export async function readJsonBody<T>(req: Request, maxBytes = MAX_REQUEST_BODY_BYTES, signal?: AbortSignal): Promise<T | null> {
+  const text = await readBoundedText(req, maxBytes, signal);
   if (text === null) return null;
   try {
     return JSON.parse(text) as T;
