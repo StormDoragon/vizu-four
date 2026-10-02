@@ -21,7 +21,7 @@ Next three implementation steps:
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
    *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
-   173-case corpus. **Every case is synthetic**: hand-labeled development data
+   177-case corpus. **Every case is synthetic**: hand-labeled development data
    by the implementer, not evidence of real-world accuracy. `maintainer-reviewed`
    cases are tracked separately; they require provenance (repository, immutable
    base/head SHAs, reviewer, date, review-record link) and must match every
@@ -30,27 +30,36 @@ Next three implementation steps:
    anything.
 
    Current measurements (synthetic only; accepted mismatches are counted):
-   - Security: 42 of 45 positives flagged; 3 misses, all accepted and **pending
-     maintainer decisions, not completed fixes**: `sec-bare-token-gap` ("Stop
-     logging tokens in request traces"), and the original reproductions
-     `sec-open-token-logs` ("fix: token leaked in logs") and `sec-open-keys-logs`
-     ("fix: keys exposed in logs"). Their look-alike negatives ("fix: parser
-     tokens leaked into the AST", "fix: object keys exposed in the debug view")
-     are kept as guards and must stay unflagged, so the boundary between a bare
-     token/key and a secret is documented, not papered over. 3 false alarms among
-     15 negatives: 2 pre-existing ("security policy" docs, "credential manager")
-     and 1 accepted (`sec-guard-sanitize-ui`).
-   - Breaking: 35 of 36 positives flagged; 1 miss, accepted and pending
-     (`br-incompatible-gap`: "incompatible with <runtime>" is also a bug report).
-     0 false alarms among 21 negatives.
-   - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 14 false exclusions
+   - Security: 45 of 45 positives flagged. 4 false alarms among 19 negatives:
+     2 pre-existing ("security policy" docs, "credential manager"), 1 accepted
+     and still a **pending maintainer decision** (`sec-guard-sanitize-ui`: any
+     "sanitiz*" wording is flagged), and 1 accepted trade-off decided by the
+     repository owner (`sec-tradeoff-object-keys-logs`, below).
+   - Breaking: 35 of 36 positives flagged; 1 miss, accepted and **pending a
+     maintainer decision** (`br-incompatible-gap`: "incompatible with <runtime>"
+     is also a bug report). 0 false alarms among 21 negatives.
+   - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 13 false exclusions
      (plain-English verbs such as `Fixed`, `Support`, `Implement`; prefixes such
-     as emoji, `[feature]`, `PROJ-123:`; the accepted gaps above that are also
-     excluded).
+     as emoji, `[feature]`, `PROJ-123:`; the accepted runtime gap above).
+
+   Decided by the repository owner: a bare `token`/`key` is a conservative
+   security review trigger when ALL THREE appear in one clause, within bounded
+   distances: the noun, exposure wording (leak, expose, disclose, dump, print,
+   logging/logged), and a logging destination (logs, log output, logging output,
+   traces). "Stop logging tokens in request traces", "fix: token leaked in logs"
+   and "fix: keys exposed in logs" are flagged; "fix: parser tokens leaked into
+   the AST", "fix: object keys exposed in the debug view", "feat: add token
+   counts to logs", "fix: format object keys in logs" and "Add a helper to log
+   object keys to the logs" are not. **Consequences to keep in mind:** a flagged
+   change is withheld from customer notes entirely (technical notes show only
+   "maintainer review required", and AI prompts exclude it), and an ambiguous
+   phrase such as "fix: object keys leaked in logs" is flagged on purpose and
+   goes to manual review. A semicolon or period between the three parts means
+   they are different clauses, so "token leaked; check logs" is NOT flagged.
 
    What the tests enforce: each required security/breaking positive is asserted
-   by id (42 and 35); each protected negative must keep its flag off per case
-   (12 security, 21 breaking); accepted mismatches are pinned to five named
+   by id (45 and 35); each protected negative must keep its flag off per case
+   (15 security, 21 breaking); accepted mismatches are pinned to three named
    cases; the aggregate ratchet may not worsen; the report lists accepted and
    unaccepted failures separately; ratios with no positives print N/A, never
    100%. Negation ("avoid", "prevent", "don't", ...) looks back 30 characters
@@ -61,18 +70,19 @@ Next three implementation steps:
    time was measured linear on these input families, not proven for every input:
    repeated negated phrases (2.0x per doubling, 0.2 MB to 7 MB; a 1.8 MB
    single-line message takes ~35 ms), a negator followed by a long run of spaces
-   (64,000 spaces: ~1 ms, after a quadratic backtracking bug was fixed), and a
-   battery of 30 hostile 64 KB shapes (each under 5 ms). Regexes use bounded
-   repeats and no unrestricted `.*`. Known limits:
-   a leading "fix" is not treated as evidence that compatibility is preserved; confusable letters (e.g. Cyrillic for Latin) are
-   not normalized; "log/logs" next to a secret noun is flagged conservatively.
+   (64,000 spaces: ~1 ms, after a quadratic backtracking bug was fixed), the bare
+   token/key rule on six hostile families (2.0x per doubling up to ~0.9 MB, worst
+   ~140 ms for 0.8 MB), and a battery of 30 hostile 64 KB shapes (each under
+   5 ms). Regexes use bounded repeats and no unrestricted `.*`. Known limits: a
+   leading "fix" is not treated as evidence that compatibility is preserved;
+   confusable letters (e.g. Cyrillic for Latin) are not normalized; "log/logs"
+   next to a qualified secret noun is flagged conservatively.
 
    Open maintainer decisions (not resolved by the implementer): whether a revert
    belongs in release notes; whether typo-only fixes belong in technical notes;
    a dependency-bump policy; whether unmarked removals count as breaking;
-   whether sanitize/UI wording and bare token/key wording (including the two
-   reproductions above) are accepted review triggers; whether "incompatible
-   with <runtime>" means breaking.
+   whether conservative sanitize/UI wording is an accepted review trigger;
+   whether "incompatible with <runtime>" means breaking.
    Still needed: maintainer-labeled real ranges and an unsupported-claim measure
    for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while

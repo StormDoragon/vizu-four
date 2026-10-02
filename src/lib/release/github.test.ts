@@ -34,7 +34,7 @@ describe("public GitHub collection", () => {
     expect(analyzeRelease(crlf).changes[0].breakingChange).toBe(true);
   });
   it("detects markers across LF, CRLF and wrapped lines identically at collection time", async () => {
-    for (const [message, flag] of [["fix: x\n\nStop leaking\nAPI keys in logs", "securitySensitive"], ["feat: x\n\nThis is not\nbackwards compatible", "breakingChange"]] as const) {
+    for (const [message, flag] of [["fix: x\n\nStop leaking\nAPI keys in logs", "securitySensitive"], ["feat: x\n\nThis is not\nbackwards compatible", "breakingChange"], ["fix: x\n\nToken leaked\nin logs", "securitySensitive"]] as const) {
       const compare = comparison();
       compare.commits[0].commit.message = message;
       const lf = await collectRelease(input, setup(compare));

@@ -65,3 +65,46 @@ describe("breaking changes stay visible and are marked for the AI", () => {
     expect(prompt).toContain('breakingChange\\":true');
   });
 });
+
+/** The three original reproductions, verbatim. No distinctive marker words: the exact text must be absent downstream. */
+const REPRODUCTIONS = ["Stop logging tokens in request traces", "fix: token leaked in logs", "fix: keys exposed in logs"];
+describe("bare token/key reproductions are withheld downstream", () => {
+  const analysis = analyzeRelease(releaseFixture([...REPRODUCTIONS, SAFE]));
+  const safe = analysis.changes.at(-1)!;
+
+  it("flags each reproduction as security-sensitive and high importance", () => {
+    REPRODUCTIONS.forEach((text, i) => expect(analysis.changes[i], text).toMatchObject({ securitySensitive: true, category: "security", importance: "high", releaseWorthy: true }));
+  });
+  it("keeps the exact text out of customer and technical notes (the exports)", () => {
+    const notes = renderNotes(analysis);
+    for (const [audience, markdown] of Object.entries(notes)) {
+      for (const text of REPRODUCTIONS) expect(markdown, `${audience} must not contain ${text}`).not.toContain(text);
+      for (const fragment of ["leaked in logs", "exposed in logs", "request traces"]) expect(markdown, `${audience} must not contain ${fragment}`).not.toContain(fragment);
+      expect(markdown).toContain("CSV export");
+    }
+    expect(notes.customer).toContain("details are withheld");
+    expect(notes.technical.match(/Security-related change — maintainer review required\./g)).toHaveLength(REPRODUCTIONS.length);
+    expect(notes.customer).not.toContain("Security-related change");
+  });
+  it("excludes them from the AI prompt, with no paid call", async () => {
+    create.mockResolvedValue({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ changes: [{ id: safe.id, technical: "Added CSV export.", customer: "Export your data as CSV.", evidenceIds: [safe.evidence[0].id] }] }) }] });
+    const result = await generateReleaseWording(analysis, true);
+    expect(result.source).toBe("claude");
+    const prompt = JSON.stringify(create.mock.calls[0][0]);
+    for (const text of REPRODUCTIONS) expect(prompt).not.toContain(text);
+    expect(prompt).not.toContain("logs"); expect(prompt).not.toContain("traces"); expect(prompt).toContain("CSV export");
+    expect(result.changes.slice(0, REPRODUCTIONS.length)).toEqual(analysis.changes.slice(0, REPRODUCTIONS.length));
+  });
+  it("makes no AI call when only the reproductions are release-worthy", async () => {
+    const only = analyzeRelease(releaseFixture(REPRODUCTIONS));
+    expect(await generateReleaseWording(only, true)).toBe(only);
+    expect(create).not.toHaveBeenCalled(); expect(aiBudgetUsage().calls).toBe(0);
+  });
+  it("withholds wrapped and CRLF forms of the same text the same way", async () => {
+    const forms = ["fix: token leaked\nin logs", "fix: token leaked\r\nin logs", "Stop logging\r\ntokens in request traces"];
+    const wrapped = analyzeRelease(releaseFixture([...forms, SAFE]));
+    forms.forEach((_f, i) => expect(wrapped.changes[i].securitySensitive).toBe(true));
+    const notes = renderNotes(wrapped);
+    for (const markdown of [notes.technical, notes.customer]) { expect(markdown).not.toContain("in logs"); expect(markdown).not.toContain("request traces"); }
+  });
+});

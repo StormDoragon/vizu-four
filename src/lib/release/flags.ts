@@ -42,6 +42,24 @@ const EXPOSURE = "(?:leak\\w*|expos\\w*|disclos\\w*|dump\\w*|print\\w*|logs?|log
 const BRIDGE = "[^\\n]{0,40}";
 const SECRET_EXPOSURE = new RegExp(`\\b${EXPOSURE}\\b${BRIDGE}\\b${SECRET}\\b|\\b${SECRET}\\b${BRIDGE}\\b${EXPOSURE}\\b`, "i");
 
+/**
+ * A BARE token/key is not a secret on its own ("parser tokens", "object keys"). It becomes a conservative
+ * review trigger only when all three appear together within bounded distances: the noun, exposure wording,
+ * and a logging destination. Decided by the repository owner: missed disclosures cost more than a manual
+ * review. Consequence to keep in mind: a flagged change is withheld from customer notes entirely.
+ *
+ * Bare "log"/"logs" are deliberately NOT exposure words here, so a destination cannot also be the exposure
+ * ("fix: format object keys in logs" has no exposure wording and stays unflagged).
+ */
+const BARE_NOUN = "(?:tokens?|keys?)";
+const LEAK = "(?:leak\\w*|expos\\w*|disclos\\w*|dump\\w*|print\\w*|logg\\w*)";
+const DESTINATION = "(?:logs|log output|logging output|traces?)";
+/** Gaps are bounded and stay inside ONE clause: a `;` or `.` ends it, like negation, so "tokens leaked into the AST; see traces docs" is two clauses. */
+const CLAUSE_GAP = "[^\\n.;]{0,40}";
+/** Exposure-first ("Stop logging tokens in request traces") and noun-first ("token leaked in logs"). */
+const BARE_SECRET_IN_LOGS = new RegExp(
+  `\\b${LEAK}\\b${CLAUSE_GAP}\\b${BARE_NOUN}\\b${CLAUSE_GAP}\\b${DESTINATION}\\b|\\b${BARE_NOUN}\\b${CLAUSE_GAP}\\b${LEAK}\\b${CLAUSE_GAP}\\b${DESTINATION}\\b`, "i");
+
 const BREAKING_FOOTER = /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANGES?:\s*\S|BREAKING:\s*\S)/i;
 /** A bracketed marker counts only where an author declares it: the start of a line (after an optional type prefix) or the end of a line. A mention in the middle of prose does not. */
 const BRACKET = "[(\\[]\\s*breaking(?:[-_ ]changes?)?\\s*[)\\]]";
@@ -107,6 +125,6 @@ export function reviewFlags(text: string) {
   const prose = joinWrapped(lines);
   return {
     breakingChange: BREAKING_FOOTER.test(lines) || BREAKING_BRACKET.test(lines) || hasUnnegatedMatch(BREAKING_SUPPORT, lines) || introducesIncompatibility(lines),
-    securitySensitive: VULNERABILITY_TERMS.test(prose) || SECRET_EXPOSURE.test(prose),
+    securitySensitive: VULNERABILITY_TERMS.test(prose) || SECRET_EXPOSURE.test(prose) || BARE_SECRET_IN_LOGS.test(prose),
   };
 }

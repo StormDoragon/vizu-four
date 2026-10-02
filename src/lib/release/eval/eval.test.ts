@@ -20,6 +20,7 @@ const SECURITY_POSITIVES = [
   "sec-secrets-noun", "sec-password-noun", "sec-apikey-leak", "sec-session-token-noun", "sec-bearer-logged", "sec-keys-dumped", "sec-key-printed",
   "sec-hardcoded-secret", "sec-hardcoded-hyphen", "sec-wrapped-lf", "sec-wrapped-crlf", "sec-nb-space", "sec-late-footer",
   "sec-r9-hyphen", "sec-r9-nb-hyphen", "sec-r9-nospace", "sec-r9-logs", "sec-r9-log", "sec-r9-logged", "sec-r9-logging",
+  "sec-bare-token-gap", "sec-open-token-logs", "sec-open-keys-logs",
 ];
 const BREAKING_POSITIVES = [
   "cc-breaking-bang", "cc-breaking-scope-bang", "cc-breaking-footer", "br-plain-remove", "br-plain-rename", "br-bracket", "br-colon-prefix", "br-incompatible", "br-lowercase-footer",
@@ -31,14 +32,17 @@ const BREAKING_POSITIVES = [
 ];
 /** Protected negatives: each must keep its flag OFF. One broadened pattern cannot hide behind a gain elsewhere. */
 const SECURITY_GUARDS = ["sec-guard-expose-ui", "sec-guard-leak-memory", "sec-guard-parser-tokens", "sec-guard-design-tokens", "sec-guard-object-keys", "sec-guard-hardcoded-color", "sec-guard-memory-leak-keys",
-  "sec-guard-parser-leak", "sec-guard-object-keys-exposed", "sec-guard-paragraph-lf", "sec-guard-paragraph-spaces", "sec-guard-paragraph-tab-crlf"];
+  "sec-guard-parser-leak", "sec-guard-object-keys-exposed", "sec-guard-token-counts-logs", "sec-guard-format-keys-logs", "sec-guard-log-verb-keys", "sec-guard-paragraph-lf", "sec-guard-paragraph-spaces", "sec-guard-paragraph-tab-crlf"];
 const BREAKING_GUARDS = ["br-not-breaking", "br-guard-bare-breaking", "br-guard-links", "br-guard-not-compatible", "br-guard-avoid", "br-guard-prevent", "br-guard-ensure", "br-guard-doc-bracket", "br-guard-doc-footer", "br-guard-label", "br-guard-remove-plain",
   "br-guard-fix-avoid", "br-guard-avoid-drop", "br-guard-dont-remove",
   "br-scope-guard-do-not", "br-scope-guard-end-of-support", "br-scope-guard-wrapped-negator", "br-scope-guard-wrapped-prevent", "br-scope-guard-prevent-only",
   "br-wrap-guard-blank", "br-wrap-guard-spaces-blank"];
 /** Cases allowed to carry an accepted mismatch. Adding to this list is a deliberate, reviewed edit. */
-/** The three "gap" cases and both "open" cases are PENDING maintainer decisions, not completed fixes. */
-const ACCEPTED = ["br-incompatible-gap", "sec-bare-token-gap", "sec-guard-sanitize-ui", "sec-open-keys-logs", "sec-open-token-logs"];
+/**
+ * Accepted mismatches. "br-incompatible-gap" and "sec-guard-sanitize-ui" are PENDING maintainer decisions, not completed fixes.
+ * "sec-tradeoff-object-keys-logs" is a decided trade-off: the owner chose a conservative review trigger for bare token/key + exposure + logs.
+ */
+const ACCEPTED = ["br-incompatible-gap", "sec-guard-sanitize-ui", "sec-tradeoff-object-keys-logs"];
 /** Scored security false alarms that are neither guards nor accepted: known, pre-existing. */
 const KNOWN_SECURITY_FALSE_ALARMS = ["sec-credential-ui", "sec-false-alarm-docs"];
 
@@ -48,7 +52,7 @@ const KNOWN_SECURITY_FALSE_ALARMS = ["sec-credential-ui", "sec-false-alarm-docs"
  * raise one to make a change pass. Print every miss with:
  *   npx vitest run src/lib/release/eval --reporter=verbose --silent=false
  */
-const BASELINE = { falseExclusions: 14, falseInclusions: 5, securityMisses: 3, breakingMisses: 1, securityFalseAlarms: 3, breakingFalseAlarms: 0, minCategoryAccuracy: 0.77 };
+const BASELINE = { falseExclusions: 14, falseInclusions: 5, securityMisses: 0, breakingMisses: 1, securityFalseAlarms: 4, breakingFalseAlarms: 0, minCategoryAccuracy: 0.77 };
 
 describe("release classification evaluation", () => {
   it("has a nonempty corpus with unique ids and only declared sources", () => {

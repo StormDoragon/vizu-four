@@ -50,6 +50,62 @@ describe("security flag: secret exposure in either order", () => {
   });
 });
 
+describe("bare token/key beside exposure wording and a logging destination", () => {
+  const BUDGET_MS = 2000;
+  it.each([
+    "Stop logging tokens in request traces", "fix: token leaked in logs", "fix: keys exposed in logs", "Stop leaking keys into the logs", "fix: tokens dumped to the logs", "Stop printing keys to log output",
+    "Token exposed in stack traces", "fix: key disclosed in logging output", "fix: tokens leaked in traces", "fix: key was logged in the logs",
+  ])("flags %s", text => expect(security(text), text).toBe(true));
+
+  it.each([
+    "fix: parser tokens leaked into the AST", "fix: object keys exposed in the debug view", "feat: add token counts to logs", "fix: format object keys in logs", "Add logging of object keys when validation fails",
+    "Fix memory leak when caching cache keys", "Log lexer tokens", "Print the keys of the object", "Add support for exposing theme tokens to plugins", "fix: tokens leaked into the AST; see traces docs",
+    "Stop logging tokens", "Stop printing keys", "docs: describe the logs and traces views", "Log object keys to the logs",
+  ])("does not flag %s (needs the noun, exposure wording AND a logging destination)", text => expect(security(text), text).toBe(false));
+
+  it("accepts the ambiguous trade-off: object keys leaked in logs goes to manual review", () => {
+    expect(security("fix: object keys leaked in logs")).toBe(true);
+  });
+  it.each([["LF", "\n"], ["CRLF", "\r\n"], ["bare CR", "\r"], ["trailing spaces", " \n"], ["leading spaces", "\n  "]])("a phrase wrapped with %s still matches", (_name, wrap) => {
+    for (const text of [`fix: token leaked${wrap}in logs`, `Stop logging${wrap}tokens in request traces`, `fix: keys${wrap}exposed in logs`, `fix: keys exposed in${wrap}logs`]) expect(security(text), JSON.stringify(text)).toBe(true);
+  });
+  it.each([["LF blank line", "\n\n"], ["CRLF blank line", "\r\n\r\n"], ["spaces-only line", "\n   \n"], ["tab-only line", "\n\t\n"], ["non-breaking-space line", "\n" + cp(0x00a0) + "\n"]])(
+    "a %s separates paragraphs: the noun, exposure and destination are not bridged", (_name, gap) => {
+      expect(security(`fix: token leaked${gap}in logs`)).toBe(false);
+      expect(security(`Stop logging${gap}tokens in request traces`)).toBe(false);
+      expect(security(`fix: token${gap}leaked in logs`)).toBe(false);
+    });
+  it("normalizes Unicode spaces and hyphens before matching", () => {
+    expect(security(`fix:${cp(0x00a0)}token${cp(0x00a0)}leaked${cp(0x00a0)}in${cp(0x00a0)}logs`)).toBe(true);
+    expect(security(`fix: token leaked in${cp(0x2011)}logs`), "a Unicode hyphen becomes '-', and 'logs' keeps its word boundary").toBe(true);
+    expect(security(`fix: to${cp(0x200b)}ken lea${cp(0x00ad)}ked in logs`)).toBe(true);
+  });
+  it("keeps all three parts inside one clause: a semicolon or period ends it", () => {
+    expect(security("fix: tokens leaked into the AST; see traces docs")).toBe(false);
+    expect(security("fix: tokens leaked into the AST. See the logs")).toBe(false);
+    expect(security("fix: token leaked; check logs")).toBe(false);
+    expect(security("fix: token leaked, then written to logs")).toBe(true);
+  });
+  it("keeps each gap bounded at 40 characters", () => {
+    const within = "x".repeat(30), beyond = "x".repeat(60);
+    expect(security(`fix: token leaked ${within} in logs`)).toBe(true);
+    expect(security(`fix: token leaked ${beyond} in logs`)).toBe(false);
+    expect(security(`fix: token ${beyond} leaked in logs`)).toBe(false);
+  });
+  it("finds a late marker after more than 1200 characters, and stays fast on long and hostile inputs", () => {
+    expect(security(`fix: tighten handling\n\n${FILLER}\nfix: token leaked in logs`)).toBe(true);
+    const n = 64_000;
+    const shapes = [
+      "token leaked ".repeat(n / 13), "tokens logs ".repeat(n / 12), "leaked tokens ".repeat(n / 14), "keys ".repeat(n / 5) + "logs", "logs ".repeat(n / 5) + "token", "token" + " ".repeat(n) + "leaked in logs",
+      "leaked" + " ".repeat(n) + "token", "token leaked" + " ".repeat(n) + "x logs", "tracing traces ".repeat(n / 15), "token leaked in ".repeat(n / 16),
+    ];
+    const started = performance.now();
+    for (const text of shapes) reviewFlags(text);
+    expect(security("leaked tokens ".repeat(n / 14) + "in logs"), "late destination after a long run").toBe(true);
+    expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+  });
+});
+
 describe("line endings and wrapping", () => {
   it("gives identical flags for LF and CRLF, for security and breaking", () => {
     const samples = ["Stop leaking\nAPI keys in logs", "This change is not\nbackwards compatible", "feat: x\n\nBREAKING CHANGE: drop api", "fix: y\n\nSecurity: patched"];
