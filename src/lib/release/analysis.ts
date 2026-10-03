@@ -1,12 +1,8 @@
 import type { CollectedCommit, ReleaseAnalysis, ReleaseChange, ReleaseCollection } from "./types";
 import { markdownText } from "./text";
 
-export function reviewFlags(text: string) {
-  return {
-    breakingChange: /(?:^|\n)(?:\w+(?:\([^\n)]*\))?!:\s*\S|BREAKING[ -]CHANGE:\s*\S)/.test(text),
-    securitySensitive: /\b(security|vulnerabilit\w*|CVE-\d{4}-\d+|credential|exploit|injection|XSS|CSRF|DoS|RCE|denial of service|path traversal|auth(?:entication)? bypass)\b/i.test(text),
-  };
-}
+import { reviewFlags } from "./flags";
+export { reviewFlags };
 
 export function classifyChange(commit: CollectedCommit): ReleaseChange {
   const text = `${commit.pullTitle ?? ""}\n${commit.message}`;

@@ -20,6 +20,71 @@ Next three implementation steps:
 
 1. Evaluate a maintainer-reviewed set of real release ranges; measure false
    inclusion/exclusion and unsupported claims, then refine classification.
+   *In progress:* `src/lib/release/eval/` holds the harness, metrics, and a
+   177-case corpus. **Every case is synthetic**: hand-labeled development data
+   by the implementer, not evidence of real-world accuracy. `maintainer-reviewed`
+   cases are tracked separately; they require provenance (repository, immutable
+   base/head SHAs, reviewer, date, review-record link) and must match every
+   stated label, with no accepted mismatches. A well-formed provenance record is
+   a pointer, not proof: the gate cannot verify that a human actually reviewed
+   anything.
+
+   Current measurements (synthetic only; accepted mismatches are counted):
+   - Security: 45 of 45 positives flagged. 4 false alarms among 19 negatives:
+     2 pre-existing ("security policy" docs, "credential manager"), 1 accepted
+     and still a **pending maintainer decision** (`sec-guard-sanitize-ui`: any
+     "sanitiz*" wording is flagged), and 1 accepted trade-off decided by the
+     repository owner (`sec-tradeoff-object-keys-logs`, below).
+   - Breaking: 35 of 36 positives flagged; 1 miss, accepted and **pending a
+     maintainer decision** (`br-incompatible-gap`: "incompatible with <runtime>"
+     is also a bug report). 0 false alarms among 21 negatives.
+   - Inclusion: 5 false inclusions (CI/typo "Fix" noise) and 13 false exclusions
+     (plain-English verbs such as `Fixed`, `Support`, `Implement`; prefixes such
+     as emoji, `[feature]`, `PROJ-123:`; the accepted runtime gap above).
+
+   Decided by the repository owner: a bare `token`/`key` is a conservative
+   security review trigger when ALL THREE appear in one clause, within bounded
+   distances: the noun, exposure wording (leak, expose, disclose, dump, print,
+   logging/logged), and a logging destination (logs, log output, logging output,
+   traces). "Stop logging tokens in request traces", "fix: token leaked in logs"
+   and "fix: keys exposed in logs" are flagged; "fix: parser tokens leaked into
+   the AST", "fix: object keys exposed in the debug view", "feat: add token
+   counts to logs", "fix: format object keys in logs" and "Add a helper to log
+   object keys to the logs" are not. **Consequences to keep in mind:** a flagged
+   change is withheld from customer notes entirely (technical notes show only
+   "maintainer review required", and AI prompts exclude it), and an ambiguous
+   phrase such as "fix: object keys leaked in logs" is flagged on purpose and
+   goes to manual review. A semicolon or period between the three parts means
+   they are different clauses, so "token leaked; check logs" is NOT flagged.
+
+   What the tests enforce: each required security/breaking positive is asserted
+   by id (45 and 35); each protected negative must keep its flag off per case
+   (15 security, 21 breaking); accepted mismatches are pinned to three named
+   cases; the aggregate ratchet may not worsen; the report lists accepted and
+   unaccepted failures separately; ratios with no positives print N/A, never
+   100%. Negation ("avoid", "prevent", "don't", ...) looks back 30 characters
+   within one clause: a `;` or `.` ends it, and it crosses a line break only when
+   the previous line ends on the negator ("fix: do not" / "drop support ..."),
+   so "fix: prevent crashes; drop support for Node 16" is breaking. A phrase may
+   wrap once, with spaces around the break; a blank line never matches. Detection
+   time was measured linear on these input families, not proven for every input:
+   repeated negated phrases (2.0x per doubling, 0.2 MB to 7 MB; a 1.8 MB
+   single-line message takes ~35 ms), a negator followed by a long run of spaces
+   (64,000 spaces: ~1 ms, after a quadratic backtracking bug was fixed), the bare
+   token/key rule on six hostile families (2.0x per doubling up to ~0.9 MB, worst
+   ~140 ms for 0.8 MB), and a battery of 30 hostile 64 KB shapes (each under
+   5 ms). Regexes use bounded repeats and no unrestricted `.*`. Known limits: a
+   leading "fix" is not treated as evidence that compatibility is preserved;
+   confusable letters (e.g. Cyrillic for Latin) are not normalized; "log/logs"
+   next to a qualified secret noun is flagged conservatively.
+
+   Open maintainer decisions (not resolved by the implementer): whether a revert
+   belongs in release notes; whether typo-only fixes belong in technical notes;
+   a dependency-bump policy; whether unmarked removals count as breaking;
+   whether conservative sanitize/UI wording is an accepted review trigger;
+   whether "incompatible with <runtime>" means breaking.
+   Still needed: maintainer-labeled real ranges and an unsupported-claim measure
+   for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while
    preserving canonical evidence and security review markers.
 3. Add bounded, cached pagination and PR grouping with explicit completeness

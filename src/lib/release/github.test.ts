@@ -33,6 +33,29 @@ describe("public GitHub collection", () => {
     expect(analyzeRelease(crlf)).toEqual(analyzeRelease(lf));
     expect(analyzeRelease(crlf).changes[0].breakingChange).toBe(true);
   });
+  it("detects markers across LF, CRLF and wrapped lines identically at collection time", async () => {
+    for (const [message, flag] of [["fix: x\n\nStop leaking\nAPI keys in logs", "securitySensitive"], ["feat: x\n\nThis is not\nbackwards compatible", "breakingChange"], ["fix: x\n\nToken leaked\nin logs", "securitySensitive"]] as const) {
+      const compare = comparison();
+      compare.commits[0].commit.message = message;
+      const lf = await collectRelease(input, setup(compare));
+      for (const eol of ["\r\n", "\r"]) {
+        compare.commits[0].commit.message = message.replace(/\n/g, eol);
+        const other = await collectRelease(input, setup(compare));
+        expect(other.commits[0].reviewFlags, `${flag} with ${JSON.stringify(eol)}`).toEqual(lf.commits[0].reviewFlags);
+      }
+      expect(lf.commits[0].reviewFlags?.[flag]).toBe(true);
+    }
+  });
+  it("keeps a late bare-CR footer after truncation", async () => {
+    const compare = comparison();
+    compare.commits[0].commit.message = "feat: change\r" + "x".repeat(1300) + "\rBREAKING CHANGE: replace format";
+    const result = await collectRelease(input, setup(compare));
+    expect(result.commits[0].message.length).toBeLessThanOrEqual(1200);
+    expect(result.commits[0].message).not.toContain("BREAKING CHANGE");
+    expect(result.commits[0].reviewFlags).toEqual({ securitySensitive: false, breakingChange: true });
+    expect(analyzeRelease(result).changes[0]).toMatchObject({ breakingChange: true, category: "breaking" });
+    expect(result.warnings.join()).toContain("truncated");
+  });
   it("encodes GitHub file paths without host-platform path normalization", async () => {
     const filenames = ["src/Report é.ts", "src/report é.ts", "docs/a#b?.md", "src/back\\slash.ts"];
     const result = await collectRelease(input, setup({ ...comparison(), files: filenames.map(filename => ({ filename, status: "modified" })) }));
