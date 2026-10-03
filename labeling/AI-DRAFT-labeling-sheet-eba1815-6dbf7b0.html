@@ -43,14 +43,13 @@
 </style>
 </head>
 <body>
-<aside style="margin:1rem;padding:1rem;border:2px solid #eab308"><strong>AI-AUTHORED DRAFT — NOT HUMAN MAINTAINER REVIEW</strong><p>These 40 proposed labels were decided by Codex under owner authorization. Reasons are in each Note. The review record is blank. An independent human must review and adopt or change the decisions before this becomes the agreed calibration dataset. No classifier measurements or baseline have been made.</p></aside>
+<aside style="margin:1rem;padding:1rem;border:2px solid #eab308"><strong>AI-AUTHORED DRAFT — NOT HUMAN MAINTAINER REVIEW</strong><p>These 40 proposed labels were decided by Codex under owner authorization. Reasons are in each Note. The review record is blank. After these labels were frozen, PR #37 measured classifier agreement and PR #39 used this range for development. The range is no longer independent calibration data. No human-reviewed baseline exists; fresh independent human labels are needed for accuracy claims.</p></aside>
 <main>
   <h1>Labeling sheet</h1>
   <div class="muted" id="sub"></div>
 
   <div class="panel">
-    <strong>Label blind.</strong> This page shows only each commit's metadata: message, author, date and files touched. It contains
-    <strong>no classifier output</strong>. Please don't run the classifier or look at its results until you've finished.
+    <strong>AI development reference.</strong> This page shows commit metadata and AI-authored decisions, with no classifier output embedded. The range has already informed classifier development and cannot serve as blind independent calibration.
     <ul class="rules">
       <li><b>Include in notes</b>: do you want this change in the release notes you would publish for this range? One global yes/no.</li>
       <li><b>Security-sensitive</b>: should a maintainer look before this is described publicly? A conservative yes is fine.</li>

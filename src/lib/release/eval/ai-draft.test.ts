@@ -22,6 +22,11 @@ describe("AI draft development measurement (not human accuracy)", () => {
     expect(cases).toHaveLength(40);
     expect(importWorksheet(worksheet).cases).toEqual([]);
     expect(worksheet.review).toEqual({ reviewer: null, reviewedAt: null, recordUrl: null });
+    const provenance = JSON.parse(readFileSync(new URL("../../../../labeling/ai-label-draft-provenance.json", import.meta.url), "utf8"));
+    const source = readFileSync(new URL("./worksheets/StormDoragon-vizu-four-eba1815-6dbf7b0.json", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    expect(createHash("sha256").update(source).digest("hex")).toBe(provenance.sourceWorksheetSha256);
+    expect(provenance.classifierRunForThisRange).toBe(true);
+    expect(provenance.postLabelingUse.independentCalibrationEligible).toBe(false);
   });
   it("reports every disagreement without setting a reviewed baseline", () => {
     process.stdout.write(formatReport(cases.map(evaluateCase)) + "\n");
