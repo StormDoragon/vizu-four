@@ -83,8 +83,19 @@ Next three implementation steps:
    a dependency-bump policy; whether unmarked removals count as breaking;
    whether conservative sanitize/UI wording is an accepted review trigger;
    whether "incompatible with <runtime>" means breaking.
-   Still needed: maintainer-labeled real ranges and an unsupported-claim measure
-   for the opt-in AI wording.
+   Real ranges: the labeling tooling exists (`scripts/release-eval-worksheet.mjs`,
+   `eval/reviewed.ts`, protocol in `src/lib/release/eval/README.md`). A worksheet
+   generator writes every label blank, an importer rejects anything incomplete,
+   unlabeled, or without a review block, and completed worksheets load as
+   `maintainer-reviewed` cases. **No range has been labeled yet**: the one draft
+   committed under `eval/worksheets/` (this repository, `eba1815..6dbf7b0`, 40
+   commits, no merged-PR titles) is blank and is not loaded. It needs a maintainer.
+   Open decision: today a reviewed case must match every stated label, so the first
+   labeled range will fail the suite on each classifier disagreement; whether to
+   report reviewed disagreements as a measured baseline with a ratchet (zero
+   tolerance for security/breaking misses) is a maintainer decision.
+   Still needed: labeled real ranges (at least one kept untouched as a hold-out) and
+   an unsupported-claim measure for the opt-in AI wording.
 2. Add local draft editing and explicit include/exclude overrides while
    preserving canonical evidence and security review markers.
 3. Add bounded, cached pagination and PR grouping with explicit completeness
