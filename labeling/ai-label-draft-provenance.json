@@ -1,0 +1,12 @@
+{
+  "status": "ai-authored-draft-not-maintainer-reviewed",
+  "author": "Codex (AI assistant)",
+  "authorization": "Owner authorized the assistant to decide the labels in this chat.",
+  "evidence": "All original commit messages and changed-file statistics; selected historical diffs for ambiguous rows.",
+  "classifierRunForThisRange": false,
+  "independentHumanReview": false,
+  "humanReviewRecord": null,
+  "sourceWorksheetSha256": "0df1de68e9014a794f03006dee1a6c9fc265b83332a88f105a8d575341c3e232",
+  "labeledDraftSha256": "68b16bcb01a927909d61a00fa59b10b640b3f5377f483b476f4dfb492bb7d269",
+  "priorExposure": "This assistant previously reviewed classifier implementation and synthetic tests. This draft is not an independent human calibration dataset."
+}
