@@ -67,3 +67,30 @@ Rules for the labels once they exist:
   confirm any rule change on a range the rules have not seen.
 - Differences from production: the product only looks up merged-PR titles for the first 10 commits; worksheets from the
   GitHub API look up all of them, and `--local` worksheets have none.
+
+## Shipping preview and AI draft measurement
+
+The owner authorized AI-authored decisions for the first range. The immutable
+draft lives under `labeling/`; it is explicitly NOT human-reviewed. The original
+draft checksum is pinned (normalizing Git checkout CRLF to LF). No human review
+fields are invented and the human importer continues to reject it.
+
+`ai-draft.test.ts` reports every disagreement in a separate `ai-draft` source.
+The range has now informed rule changes and is development data, not a blind
+calibration or hold-out. Its security and breaking positives are regression
+checks, while its remaining category and false-alarm disagreements stay visible.
+Neither its scores nor the synthetic scores establish general accuracy.
+
+The optional reviewed ratchet is implemented and tested: exact case/failure
+pairs may tolerate inclusion, category and false-alarm disagreements; any new
+pair fails and any resolved pair must be removed. Security and breaking misses
+always fail, even when inserted into a baseline. No baseline values are set;
+the default strict reviewed gate remains in effect. AI drafts cannot be entered
+into that baseline. A future independent human calibration needs fresh data;
+the existing hold-out remains blank and untouched.
+
+Reproduce the AI development report with:
+
+```sh
+npx vitest run src/lib/release/eval/ai-draft.test.ts
+```

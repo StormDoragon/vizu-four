@@ -7,7 +7,11 @@ export { reviewFlags };
 export function classifyChange(commit: CollectedCommit): ReleaseChange {
   const text = `${commit.pullTitle ?? ""}\n${commit.message}`;
   const title = (commit.pullTitle || commit.message.split("\n")[0] || "Untitled change").slice(0, 300);
-  const conventional = /^(\w+)(?:\(([^\n)]*)\))?(!)?:\s*(.+)/.exec(title);
+  const normalizedTitle = title.replace(/^[^\p{L}\p{N}\[]+/u, "").replace(/^\[(?:feature|fix|bug|docs|perf)\]\s*/i, "").replace(/^[A-Z][A-Z0-9]+-\d+:\s*/, "");
+  const signal = /^(?:cleanup|misc(?:ellaneous)?|update)\s*$/i.test(normalizedTitle)
+    ? text.split("\n").find(line => /^(?:feat|fix|perf|docs)(?:\([^)]*\))?!?:/.test(line)) ?? normalizedTitle
+    : normalizedTitle;
+  const conventional = /^(\w+)(?:\(([^\n)]*)\))?(!)?:\s*(.+)/.exec(signal);
   const type = conventional?.[1].toLowerCase();
   const scope = conventional?.[2]?.toLowerCase();
   const flags = reviewFlags(text);
@@ -16,17 +20,20 @@ export function classifyChange(commit: CollectedCommit): ReleaseChange {
   const internal = ["chore", "ci", "build", "test", "refactor", "style"].includes(type ?? "")
     || ["ci", "build", "test", "tests", "deps-dev", "tooling"].includes(scope ?? "")
     || /^(?:Merge|Refactor|Bump)\b/i.test(title)
-    || /^(?:Add|Fix|Improve|Update|Run) (?:CI|tests?|build|tooling)\b/i.test(title);
+    || /^(?:Add|Fix(?:es|ed)?|Improve|Update|Run) (?:CI|tests?|build|tooling|eslint|lint|(?:failing|flaky) (?:CI|tests?))\b/i.test(signal)
+    || /^(?:Fix(?:es|ed)? (?:typos?|merge conflicts)|Tidy up)\b/i.test(signal);
   let category: ReleaseChange["category"] = "other";
   if (securitySensitive) category = "security";
   else if (breakingChange) category = "breaking";
   else if (internal) category = "internal";
-  else if (type === "feat" || /^(?:Add|Introduce)\b/i.test(title)) category = "added";
-  else if (type === "fix" || /^(?:Fix|Repair|Resolve)\b/i.test(title)) category = "fixed";
-  else if (type === "perf" || /^(?:Improve|Optimize)\b/i.test(title)) category = "improved";
-  else if (type === "docs") category = "documentation";
+  else if (type === "docs" || /^(?:Update (?:README|documentation)|License)\b/i.test(signal)) category = "documentation";
+  else if (type === "feat" || /^(?:Add|Introduce|Support|Implement|Allow)\b/i.test(signal)) category = "added";
+  else if (type === "fix" || /^(?:Fix(?:es|ed)?|Repair|Resolve|Apply|Collapse|Compute|Keep|Report|Treat|Send|Only let|Put|Don't|Stop|Disable|Remove|Refuse)\b/i.test(signal)) category = "fixed";
+  else if (type === "perf" || /^(?:Improve|Optimize|Speed up|Harden)\b/i.test(signal)) category = "improved";
   const impact: ReleaseChange["impact"] = category === "internal" ? "internal" : category === "documentation" || breakingChange ? "developer" : ["added", "fixed", "improved"].includes(category) ? "customer" : "unknown";
-  const releaseWorthy = category !== "internal" && category !== "other";
+  const administrative = ["test", "ci", "build"].includes(type ?? "") || /^Merge\b/i.test(title)
+    || /^(?:Tidy up|docs: (?:status|restore README|record .*review|expand .*summary))\b/i.test(title);
+  const releaseWorthy = breakingChange || (!administrative && category !== "internal" && category !== "other");
   const reason = securitySensitive ? "Security-related metadata requires human review; customer output is withheld." : breakingChange ? "Explicit breaking-change marker; review migration requirements." : category === "internal" ? "Maintenance or merge metadata; excluded from release notes." : category === "other" ? "No clear release signal; review manually before including." : "Commit or merged PR title indicates a release change; impact is inferred from metadata.";
   const description = conventional?.[4] ?? title;
   return { id: commit.sha, title, category, impact, importance: breakingChange || securitySensitive ? "high" : releaseWorthy ? "medium" : "low", confidence: category === "other" || !conventional ? "low" : "medium", securitySensitive, breakingChange, releaseWorthy, reason, evidence: commit.evidence, technical: title, customer: description };

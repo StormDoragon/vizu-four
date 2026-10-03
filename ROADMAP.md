@@ -1,5 +1,21 @@
 # Prioritized Checklist — Vizu Debug & Release (`vizu-four`)
 
+## Shipping readiness update
+
+The public preview includes local release draft editing and include/exclude
+controls, preserving evidence and security flags. Classifier rules now cover
+common imperative verbs and protective changes. See [SHIPPING.md](./SHIPPING.md)
+for the current release scope, policy and validation record.
+
+The AI-authored 40-case range is explicitly development data after tuning;
+its labels remain unchanged and it does not create a human-reviewed baseline.
+The reviewed ratchet implementation is available with no populated baseline.
+Fresh human calibration and an untouched hold-out remain requirements for an
+independent accuracy claim, rather than blockers to a manually reviewed preview.
+
+The historical measurements and decisions below describe earlier checkpoints.
+Where they differ, SHIPPING.md and the current executable tests are authoritative.
+
 ## Release Intelligence — first integrated MVP
 
 Implemented locally alongside Debug; this entry does not claim a deployment:

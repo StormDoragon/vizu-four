@@ -57,7 +57,9 @@ Release sends a public repository name and base/head refs to the application
 server, which requests public metadata from GitHub without credentials.
 Results are returned to the browser with `Cache-Control: no-store`; there is
 no release database or local-storage history. Navigating away discards the
-view. Copying Markdown places the selected draft on your clipboard.
+view, including any local inclusion or wording edits. Those edits are not sent
+to the server or AI provider. Copying Markdown places the selected revised
+draft on your clipboard.
 
 The existing anonymous owner cookie also scopes release request limits;
 per-owner/address counters are held in process memory. If you explicitly
