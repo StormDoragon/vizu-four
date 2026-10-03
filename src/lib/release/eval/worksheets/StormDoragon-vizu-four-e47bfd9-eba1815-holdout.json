@@ -1,0 +1,453 @@
+{
+  "schema": 1,
+  "role": "holdout",
+  "repository": "StormDoragon/vizu-four",
+  "baseRef": "e47bfd97c8ad653a172c664480b26b74613e5533",
+  "headRef": "eba1815359790a0e68f507ffab3f5897d47a721c",
+  "baseSha": "e47bfd97c8ad653a172c664480b26b74613e5533",
+  "headSha": "eba1815359790a0e68f507ffab3f5897d47a721c",
+  "collectedFrom": "local-git",
+  "generatedAt": "2026-10-03T01:17:32.261Z",
+  "commitCount": 31,
+  "review": {
+    "reviewer": null,
+    "reviewedAt": null,
+    "recordUrl": null
+  },
+  "rows": [
+    {
+      "sha": "435c8d078b29474d12a66c53ef11108ab03790e8",
+      "message": "Harden the expression engine with real-world edge-case tests (#13)\n\nCloses remaining gaps in expression fidelity before relying on it more\nheavily, per the issue - breadth from real-world usage, not a rewrite\nof the core grammar.\n\nSourced real coverage rather than inventing plausible-looking cases:\n- GitHub's own documented object-filter (`.*`) examples (fruits.*.name,\n  and the vegetables.*.ediblePortions example that's explicit the\n  result is an array of arrays, not flattened).\n- GitHub's own documented type-coercion table for cross-type `==`/`!=`\n  and relational comparisons.\n- Expressions pulled from real, currently-running public workflows:\n  actions/checkout's `runner.os` comparisons, and git/git's CI\n  (concurrency-group fallback via `||`, an empty-vars-means-all-\n  branches `== '' || contains(...)` pattern, and a ternary-via-short-\n  circuit idiom built entirely out of `&&`/`||`).\n\nThat survey found a real bug, not just a coverage gap: hyphenated\njob/step ids - kebab-case is the dominant real-world convention\n(`needs.ci-config`, `matrix.node-version`) and git/git's own CI relies\non exactly this pattern - previously threw a syntax error. The lexer's\nidentifier characters didn't include `-`, even though GitHub's own\nproperty-dereference grammar does, specifically to accommodate\nkebab-case ids without forcing bracket syntax everywhere. Fixed by\nwidening the identifier character class; a leading `-` stays excluded\n(matching GitHub's own id-naming rule), so a bare `-` this engine has\nno subtraction operator for remains an unambiguous syntax error.\n\nOne divergence was found and deliberately left open rather than fixed:\nnumeric-string coercion uses JavaScript's `Number()`, where GitHub's\ndocs specify a string is \"parsed from any legal JSON number format,\notherwise NaN\" - stricter than `Number()` (no hex, no leading `+`, no\nleading zeros ahead of a nonzero digit). `'0x10' == 16`, `'+5' == 5`,\nand `'007' == 7` all evaluate `true` here where a real runner would\nget `false`. Real workflows essentially never compare against a hex or\nleading-zero string, and rewriting the coercion grammar is a bigger,\nmore deliberate change than this pass's scope - documented in the\nREADME's new \"Confirmed expression-engine divergences\" section and\nlocked in by a test, so it can't silently drift further without the\ndiff being visible.\n\nAlso added: multi-hop filter chains (github.event.commits.*.author.\nemail), deeply nested fromJSON indexing, mixed-type comparisons\n(null/''/array/object cross-type coercion, same-instance-only object\nequality), and the documented format() escaped-brace example.\n\n252 tests passing (226 existing + 26 new), tsc --noEmit and next build\nboth clean.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/435c8d078b29474d12a66c53ef11108ab03790e8",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "e9d816a84c062c0956c9d65200404b1bc04b9a80",
+      "message": "Add time-travel: browse any executed step without disturbing the live pointer (#17)\n\nShipped as the \"cheap version\" the issue's own notes anticipated - the\nstepIndex-aware /api/sessions/[id]/context endpoint and StepRunRecord's\nper-step data already reconstruct history on demand, so this is UI on\ntop of an engine that already had what it needed, not an engine change.\n\nNew pure module (timeTravel.ts, unit-tested independently of React,\nmatching the keyboardShortcuts.ts precedent from #5):\n- liveStepIndex(lane): the step index the debugger cursor sits on - the\n  next step to run, or the last one once the lane's finished. Hoisted\n  out of the three call sites in DebuggerApp that already computed this\n  ad hoc, so the definition can't drift.\n- isLiveSelection(session, selection): true only for the active lane at\n  its live step index. A different lane, or an earlier step in the\n  active lane, is always \"history\" - precise enough that it can never\n  be confused with what Step/Continue/Run actually act on, which is\n  always activeLaneId and unaffected by browsing.\n- clampToHistory/canGoBack/canGoForward: the navigable range is a\n  lane's first step up to (and including) its live cursor - never past\n  it, since there's nothing to show for a step that hasn't run yet.\n- liveSelection(session): where \"Jump to live\" goes.\n\nNew TimeTravelBar component, rendered above the step detail panel:\na LIVE/HISTORY badge, Prev/Next buttons to scrub through a lane's\nalready-executed steps, and a \"Jump to live\" button shown only when\nviewing history. Reuses the same onSelect callback WorkflowGraph\nalready had for clicking a step directly - no new state in DebuggerApp,\njust a second way to move the same selection.\n\nWorks across matrix lanes without special-casing: the bar operates on\nwhichever lane `selection` currently points at (falling back to the\nactive lane), so switching lanes via the existing Matrix tab or a\nmulti-lane failure jump (e.g. \"Run all\" failing a lane that isn't\nactive) is already exactly the \"different lane, so it's history\" case\nisLiveSelection is built to recognize.\n\n20 new tests (15 pure-logic, 5 component) plus a live-browser pass:\nstepped through a 3-step workflow, confirmed the live badge/step\nlabel/next-disabled state, browsed back via Previous (history badge,\nprevious-disabled at step 1, context inspector correctly refetching\nfor the historical step), and confirmed Jump to live returns to the\nexact prior live state. 272 tests passing, tsc --noEmit and next build\nboth clean.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/e9d816a84c062c0956c9d65200404b1bc04b9a80",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "478d19f86745804d365dcf3df1b9c9f93ddff728",
+      "message": "Visual polish: accessible status colors, a real running indicator, dagre graph layout (#11)\n\nStatus colors, consistency across surfaces:\n\nA single statusStyles.ts module now defines every status's color, a\nredundant non-color glyph (WCAG 1.4.1 - color is never the only signal),\nand whether it renders as a hollow ring (hasn't run yet) or a filled dot\n(has). It replaces three independently hand-copied color maps in\nJobNode, MatrixExplorer, and StepDetailPanel that had already quietly\ndrifted apart:\n\n- \"pending\" alone had three different treatments: JobNode used\n  `#484f58` (contrast-checked at ~2.2:1 against every panel background\n  in this theme - below even the 3:1 WCAG non-text minimum, so the dot\n  was nearly invisible), MatrixExplorer fell through to a generic\n  gray-700/gray-400 badge for anything it didn't recognize, and\n  StepDetailPanel used a bare `text-gray-500`. Now all three use one\n  shared, accessible value (#9aa4b2, ~7:1 against every background).\n- \"pending\" and \"skipped\" - both grayscale, easy to mistake for each\n  other at a glance - are now told apart by shape too: pending renders\n  as a hollow ring (nothing has happened yet), skipped as a filled dot.\n- MatrixExplorer's badge and StepDetailPanel's status word now show the\n  same glyph as the graph's dot (✓/✕/–/▶/⊘), not just matching text.\n\nCurrently-executing indicator, actually observable this time:\n\nThe old `animate-pulse` was applied to a `lane.status === \"running\"`\nvalue that - in this synchronous request/response engine - is set and\ncleared entirely server-side within one HTTP round trip. The client\nnever actually receives a \"running\" SessionView; that class was dead\ncode from the browser's perspective. Replaced with a real client-driven\nsignal: `busy` (already tracked in DebuggerApp) threads through\nWorkflowGraph into JobNode, and whichever step is the lane's live\npointer gets an animated spinning ring while a control request is in\nflight - the only place \"this is happening right now\" is ever actually\ntrue from the browser's point of view.\n\nGraph layout:\n\nReplaced the fixed `x: level * 340, y: index * 280` grid - which didn't\naccount for node height (a matrix job's lane selector, more or fewer\nsteps) and just got worse as a workflow grew - with `@dagrejs/dagre`'s\nlayered (Sugiyama-style) algorithm. Each node's height is estimated\nfrom its own content before layout runs, and only jobs reachable from\n`session.graph.levels` go through it (dagre needs a DAG; a `needs`\ncycle is still placed separately, as before).\n\nVerified against a new 12-job example workflow (`06-large-graph.yml`) -\none fan-out into five parallel jobs (including a 3-combo matrix job),\nconverging through two more levels back into a single job - covering\nthe \"many jobs/levels\" and \"uneven fan-out/fan-in\" cases the old grid\nhandled worst. A Playwright pass confirms all 12 render with zero\noverlapping boxes (checked programmatically via bounding rects, not\njust by eye), and a live run with a mocked failure showed the full\ncolor/glyph system - success/failure/skipped all visually distinct and\nconsistent between the graph and the step detail panel - working\ntogether with the existing time-travel bar and mock-outputs editor\nwithout regression.\n\n29 new tests (statusStyles, StatusDot, graphLayout, JobNode's\nexecuting-indicator behavior) plus the Playwright verification above.\n296 tests passing, tsc --noEmit, eslint, and next build all clean.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/478d19f86745804d365dcf3df1b9c9f93ddff728",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "3108222d68cf945a833d400f2dcd1799ffd11fc3",
+      "message": "Add light theme + tablet-width responsive layout (#12)\n\nEvery hardcoded color (bg-*, text-white, text-gray-N, border-gray-N,\nbg-gray-N) becomes a CSS-custom-property-backed Tailwind token (bg,\nstatus, ink), letting a [data-theme=\"light\"] selector in globals.css\noverride the whole palette at once. Dark's token values were chosen to\nbe byte-identical to the app's existing rendered colors, so dark mode\nis unchanged.\n\nA toggle in the top bar (src/components/ThemeToggle.tsx) flips\ndata-theme and persists the choice to localStorage via a new\nsrc/lib/theme.ts module. An inline script injected in layout.tsx's\n<head> applies a stored preference before hydration, so a returning\nlight-mode visitor never sees a dark flash.\n\nThe 6 buttons with a solid color fill (bg-status-running/failure) keep\nliteral text-white in both themes on purpose - white-on-blue doesn't\nneed to invert with the app theme.\n\nLayout: the graph/right-panel row in DebuggerApp and the step detail\npanel's two-column grid now stack vertically below the lg breakpoint\ninstead of clipping a fixed-width panel against a squeezed graph,\nverified live at 820px width in both themes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/3108222d68cf945a833d400f2dcd1799ffd11fc3",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "cda0bc5403d18014a75cd431647bfb4e7ce9033e",
+      "message": "Add matrix lane search/filter and \"debug this combination only\" (#10)\n\nA search/filter box now appears above the lane list once a matrix's\ncombinations exceed a threshold (>8 in the job node's dropdown, >6\nacross the Matrix tab) - small matrices stay unfiltered so it's not\none more thing to click past for 2-3 combos.\n\n\"Debug this combination only\" is a new 🎯 toggle on every lane row (job\nnode and Matrix tab alike). Toggling it makes that lane the steppable\none and marks it \"focused\" - purely client-side view state\n(focusedLaneId in DebuggerApp, new src/components/focusLane.ts for the\ndisplay label), never sent to the engine. While a lane is focused,\nevery sibling combination across every matrix job dims in the Matrix\ntab, and the focus is visible from three places at once so it's\nunambiguous without opening a tab to check: an amber \"FOCUSED\" tag +\nborder on the job node, a \"Focused: <job> - <combo>\" banner with a\none-click \"Show all combinations\" in the Matrix tab, and a dismissible\npill in the top bar.\n\nVerified live with a 12-combination matrix (4 node versions x 3 OSes)\nin both light and dark themes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/cda0bc5403d18014a75cd431647bfb4e7ce9033e",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "d733874b39216f6c0e1adf91b8485565d1435ebc",
+      "message": "Show intermediate evaluation steps in the expression playground (#9)\n\nBuilds directly on the existing lexer/parser/evaluator, as the issue's\nnotes anticipated - no changes to evaluation logic itself.\n\nsrc/lib/expressions/trace.ts mirrors evaluator.ts's node dispatch to\nbuild a full sub-expression tree instead of just a final value, kept\nas a genuinely separate module (not a modified evalNode) so the\nproduction evaluator that the real engine's if:/output resolution\ndepends on is untouched. A 41-fixture agreement test cross-checks\nevery traced result against the real evaluateExpression for the same\ninput, to catch any future divergence between the two immediately -\nthe lesson from #11's three drifted status-color maps, this time with\na test.\n\nEvery sub-expression shows its own value, in evaluation order.\nmatrix.node/steps.*.outputs.result-style chains are tagged with the\ncontext path they resolve to. A ==/!=/relational comparison whose\noperand types differ gets a coercion note. The untaken side of &&/||\nis shown as \"not evaluated - short-circuited\" rather than inventing a\nresult for code GitHub's real short-circuit semantics never run. A\nfailure inside a nested call (contains(fromJSON(badJson), x)) is\nflagged exactly at the fromJSON(...) node that caused it, with only a\nlightweight bubbled marker on ancestors - not a generic\nwhole-expression error. A syntax error gets a caret under the exact\ncharacter position instead.\n\nThe trace is masked through the same maskObjectStrings as the plain\nresult, since a node can itself be secrets.TOKEN.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/d733874b39216f6c0e1adf91b8485565d1435ebc",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "7a686f07e9a09c846ecc74c9f45f9901113beb65",
+      "message": "Add shareable session links (#8)\n\nNo server-side storage: a link is a self-contained, URL-safe base64\ntoken (src/lib/share.ts) holding the workflow YAML, breakpoints,\nWhat-If env/var overrides, mocked step outputs, and per-lane execution\nprogress.\n\nThe server discards the raw workflow YAML once it's parsed, so it's\ncached client-side by content hash (workflowSourceCache.ts, the same\nkey SessionView.workflowHash already exposes) the moment a session is\ncreated - the one place the app ever sees that text - and read back\nwhen \"Share\" is clicked in the top bar.\n\nOpening a link (/share/[token]) creates a brand-new session from that\nYAML, then replays it into the shared state by calling the same\ncontrol/breakpoint/What-If/mock APIs a real user would - not by\ninjecting server state directly. Reconstructing \"pointer position\" for\na multi-job workflow turned out to be the real work: a downstream\njob's lane stays blocked until its needs all reach a terminal status,\nexactly like normal execution, so replay tracks every lane that had\nprogressed (not just the one being viewed) and retries whichever\naren't blocked each pass, until the shared state is reached.\n\nSecrets are never included in a share link - not values, not even\nnames, stricter than debugPrefs' local-only persistence, since a link\ncan leave the browser entirely. A dismissible \"Viewing a shared\nsession\" banner (?shared=1) makes the distinction from an own session\nunambiguous, and the Share button explains itself rather than failing\nsilently when the workflow text isn't cached in the current browser.\n\nVerified live against the needs-chain example workflow (lint -> test\n-> deploy/notify, test failing on purpose): the reconstructed\nsession's lane statuses, pointers, and breakpoint all matched the\noriginal exactly, confirmed via direct session-state comparison in\nboth a fresh browser context and both themes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/7a686f07e9a09c846ecc74c9f45f9901113beb65",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "9005a29a735a294dd9de52d6f0b9e56664668646",
+      "message": "Prepare public demo: friendly example labels, DEPLOY.md (#1, #28)\n\nFive bundled examples are now loadable with friendly labels (Simple CI, Matrix Build, Needs Chain, ...) instead of raw filenames. DEPLOY.md documents production build/run, env vars, a Docker snippet, and requires VIZU_DEMO_MODE=1 on any shared or publicly-reachable host (fixed after the initial version merely suggested it as one of several optional mitigations).",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/9005a29a735a294dd9de52d6f0b9e56664668646",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "3b6214f755eb21025336d9ef4ca1e45fb271d5e1",
+      "message": "Add a one-click failed-step example to the home page\n\nA prominent button next to the header creates a session from a small\ndedicated workflow, mocks its second step to fail (rather than relying\non the step's own `exit 1` to actually run), drives the whole graph to\ncompletion, then navigates straight to the debugger - which already\nauto-selects the first failure on load, so landing there shows the\nfailed step immediately with no further clicks.\n\nMocking the failure instead of trusting real execution matters\nspecifically because of the day's other change: a public deployment\nnow runs with VIZU_DEMO_MODE=1, where run: steps report success by\ndefault and are never actually executed. A demo button that relied on\nits own exit 1 would silently show nothing failing on exactly the\ndeployment it exists for. Verified live with VIZU_DEMO_MODE=1: the\nmocked step still fails and the debugger lands on it immediately.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/3b6214f755eb21025336d9ef4ca1e45fb271d5e1",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "4af0168989d9242f6c43cd4b72934cd88664c811",
+      "message": "Add live demo section to README\n\nPoints at the now-public https://vizu-four.vercel.app deployment\n(VIZU_DEMO_MODE=1, SSO protection removed), fulfilling the acceptance\ncriterion in #1 that PR #28's description claimed but never actually\ndelivered - the merged diff never touched README.md.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/4af0168989d9242f6c43cd4b72934cd88664c811",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "2eaeb7d83b735d920d7eecac5204cf0759ada3a4",
+      "message": "Add Render Blueprint for a persistent, single-instance host\n\nVercel's serverless model can route requests to different Lambda\ninstances, each with its own empty copy of the in-memory session store\n(src/lib/engine/store.ts) - the root cause of sessions intermittently\n\"disappearing\" mid-debug on a shared host. render.yaml provisions a\nfree-tier Web Service that runs exactly one instance with\nVIZU_DEMO_MODE=1 pre-set, matching what DEPLOY.md already recommended\nbut never gave a concrete, no-spend path for.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/2eaeb7d83b735d920d7eecac5204cf0759ada3a4",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "6f89389e2cd8377656ebf8da1ea60e4ca3b33f55",
+      "message": "Point live demo at the Render deployment\n\nVerified live: /api/config returns {\"simulationOnly\":true} and the\none-click failure demo lands on a real failed step (mocked exit 1 +\nstderr). This is now the recommended demo link over the Vercel one -\nRender's free tier runs a single persistent instance, avoiding the\nsession-loss failure mode that Vercel's serverless request routing\ncan cause (each request can land on a different Lambda with its own\nempty in-memory session store).\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/6f89389e2cd8377656ebf8da1ea60e4ca3b33f55",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "0f91be3c7ba2bef4587b919ff112cab4fe16b323",
+      "message": "Note that the old Vercel demo link is retired\n\nThe Vercel project (vizu-four.vercel.app) is now paused - it returns\n503 DEPLOYMENT_PAUSED - now that Render is the single public demo.\nPaused rather than deleted, so the project/settings/history can be\nrestored later if needed.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/0f91be3c7ba2bef4587b919ff112cab4fe16b323",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "7916452ff3c7d268ab81547557492a02e5ec7764",
+      "message": "Close ROADMAP item for the public demo deployment\n\nMarks the P0 \"deploy a public demo\" item done, recording the Vercel\nserverless-Lambda session-loss issue that prompted the move to a\nsingle-instance Render deployment.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/7916452ff3c7d268ab81547557492a02e5ec7764",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "afe5f82b078e0a0958e4e5ba0e5b9672c68efc87",
+      "message": "Confine artifact and hashFiles filesystem access to the workspace\n\nBoth paths run regardless of VIZU_DEMO_MODE - only `run:` steps are gated\nby isSimulationOnly(), so `uses:` handlers and the expression evaluator\nwere reachable on the public demo, on a single shared process.\n\nArtifact handlers: `with: path:` and `with: name:` went into path.join()\nunchecked, so `../` or an absolute value escaped both the job workspace\n(read) and the artifact store (write). Paths now resolve through a\nconfinement helper that rejects anything landing outside its base, and\nescaping glob patterns are refused outright with an explanatory note\nrather than silently skipped. A shared link replays `uses:` steps on\npage load, so this was reachable with one click and no further input.\n\nhashFiles(): unrestricted globs plus uncapped synchronous reads. Now\nrejects absolute/`..` patterns and reports when a match set exceeds the\nfile-count or byte limit - reported rather than truncated, since a\nsilently partial hash is wrong in a way callers cannot detect.\n\nThe session-less playground passed process.cwd() as the evaluation\nworkspace, which let an anonymous caller use hashFiles() as an existence\noracle over the server's own files; it now gets a dedicated empty dir.\n\nAlso stops following symlinks out of either tree, and caps artifact copy\nloops, which are synchronous on the process serving every visitor.\n\nVerified against a local production server in demo mode: traversal and\nabsolute paths rejected on both surfaces, an off-workspace canary file\nuntouched, ordinary relative paths still working. 433 tests pass.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/afe5f82b078e0a0958e4e5ba0e5b9672c68efc87",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "b4d92d45c163616d6a890ceb3d5f257ed3e8d16d",
+      "message": "Bound matrix expansion and mask secrets in expression errors\n\nMatrix expansion was an unbounded Cartesian product built synchronously\nbefore the response: ten axes of ten values is ten billion combinations\nfrom a few lines of YAML, and the workflow-length limit does not bound it\nbecause a matrix multiplies. On one shared persistent process that hangs\nthe instance for every visitor, not just the caller.\n\nCombination counts now come from the axis lengths without building\nanything, and createSession refuses an oversized workflow before\nallocating any lane or step record - the limit per job matrix is 256,\nwhich is the ceiling GitHub itself enforces, plus totals across jobs so\nindividually-legal matrices cannot add up to the same problem. The route\nmaps the refusal to 400 and removes the scratch workspace it had already\ncreated, never a real working tree the user pointed the debugger at.\n\nSecret masking: the expression-evaluate route masked `result` and `trace`\nbut returned `error` verbatim, and fromJSON() quotes the text it failed\nto parse - so fromJSON(secrets.TOKEN) handed the secret straight back.\nThe same applied to a step's `ifError` and to the engine errors raised by\na failed `run:` interpolation or spawn, which also reach the explanation\nprompt sent to the Anthropic API. Masked at the record level so both the\nclient-visible field and the outbound prompt are covered.\n\nVerified against a local production server: the ten-billion matrix is\nrefused in 29ms with no leftover workspace, a 256-combination matrix\nstill expands, and fromJSON(secrets.TOKEN) now reports `invalid JSON:\n***`. 445 tests pass.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/b4d92d45c163616d6a890ceb3d5f257ed3e8d16d",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "6989c91cdbfeb78b56b37aa1b708a5a16ebc4528",
+      "message": "Apply GitHub's default success() check to explicit if: conditions\n\nWriting an `if:` does not opt out of the implicit \"everything before this\nsucceeded\" gate - only naming a status function does. GitHub documents\nthis as \"a default status check of success() is applied unless you\ninclude one of these functions\", and it is why `if: always()` is needed\nto upload artifacts after a failure rather than any truthy condition.\n\nThe engine only applied the gate when `if:` was absent, so a step with\n`if: true` ran after an earlier step failed, and a job with `if: true`\nbecame ready after a failed or skipped dependency. For a tool whose whole\nclaim is showing what GitHub would do without pushing, running a step\nGitHub would skip is the worst direction to be wrong in: there is no\nreference to compare against, so the user has no way to notice.\n\nDetection is syntactic on the parsed expression, so `success()` inside a\nstring literal doesn't count as opting out, and `!cancelled()` does.\nWhen the gate suppresses a condition that evaluated true, the existing\nif-warning field explains why - the surprise is the whole point of\nshowing it. That advice names ${{ !cancelled() }} with its wrapper,\nbecause a bare leading `!` is a YAML tag and won't parse.\n\nThis is a behavior change to the execution engine, not a security fix,\nand it is one an earlier review of mine wrongly dismissed as correct.\n\nVerified in a browser: after a failed step, `if: true` shows\n\"if: true -> false\" with the explanation and a skipped marker, while\n`if: always()` runs. 457 tests pass.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/6989c91cdbfeb78b56b37aa1b708a5a16ebc4528",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "08a5c4a985741749cebde246cadb3c69f73f2ed9",
+      "message": "Resolve confinement through the filesystem, not just the path string\n\nA follow-up review reproduced four escapes past the previous commit, all\nof the same shape: path.resolve() compares text, so a symlink inside the\nworkspace pointing out of it passes the check and the caller then reads\nor writes the real target. Confirmed all four locally before fixing -\nhashFiles through a symlinked directory (literal path and glob), an\nartifact whose root is a symlink, and a download destination that is one.\n\nConfinement now resolves both the base and the target through the\nfilesystem, handling paths that don't exist yet by resolving the deepest\nexisting ancestor and re-appending the missing tail, and returns the real\npath so callers operate on that rather than the symlinked route. Shared\nby the artifact handlers and hashFiles, which had near-duplicate checks.\n\nA NUL byte gets its own rejection: fs throws a TypeError rather than a\nnot-found on one, which the ancestor walk would otherwise read as \"does\nnot exist yet\" and let through. It is reachable straight from pasted\nYAML, where \\0 is an ordinary escape.\n\nThe playground's empty scratch directory is replaced by removing the\ncapability: hashFiles now refuses when there is no session rather than\nreading any directory, and the process.cwd() fallbacks behind it are\ngone, so no context can reach the server's own tree by omitting a cwd.\n\nSeparately, an exception anywhere in a step left lane.status at\n\"running\", which nothing resets - every later control call then rejected\nthe lane as already running and the session was wedged for good. Steps\nnow record an unexpected throw as a visible engine error and stay\nsteppable, with a last-resort reset in both control entry points.\n\nCaps are now true bounds, refusing a file that would exceed them rather\nthan stopping once already over, and artifact copying has a byte cap\nalongside the file count.\n\n481 tests pass, including the four reproductions as regression tests,\nsymlink cases on both ends, the byte limits, and the wedged-lane\nrecovery.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/08a5c4a985741749cebde246cadb3c69f73f2ed9",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "a8659a7bf4e91fb63dbfe8620d57316aa94886ac",
+      "message": "Add address and instance-wide abuse limits; fix two limit/masking edges\n\nAbuse limits: the owner id is a cookie the visitor controls, so clearing\nit bought a fresh allowance and the per-owner limit bounded nobody. Two\nmore scopes now sit alongside it - per client address, deliberately\nlooser since a NAT shares one, and a global ceiling that bounds the\nshared instance however many identities the traffic is spread across,\nplus a cap on total live sessions. The address comes from the last\nx-forwarded-for entry: a client can prepend entries but not the one the\nproxy appends. Capacity is checked across all scopes before any records\na hit, so a request refused by one doesn't spend another's budget.\n\nBucket eviction: the map kept one entry per owner id ever seen and never\ndropped any, which on a long-running single process grows without bound.\nEntries with nothing left inside the window are now swept, at most once\nper window so the cost is proportional to the map rather than to each\nrequest.\n\nTwo edge cases found in review, both reproduced first:\n\nfromJSON() truncated its input to 60 characters before building the\nerror, and masking searches for each secret's full text - so a secret\nlonger than the cutoff left an unmatchable prefix and printed most of\nitself back. A short secret passed the existing test while a long one\nleaked. The value is no longer quoted at all; the length is enough to\ntell an empty value from a malformed one.\n\nThe matrix limit counted one lane per include entry, but an include\nusually merges into combos that already exist and adds no row, so a\nlegitimate 256-combination matrix with one merging include was rejected\nas 257. The pre-allocation guard now measures only the cross product -\nthe part that grows exponentially - and the real total is checked after\nexpansion, which is safe once the product is known to be bounded.\n\nAlso corrects the skip warning's wording: failure() runs a step only\nwhen something failed, it does not run it \"regardless\".\n\n494 tests pass, including the long-secret leak, the 256-plus-include\nmatrix, cookie-reset abuse, and bucket eviction as regression cases.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/a8659a7bf4e91fb63dbfe8620d57316aa94886ac",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "c7f4ea8dc6df071c1eabb02b1aeb1247d991e16d",
+      "message": "Mask secrets across output chunk boundaries; fix first-upload regression\n\nCross-chunk masking: each captured chunk was masked on its own, so a\nsecret written in two calls left one half in each and matched neither.\nThe redacted stdout read `***` while the interleaved view still showed\nthe whole token once its chunks were read end to end. Redaction is now\ncomputed over the concatenation and re-split on the original boundaries,\nwhich also covers a secret straddling a stdout/stderr switch; the mask is\nemitted where the secret begins and dropped from the chunks it continues\ninto. Reproduced end to end first - two printf calls either side of a\nsleep - and the same script now yields `***`.\n\nThis also adds the first unit tests for the masking module, which had\nnone. That absence is why a bug in it survived: every existing test\nexercised masking only through a caller that happened to pass whole\nstrings.\n\nFirst-upload regression, introduced by the confinement commit: the\nartifact store is the confinement base, a base has to exist to be\nresolved, and the engine creates that store lazily - so the first upload\nof any session was refused, reporting an escaping artifact name. Every\nexisting test pre-created the store in its fixture, which hid it\ncompletely. The store is now created before any user-controlled path is\nresolved, and the new tests pass a store that does not exist.\n\nThe confinement helper also treated every realpath failure as \"does not\nexist yet\" and walked past it. Only ENOENT and ENOTDIR may be walked\npast now; a permission error or invalid argument refuses instead.\n\n508 tests pass.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/c7f4ea8dc6df071c1eabb02b1aeb1247d991e16d",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "b60d5e3b3d3ed7aa69e0dc963f08bdf2e175233d",
+      "message": "Make live-session caps race-free and limit before parsing\n\nThe two live-session caps were checked and then awaited across - the\nworkspace mkdtemp sits between the check and the save - so concurrent\nrequests could all pass the same check before any of them counted. A slot\nis now reserved synchronously, in one turn of the event loop, and\nreleased once the session is saved (from then on the store counts it) or\nthe attempt has failed. Reachable at the global scope, where the creation\nrate allows more admissions per window than the live cap permits.\n\nWorth recording how the reproduction went: 40 concurrent requests from\none owner admitted exactly the cap, because at current constants the\nper-owner *rate* limit binds before the live cap can. The window is real\nby inspection, so it is closed and covered by tests that drive the\nreservation directly rather than through a burst that another limit\ntruncates first.\n\nRate limiting now runs before the workflow is parsed and before any\nfilesystem work, so a refused request costs close to nothing. This also\nmeans a malformed workflow spends budget rather than being a free way to\nmake the server parse - deliberate, since the parse is the work being\nprotected.\n\nThe address scope is documented as what it is: conditional on the\ndeployment appending or overwriting the last x-forwarded-for entry and on\nnothing reaching the process around the proxy, neither of which is\nverified here. Behind a longer chain that entry can be an intermediary\nshared by many visitors. The global scope and the live-session caps are\nthe unconditional bounds; DEPLOY.md now says so rather than implying\nevery layer is equally solid.\n\n513 tests pass.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/b60d5e3b3d3ed7aa69e0dc963f08bdf2e175233d",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "dfe3864980e5c7117d0581349f565bb8607a1958",
+      "message": "Mask at capture, before truncation, and per stream as well as interleaved\n\nTwo masking failures remained after the chunk-boundary fix, both\nreproduced before changing anything.\n\nTruncation still ran ahead of masking. The capture classes freeze a head,\nslide a tail window and drop whole chunks past a cap, and masking\nhappened afterwards in session.ts - so a secret straddling any of those\nboundaries left the surviving half with nothing to match it against. A\nvalue crossing the head cutoff kept its prefix in the retained output.\nRedaction now happens as the process writes, in a streaming masker that\nholds back just enough tail to recognise a value split across two writes,\nso nothing leaves the capture unmasked and callers may truncate freely.\n\nConcatenating every chunk was not enough on its own. With a line from the\nother stream arriving between two halves of a secret, the interleaved\nconcatenation puts that line inside the value and matches nothing, while\nthe stream itself still reads back whole. Each stream is now projected\nseparately as well as interleaved, and the redactions from all three are\nunioned onto the chunks - so a split within one stream, a split across a\nstream switch, and a split with the other stream interleaved are all\ncovered.\n\nI had flagged the truncation ordering myself in the previous round and\nthen did not fix it, which is why it needed raising twice.\n\n524 tests pass, including a secret straddling the 100,000-character head\ncutoff and the interleaved-stderr case.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/dfe3864980e5c7117d0581349f565bb8607a1958",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "5b17ad6b3e501f10e44df820cb7839b3c8e780e9",
+      "message": "Mask GITHUB_ENV/PATH at serialization; validate What-If requests\n\nSecrets copied into $GITHUB_ENV reached the client verbatim. A step doing\n`echo \"X=${{ secrets.TOKEN }}\" >> \"$GITHUB_ENV\"` left the real value in\nlane.env, and the whole lane was serialized as-is. $GITHUB_PATH leaked the\nsame way, which the original finding didn't mention.\n\nMasking at capture is not an option here: both fields are resolved into\nthe environment of every later step, so a masked lane.env would run the\nrest of the job against `***`. They are masked at serialization instead -\nthe one place lane state crosses from the engine to the client - so the\nengine keeps the real value and the client never sees it. The test\nasserts both halves: the next step still reads the true value, and its\noutput is masked on the way out.\n\nWhat-If requests went from parsed JSON straight into applyWhatIf.\nWhatIfPatch describes what the engine expects, not what arrives over\nHTTP, so a number where a string belonged travelled to a string\noperation deep in interpolation before anything noticed. The route now\nruns the same kind of boundary check the session route already had, with\nkey-count and value-length bounds - overrides live for the session's\nlifetime, so an unbounded payload grows one session's memory without\nneeding to create another.\n\n532 tests pass. Verified over HTTP: a valid patch applies, wrong types\nand oversized payloads are refused with a specific message.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/5b17ad6b3e501f10e44df820cb7839b3c8e780e9",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "740f602ee85ebf9f6b872025155da1f9dbbaf9bd",
+      "message": "Require consent before a shared link runs anything; fix matrix ordering\n\nMatrix ordering: GitHub documents that \"all include combinations are\nprocessed after exclude\", which is what lets an include add back a\ncombination exclude removed. Running include first made\n`exclude: [os: X]` followed by `include: [os: X]` produce nothing where\nGitHub produces one row. Expansion is now cross product, then exclude,\nthen include - matched against what survived, so an entry whose target\nwas excluded becomes its own row rather than merging into a combo that\nno longer exists. I argued the previous order was correct twice; the\ndocumented wording settles it and I was wrong.\n\nShared-link execution consent: opening a link created a session and\nimmediately replayed its progress, so on a local install with real\nexecution enabled, clicking a stranger's link ran their shell commands.\nOpening now shows the workflow, how much the link asks to replay, and -\nwhen this deployment really executes - what replaying means, with\n\"Inspect without running\" as the primary action. The link's breakpoints,\noverrides and mocked results are applied either way, since none of them\nexecute.\n\nThe gate is in the engine, not the screen: a session created from a\nshare link refuses every control path until consent is granted, so\nskipping the UI does not skip the decision. Checked in one place that\nall four control entry points pass through, rather than per route.\n\n541 tests pass. Browser-verified with real execution enabled: the\nwarning renders, \"Inspect without running\" leaves every step pending,\nand posting straight to /control without consent is refused with 409\nbefore the consent endpoint lets it through.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/740f602ee85ebf9f6b872025155da1f9dbbaf9bd",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "a07678f0a390efb1bf472066bf7d7d5888fb9072",
+      "message": "Make the inspect-only state escapable; show what a link imports\n\nThe consent flow had a dead end I built into it: \"Inspect without\nrunning\" navigated into the debugger with execution still refused, and\nnothing on that screen could grant it - Step and Continue returned an\nerror pointing at a button that only existed on the page the user had\nalready left. Links carrying no recorded progress disabled \"Replay\nsteps\" from the outset, so inspect was the only route in, and it led\nnowhere.\n\nThe debugger now carries the decision: a banner on a shared session\nexplains why controls are refused and offers \"Allow execution\", with the\nreal-execution warning when this deployment actually runs commands.\nInspection stays safe; the choice just stops being one-way.\n\nThe consent screen also lists what the link imports - env and vars\noverrides, mocked step results with their exit codes, breakpoints, the\npause-on-failure setting - because the YAML alone does not show that a\nstep is stubbed to fail or that an override changes what a command\nexpands to.\n\nAlso states the flag's scope where it is defined: awaitingExecutionConsent\nis set from a client-supplied field, so it guarantees that following a\nlink never runs anything on its own. It is not authentication, and a\ncaller writing its own requests was always free to create a session\ndirectly.\n\nConsent stays per session and is not re-asked for ordinary What-If\nedits, which matches the guidance: the workflow source and workspace are\nfixed at creation, and nothing imports another shared configuration into\na live session, so there is no renewal trigger to implement yet.\n\n546 tests pass. Browser-verified end to end on a zero-progress link with\nreal execution enabled: replay disabled, imported overrides listed,\ninspect lands on the banner, /control refused with 409 before allowing\nand succeeding after.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/a07678f0a390efb1bf472066bf7d7d5888fb9072",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "fca8d21e444d97ef75ee64195f709b76f28e4d40",
+      "message": "Snapshot each step's environment instead of recomputing it\n\nThe context view of an already-executed step was built from the present:\n`resolveEffectiveEnv` composed the workflow and job layers with whatever\n`$GITHUB_ENV` and What-If held *now*. So a later step writing COLOR=blue\nmade the first step appear to have seen blue, and a What-If override to\ngreen made every step appear to have seen green. Worse than a wrong\nvalue - a debugger showing a past that never happened, with nothing to\ncompare against.\n\nEach step now records what it was actually given, at the moment it ran:\n\n- envBefore: the environment supplied to that step, its own `env:`\n  layer included, captured before the `if:` is evaluated so a skipped\n  step still shows what it would have had.\n- envAfter: `$GITHUB_ENV` as it stood when the step finished - what the\n  steps after it inherit.\n\nThe context route serves the snapshot for any step behind the pointer.\nThe step *at* the pointer keeps recomputing, because it has not run yet:\nthere the live answer is the right one, since it is what running it now\nwould use.\n\nSnapshots are kept raw, like Lane.env, and stripped from the serialized\nsession entirely rather than masked - the context endpoint serves the one\nstep being inspected, so the payload does not need an env map per step\nper lane, and there is one fewer copy to redact.\n\n552 tests pass, covering the red -> blue -> green sequence, matrix lanes\nholding independent histories, a step's own env: layer, and no secret\nreaching the client. Verified over HTTP: after overriding to green, step\n0 still reports red and step 2 still reports blue.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/fca8d21e444d97ef75ee64195f709b76f28e4d40",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "64937235410ac05569c69b026cc10246ce86fd13",
+      "message": "Keep historical env snapshots correct across secret changes and selection\n\nThree follow-ups to the historical-environment work, each reproduced first.\n\nRetired secrets stayed masked only while they were still secret. Read-time\nmasking used `session.config.secrets`, so deleting a secret through What-If\nun-redacted every snapshot and record that still held its value: the map no\nlonger contained it, nothing matched, and the raw value came back. Replacing\none had the same effect. `secretsToMask(current, retired)` now unions the\ncurrent map with every value that was ever a secret in this session, captured\nin `applyWhatIf`; a value that was secret here stays redacted for the rest of\nthe session. Masking something no longer secret costs nothing - the reverse\ndoes not.\n\nThe context endpoint overloaded one index for two different questions. The\ninspector asks about the step the user selected, sending `selected + 1` so\nthat step's own outputs are in scope, which lands on the lane pointer\nwhenever the last completed step is selected - the common case, since\nstepping selects it. There it recomputed, answering with the environment the\n*pending* step would be given now rather than what the finished step left\nbehind, so a What-If override rewrote the history the snapshots exist to\npreserve. The caller now says which question it is asking:\n`afterStepIndex=N` for what step N left behind (historical, from its own\nrecord), `stepIndex=K` for what step K would be given (live for a step that\nhas not run, so pending overrides apply). Both are reachable again; before,\nthe first was unreachable at the pointer.\n\n`envAfter` was the bare `$GITHUB_ENV` additions, which is not what its name\nor its use claimed - \"what subsequent steps inherit\" is the whole resolved\nenvironment. It now records exactly that, with the additions still available\non their own as `Lane.env`.\n\nVerified over HTTP against a production build: history holds under an env\noverride, a deleted and a replaced secret both still redact in old snapshots,\nand an out-of-range `afterStepIndex` falls back to the live view.\n\n554 tests pass; typecheck, lint and build clean.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/64937235410ac05569c69b026cc10246ce86fd13",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "d590680d5a377e03bf999d20a085cd9779858bc0",
+      "message": "Fix lane-key collisions, a lane temp-path escape, and runner.os in a matrix\n\nThree findings, all reproduced first, all rooted in matrix values being\nworkflow-author input that was trusted downstream.\n\n`comboKey` joined keys and values with `:` and `|` without escaping either,\nso two genuinely different combos could produce one key: `{a: \"x|b:y\"}` and\n`{a: \"x\", b: \"y\"}` both gave `a:x|b:y`, and a single matrix reaches both at\nonce. Lanes live in a map keyed by this, so the second lane overwrote the\nfirst while `laneOrder` still listed both - one combination silently vanished\nand two entries drove the same lane. Every part is now escaped, and\nnon-strings are JSON-encoded behind a `#` marker so the string \"18\" and the\nnumber 18 stay distinct. Lane ids for non-string matrix values change shape;\nnothing persists them (share links carry the combo itself and re-derive).\n\nThe lane's `$RUNNER_TEMP` was `path.join(sessionTempRoot, \"runner-temp\",\nlaneId)`, and the lane id embeds those same values. A matrix value of\n`../../../../../../tmp/pwned` resolved the directory to `/tmp/pwned` -\noutside the session root, created on disk, and handed to every `run:` step in\nthat lane. `laneTempDir` now percent-encodes everything outside\n`[A-Za-z0-9._-]` and appends a digest of the full id, so the name is one\nconfined segment and two lanes that sanitize alike still get separate\ndirectories.\n\n`runner.os` derived from the raw `runs-on` string, so the standard way to\nwrite a cross-OS matrix - `runs-on: ${{ matrix.os }}` - matched no label and\nevery lane reported \"Linux\", making the OS branches the matrix exists to\nexercise all take the same path. `deriveRunnerOs` now takes the eval context\nand interpolates each label first, falling back to the raw text if an\nexpression won't evaluate. The context is assembled with a provisional\n`runner.os` and overwritten once it can be resolved, since interpolating\nneeds the rest of the context.\n\nVerified over HTTP against a production build: the three-OS matrix reports\nLinux/Windows/macOS, the colliding matrix yields two lanes that step\nindependently, and the traversal value stays inside the session temp root\nwith no `/tmp/pwned` created.\n\n562 tests pass; typecheck, lint and build clean.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/d590680d5a377e03bf999d20a085cd9779858bc0",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "503a7fba9b4c359f418c3637a59ae87b18974bee",
+      "message": "Bound anonymous expression evaluation\n\n`format()` amplifies: a placeholder may be repeated as often as the format\nstring likes, so `format('{0}{0}{0}{0}', x)` quadruples its input while\nwriting it once, and nesting that multiplies. A 339-character expression\nproduced a 268MB string - reachable with no session, so session-creation\nlimits never saw it. At 40 levels the same trick reaches gigabytes.\n\nThree bounds, because no single one is enough:\n\nEvery value an expression function produces is now capped at 100,000\ncharacters, checked *as* the value is built rather than on the finished\nstring - a format string may repeat one placeholder any number of times, so\nthe overshoot happens inside the loop. Capping each produced value bounds the\nwhole evaluation, since every nesting level has to materialise its own result\nbefore the level above can use it: the innermost call that would exceed the\ncap fails and nothing larger is allocated.\n\nThe response has its own shared character budget. Per-string caps alone were\nnot enough, because a trace carries a value and a source label per node and\nthe node count grows with the input too: a maximal 7.9KB expression still\nanswered with ~1MB. Strings are capped individually and the trace stops being\nwalked once the total is spent, with the node saying it was truncated rather\nthan appearing childless. All of it runs strictly after masking - truncating\nfirst and masking the remainder is the leak this codebase keeps finding.\n\nThe endpoint now has its own rate-limit allowance, in a bucket namespaced per\naction so playground traffic can never be what stops a visitor opening a\nsession. `checkCreateLimit` became a thin wrapper over a general\n`checkLimit`.\n\nAlso fixes the 500 on a non-string `expression`: `.trim()` ran before the\ntype check, so a malformed request was answered as a server failure. It is a\n400 now, alongside a length cap on the expression text - parsing is recursive\ndescent, so unbounded input is also unbounded nesting depth.\n\nVerified over HTTP against a production build: the 339-character amplifier is\nrefused, a maximal-nesting 7.9KB request answers in 126KB instead of ~1MB,\n`{\"expression\":42}` returns 400, and the 601st evaluation returns 429 while\nsession creation from the same visitor still succeeds.\n\n569 tests pass; typecheck, lint and build clean.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/503a7fba9b4c359f418c3637a59ae87b18974bee",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "f0bd44d51fe054c839aeebc91091dac417d76c76",
+      "message": "Mask before truncating in simulated-step notes\n\nTwo remaining instances of the truncate-then-mask bug class, both in notes\nshown for steps that are not executed - which is every `run:` step on the\npublic demo, so both were reachable there.\n\nThe interpolated command is capped to one 200-character line before the note\nis masked, and `actions/github-script` quotes back the first 80 characters of\nits `script` input the same way. A secret longer than the cap leaves its head\nin the output and its tail - the part a later mask would have matched on -\nalready discarded. Reproduced with a 400-character secret: both notes carried\nhundreds of its characters verbatim.\n\n`summarizeScript` now masks before splitting and capping. For simulated\nactions the fix is structural rather than per-handler: handlers receive a\n`short(text, limit)` that masks first, because `withInputs` is\npost-interpolation and any of it may be a secret, and a handler cannot reach\nthe secret map on its own. The caller masking the finished note is too late\nby construction, so quoting an input back now has to go through `short`.\n\nAdded `maskThenTruncate` next to the other masking primitives, so the\nordering has one obvious home rather than being re-derived per call site.\n\nVerified over HTTP against a production build in demo mode: both notes show\n`***`, and no part of the session payload carries the secret.\n\n571 tests pass; typecheck, lint and build clean.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/f0bd44d51fe054c839aeebc91091dac417d76c76",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    },
+    {
+      "sha": "eba1815359790a0e68f507ffab3f5897d47a721c",
+      "message": "Fix secret replacement and deletion silently doing nothing\n\nA regression from 6493723. `secretsToMask()` returns a *view* - the live\nsecret map plus every value retired from it - and once anything has been\nretired that view is a fresh object. `applyWhatIf` was both reading and\nwriting through it, so from the first retirement onward every replace or\ndelete edited a throwaway copy: the request returned 200, the session\nreported the new secret names, and evaluation kept using the old value.\n\nReproduced: after retiring one secret, replacing another left the original in\nplace, and deleting it left it present.\n\nBoth sites now use `session.config.secrets` directly. Read and write belong\non the live map; the view exists only for masking stored data on the way out.\n\nThis also means the earlier retirement tests proved less than they looked\nlike they did - that masking still redacted an old value is not evidence the\ndeletion took effect. The new tests assert the mutation itself, and one runs\na step after a replacement to check evaluation actually picks the new value\nup.\n\nVerified over HTTP: after retiring one secret and replacing another, the next\nstep's condition matches the new value and the deleted name is gone from\n`secretNames`.\n\n573 tests pass; typecheck, lint and build clean.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011SE3csbYNdw3sSMFV4LSyN\n",
+      "pullTitle": null,
+      "url": "https://github.com/StormDoragon/vizu-four/commit/eba1815359790a0e68f507ffab3f5897d47a721c",
+      "label": {
+        "includeInNotes": null,
+        "securitySensitive": null,
+        "breakingChange": null,
+        "category": null,
+        "note": ""
+      },
+      "skip": null
+    }
+  ]
+}

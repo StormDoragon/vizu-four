@@ -40,6 +40,8 @@ export interface WorksheetRow {
 
 export interface Worksheet {
   schema: 1;
+  /** What the range is for. A "holdout" is labeled after rule changes and never used to tune rules. Absent means calibration. */
+  role?: "calibration" | "holdout";
   repository: string;
   baseRef: string;
   headRef: string;

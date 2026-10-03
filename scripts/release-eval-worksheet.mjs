@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Writes a labeling worksheet for a real, PUBLIC GitHub release range. Every label is left blank.
 //
-//   node scripts/release-eval-worksheet.mjs <owner/repo> <base-ref> <head-ref> [--out <file>] [--max <n>] [--local <clone-dir>]
+//   node scripts/release-eval-worksheet.mjs <owner/repo> <base-ref> <head-ref> [--out <file>] [--max <n>] [--local <clone-dir>] [--role calibration|holdout]
+//
+// --role records what the labeled range is for. A "holdout" range must be labeled AFTER any rule changes and never
+// used to tune rules; an absent role means calibration. It is recorded in the worksheet, not enforced here.
 //
 // --local reads the range from a local git clone instead of the GitHub API: no network, no rate limit, identical
 // SHAs and raw messages, but no merged-PR titles (pullTitle stays null). You are responsible for the repository being
@@ -29,9 +32,10 @@ const flag = name => { const i = args.indexOf(name); if (i === -1) return undefi
 const out = flag("--out");
 const maxCommits = Number(flag("--max") ?? 40);
 const localDir = flag("--local");
+const role = flag("--role");
 const [repository, baseRef, headRef] = args;
-if (!repository || !baseRef || !headRef || !/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isInteger(maxCommits) || maxCommits < 1 || maxCommits > 100) {
-  console.error("usage: node scripts/release-eval-worksheet.mjs <owner/repo> <base-ref> <head-ref> [--out <file>] [--max <1-100>] [--local <clone-dir>]");
+if (!repository || !baseRef || !headRef || !/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isInteger(maxCommits) || maxCommits < 1 || maxCommits > 100 || (role !== undefined && !["calibration", "holdout"].includes(role))) {
+  console.error("usage: node scripts/release-eval-worksheet.mjs <owner/repo> <base-ref> <head-ref> [--out <file>] [--max <1-100>] [--local <clone-dir>] [--role calibration|holdout]");
   process.exit(2);
 }
 
@@ -100,7 +104,7 @@ const rows = collected.rows.map(r => ({
 }));
 
 const worksheet = {
-  schema: 1, repository, baseRef, headRef, baseSha, headSha, collectedFrom, generatedAt: new Date().toISOString(), commitCount: rows.length,
+  schema: 1, ...(role ? { role } : {}), repository, baseRef, headRef, baseSha, headSha, collectedFrom, generatedAt: new Date().toISOString(), commitCount: rows.length,
   review: { reviewer: null, reviewedAt: null, recordUrl: null }, rows,
 };
 const file = out ?? `release-eval-${repository.replace("/", "-")}-${baseSha.slice(0, 7)}-${headSha.slice(0, 7)}.json`;

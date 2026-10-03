@@ -108,6 +108,18 @@ describe("release-eval-worksheet.mjs (GitHub API path, mock server)", () => {
     const w = JSON.parse(readFileSync(file, "utf8"));
     expect(w.rows.map((r: { pullTitle: string | null }) => r.pullTitle)).toEqual(["feat: add CSV export", null]);
   });
+  it("records --role in the worksheet, and rejects an unknown role", async () => {
+    const file = out("role");
+    expect((await run(file, ["--role", "holdout"])).code).toBe(0);
+    expect(JSON.parse(readFileSync(file, "utf8")).role).toBe("holdout");
+    const plain = out("no-role");
+    expect((await run(plain)).code).toBe(0);
+    expect("role" in JSON.parse(readFileSync(plain, "utf8"))).toBe(false);
+    const bad = out("bad-role");
+    const result = await run(bad, ["--role", "validation"]);
+    expect(result.code).toBe(2); expect(result.stderr).toContain("usage:");
+    expect(existsSync(bad)).toBe(false);
+  });
   it("refuses a non-loopback test API, so a token can never be redirected", async () => {
     const result = await run(out("nonloopback"), [], { RELEASE_EVAL_TEST_API: "https://evil.example", GITHUB_TOKEN: "test-token-not-real" });
     expect(result.code).toBe(2); expect(result.stderr).toContain("loopback");

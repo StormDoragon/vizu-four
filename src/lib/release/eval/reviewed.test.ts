@@ -165,6 +165,16 @@ describe("committed draft worksheets", () => {
     expect(new Set(w.rows.map(r => r.sha)).size).toBe(w.rows.length);
     for (const r of w.rows) { expect(r.sha).toMatch(/^[0-9a-f]{40}$/); expect(typeof r.message).toBe("string"); expect(r.url).toBe(`https://github.com/${w.repository}/commit/${r.sha}`); }
   });
+  it("keeps hold-out ranges disjoint from calibration ranges, across drafts and reviewed worksheets", () => {
+    const reviewedDir = fileURLToPath(new URL("./reviewed", import.meta.url));
+    const all = [
+      ...files.map(f => JSON.parse(readFileSync(join(dir, f), "utf8")) as Worksheet),
+      ...(existsSync(reviewedDir) ? readdirSync(reviewedDir).filter(f => f.endsWith(".json")).map(f => JSON.parse(readFileSync(join(reviewedDir, f), "utf8")) as Worksheet) : []),
+    ];
+    const shas = (role: "holdout" | "calibration") => new Set(all.filter(w => (w.role ?? "calibration") === role).flatMap(w => w.rows.map(r => `${w.repository}@${r.sha}`)));
+    const holdout = shas("holdout"), calibration = shas("calibration");
+    expect([...holdout].filter(sha => calibration.has(sha)), "a commit in a hold-out range must never also be in a calibration range").toEqual([]);
+  });
   it("draft worksheets are never loaded as reviewed data", () => {
     // worksheets/ is not what the corpus loads; only reviewed/ is.
     const loaded = loadReviewedCases(fileURLToPath(new URL("./reviewed", import.meta.url)));
