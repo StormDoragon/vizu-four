@@ -7,6 +7,6 @@
   "independentHumanReview": false,
   "humanReviewRecord": null,
   "sourceWorksheetSha256": "0df1de68e9014a794f03006dee1a6c9fc265b83332a88f105a8d575341c3e232",
-  "labeledDraftSha256": "68b16bcb01a927909d61a00fa59b10b640b3f5377f483b476f4dfb492bb7d269",
+  "labeledDraftSha256": "9d30d170aae0ed86179f9da4292ce8d03e7865a8aadd1bf329161deae1b7c294",
   "priorExposure": "This assistant previously reviewed classifier implementation and synthetic tests. This draft is not an independent human calibration dataset."
 }

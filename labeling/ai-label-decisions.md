@@ -60,6 +60,6 @@ No classifier was run or calibration predictions consulted while making these de
 
 Decision counts (not accuracy measurements): 40 labeled, 32 included, 19 security-sensitive, 1 breaking, zero skipped.
 
-Draft SHA-256: `68b16bcb01a927909d61a00fa59b10b640b3f5377f483b476f4dfb492bb7d269`.
+Draft SHA-256: `9d30d170aae0ed86179f9da4292ce8d03e7865a8aadd1bf329161deae1b7c294`.
 
 The gate, baseline and hold-out remain unchanged. All three review fields are blank because no independent human reviewer or genuine human review record was supplied.
