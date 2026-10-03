@@ -34,6 +34,14 @@ describe("release review signals", () => {
       expect(classifyChange(releaseFixture([message]).commits[0])).toMatchObject({ releaseWorthy: false, securitySensitive: true });
     }
   });
+  it.each(["✨ docs: status update", "PROJ-123: docs: record release review", "✨ Merge branch feature", "PROJ-123: Tidy up old imports"])("excludes prefixed administrative metadata: %s", message => {
+    expect(classifyChange(releaseFixture([message]).commits[0]).releaseWorthy).toBe(false);
+  });
+  it("uses a meaningful body signal in technical notes while preserving the source title", () => {
+    const analysis = analyzeRelease(releaseFixture(["Cleanup\n\nfix: users could not reset passwords"]));
+    expect(analysis.changes[0]).toMatchObject({ title: "Cleanup", technical: "fix: users could not reset passwords", releaseWorthy: true });
+    expect(renderNotes(analysis).technical).toContain("users could not reset passwords");
+  });
   it("bounds the new review scans on long hostile metadata", () => {
     const text = "mask " + "x".repeat(500_000) + "\n" + "Bound ".repeat(50_000);
     const start = performance.now();

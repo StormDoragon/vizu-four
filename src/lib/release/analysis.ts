@@ -19,7 +19,7 @@ export function classifyChange(commit: CollectedCommit): ReleaseChange {
   const securitySensitive = flags.securitySensitive || commit.reviewFlags?.securitySensitive === true;
   const internal = ["chore", "ci", "build", "test", "refactor", "style"].includes(type ?? "")
     || ["ci", "build", "test", "tests", "deps-dev", "tooling"].includes(scope ?? "")
-    || /^(?:Merge|Refactor|Bump)\b/i.test(title)
+    || /^(?:Merge|Refactor|Bump)\b/i.test(signal)
     || /^(?:Add|Fix(?:es|ed)?|Improve|Update|Run) (?:CI|tests?|build|tooling|eslint|lint|(?:failing|flaky) (?:CI|tests?))\b/i.test(signal)
     || /^(?:Fix(?:es|ed)? (?:typos?|merge conflicts)|Tidy up)\b/i.test(signal);
   let category: ReleaseChange["category"] = "other";
@@ -31,12 +31,12 @@ export function classifyChange(commit: CollectedCommit): ReleaseChange {
   else if (type === "fix" || /^(?:Fix(?:es|ed)?|Repair|Resolve|Apply|Collapse|Compute|Keep|Report|Treat|Send|Only let|Put|Don't|Stop|Disable|Remove|Refuse)\b/i.test(signal)) category = "fixed";
   else if (type === "perf" || /^(?:Improve|Optimize|Speed up|Harden)\b/i.test(signal)) category = "improved";
   const impact: ReleaseChange["impact"] = category === "internal" ? "internal" : category === "documentation" || breakingChange ? "developer" : ["added", "fixed", "improved"].includes(category) ? "customer" : "unknown";
-  const administrative = ["test", "ci", "build"].includes(type ?? "") || /^Merge\b/i.test(title)
-    || /^(?:Tidy up|docs: (?:status|restore README|record .*review|expand .*summary))\b/i.test(title);
+  const administrative = ["test", "ci", "build"].includes(type ?? "") || /^Merge\b/i.test(signal)
+    || /^(?:Tidy up|docs: (?:status|restore README|record .*review|expand .*summary))\b/i.test(signal);
   const releaseWorthy = breakingChange || (!administrative && category !== "internal" && category !== "other");
   const reason = securitySensitive ? "Security-related metadata requires human review; customer output is withheld." : breakingChange ? "Explicit breaking-change marker; review migration requirements." : category === "internal" ? "Maintenance or merge metadata; excluded from release notes." : category === "other" ? "No clear release signal; review manually before including." : "Commit or merged PR title indicates a release change; impact is inferred from metadata.";
   const description = conventional?.[4] ?? title;
-  return { id: commit.sha, title, category, impact, importance: breakingChange || securitySensitive ? "high" : releaseWorthy ? "medium" : "low", confidence: category === "other" || !conventional ? "low" : "medium", securitySensitive, breakingChange, releaseWorthy, reason, evidence: commit.evidence, technical: title, customer: description };
+  return { id: commit.sha, title, category, impact, importance: breakingChange || securitySensitive ? "high" : releaseWorthy ? "medium" : "low", confidence: category === "other" || !conventional ? "low" : "medium", securitySensitive, breakingChange, releaseWorthy, reason, evidence: commit.evidence, technical: signal !== normalizedTitle ? signal.slice(0, 300) : title, customer: description };
 }
 
 export function analyzeRelease(collection: ReleaseCollection): ReleaseAnalysis {

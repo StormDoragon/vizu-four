@@ -79,6 +79,18 @@ describe("Release interface", () => {
     expect(screen.getByLabelText("Customer release notes")).toHaveValue(data.notes.customer);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("resets a newly sensitive change without losing unrelated edits", async () => {
+    fetcher.mockResolvedValue({ ok: true, json: async () => response(["feat: add reports", "feat: add export"]) });
+    render(<ReleaseApp />); fill(); fireEvent.click(screen.getByRole("button", { name: "Analyze release" }));
+    await screen.findByText("2 release-worthy / 2 changes");
+    fireEvent.change(screen.getByLabelText("Customer wording 2"), { target: { value: "Download a report" } });
+    fireEvent.change(screen.getByLabelText("Technical wording 1"), { target: { value: "sanitize UI labels" } });
+    expect(screen.queryByLabelText("Technical wording 1")).not.toBeInTheDocument();
+    expect((screen.getByLabelText("Technical release notes") as HTMLTextAreaElement).value).not.toContain("sanitize UI labels");
+    fireEvent.click(screen.getByRole("button", { name: "Reset change 1" }));
+    expect(screen.getByLabelText("Technical wording 1")).toHaveValue("feat: add reports");
+    expect(screen.getByLabelText("Customer wording 2")).toHaveValue("Download a report");
+  });
   it("does not offer editing for protected details and clears edits on a new range", async () => {
     const data = response(["fix: secret leak in logs", "feat: add reports"]);
     fetcher.mockResolvedValue({ ok: true, json: async () => data });
