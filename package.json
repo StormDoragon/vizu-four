@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Visual, AI-assisted step-through debugger for GitHub Actions workflows (local-first MVP).",
+  "description": "Debug GitHub Actions workflows and draft evidence-backed release notes from public GitHub changes.",
   "engines": {
     "node": ">=20"
   },

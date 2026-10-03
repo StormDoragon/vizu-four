@@ -1,9 +1,107 @@
 # Vizu Four — Debug & Release Intelligence
 
-Vizu has two modules: **Debug** for GitHub Actions workflows and **Release**
-for evidence-backed release drafts from public GitHub repositories.
+Vizu has two modules:
 
-## Release Intelligence MVP
+- **Debug** (`/`) — a visual, step-through debugger for GitHub Actions
+  workflows: set breakpoints on steps, inspect every context (`github`, `env`,
+  `vars`, `secrets` (masked), `matrix`, `needs`, `steps`, `runner`, `job`,
+  `inputs`), explore matrix combinations, edit values with What-If, and run
+  `run:` steps for real in a local scratch workspace — no push, no waiting on
+  a runner.
+- **Release** (`/release`) — evidence-backed technical and customer release
+  drafts from a public GitHub repository's commit range. Every included change
+  links back to the commits, PRs, and files it came from, and nothing is
+  published automatically.
+
+This repository implements the **MVP slice** of a much larger product
+blueprint. See [Scope](#scope) below for exactly what's built versus what
+would come later, and [ROADMAP.md](./ROADMAP.md) for the prioritized checklist
+of what's next.
+
+Before using or deploying it, read [SECURITY.md](./SECURITY.md),
+[PRIVACY.md](./PRIVACY.md), and [DEPLOY.md](./DEPLOY.md). Do not enter
+production secrets or confidential workflow data into the public demo or a
+share link.
+
+## Status (October 2026)
+
+| Layer | State |
+|-------|--------|
+| **Debug MVP** | Shipped end-to-end (graph, breakpoints, matrix lanes, expression playground, What-If, mocks, time-travel, share links, themes). |
+| **Release MVP** | Merged on the default branch ([#33](https://github.com/StormDoragon/vizu-four/pull/33)): bounded public GitHub collection, deterministic classification, technical/customer notes, opt-in AI wording with deterministic fallback. |
+| **Release evaluation** | Harness and a 177-case **synthetic** corpus in `src/lib/release/eval/` ([#34](https://github.com/StormDoragon/vizu-four/pull/34)–[#37](https://github.com/StormDoragon/vizu-four/pull/37)). No maintainer-reviewed real range exists yet; the labels in `labeling/` are AI-drafted and not a human review. Synthetic results are not evidence of real-world accuracy. |
+| **Public demo** | [vizu-four.onrender.com](https://vizu-four.onrender.com) — **`VIZU_DEMO_MODE=1`** (`/api/config` → `{"simulationOnly":true}`). Real `run:` and host workspace browse are off. |
+| **Hardening** | First audit pass (28 findings) plus a follow-up security review (**8 findings**) are **merged** on the default branch (`53a34a6`, regression `63eb857`). |
+| **Live re-checks** | Demo-compatible findings re-probed over HTTP: YAML bomb rejected, secret-as-key masked, expression response budget held, oversized `event`/secrets rejected, pending-step `env` matches the playground, non-owner sessions → 404. |
+| **Still open for formal sign-off** | Confirm Render deploy SHA in the dashboard; re-run full local `npm test` / typecheck / lint / build on a clean machine; real-execution masking tests need a local (non-demo) process; live GitHub and paid Anthropic behavior for Release need separate integration checks. Container isolation ([#14](https://github.com/StormDoragon/vizu-four/issues/14)) remains a **hard prerequisite** before any shared host re-enables `run:`. |
+
+## Live demo
+
+**[vizu-four.onrender.com](https://vizu-four.onrender.com)** — running in
+`VIZU_DEMO_MODE=1` (see [DEPLOY.md](./DEPLOY.md)), so `run:` steps are
+simulated rather than executed for real. Click **⚠ See a failure debugged
+(one click)** on the home page for the fastest way to see what the debugger
+actually does.
+
+This runs on Render's free tier as a single persistent instance (see
+[DEPLOY.md](./DEPLOY.md#render-quickstart-recommended-free-one-instance-no-card)),
+which is why it's the recommended host over a serverless platform: a
+serverless deployment can route requests across multiple instances, each
+with its own empty copy of the in-memory session store, causing sessions to
+intermittently "disappear" mid-debug. One free-tier tradeoff: the instance
+spins down after ~15 minutes idle, so the first request after a quiet
+period can take up to a minute to wake it back up.
+
+(An earlier `*.vercel.app` link for this project has been paused and is no
+longer live — the Render URL above is the only public demo.)
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000, paste a workflow (or click one of the bundled
+examples under `examples/workflows/`), and click **Start Debugging**. Or
+click **⚠ See a failure debugged (one click)** to skip straight to a real
+failed step with no setup — it works the same way in a `VIZU_DEMO_MODE=1`
+deployment as it does locally, since the failure is a mocked step result
+rather than something that depends on `run:` actually executing.
+
+For Release, open **Release** in the navigation (or go to `/release`) and
+enter a public repository with a base and head ref.
+
+Requires Node.js 20+ and a Unix-like shell (`bash`) on PATH — `run:` steps
+are executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's
+own default. Windows/macOS runner emulation isn't implemented (see Scope).
+
+## Debug
+
+Paste a workflow or pick a bundled example from `examples/workflows/`, then
+step through it:
+
+- **Workflow graph** of jobs and `needs`, with one lane per matrix combination.
+- **Breakpoints** on steps, plus step / continue / time-travel through past
+  states.
+- **Context inspector** for every context, with secrets masked.
+- **Matrix explorer** for `strategy.matrix` expansion, including
+  `include`/`exclude`.
+- **Expression playground** using the same expression engine as execution.
+- **What-If** editing of env, vars, and secrets, and **mock outputs**
+  for `uses:` steps (simulated, not executed).
+- **Failure explanation** — heuristic by default, optionally a live Claude
+  explanation when an operator configures `ANTHROPIC_API_KEY`.
+- **Share links**, opt-in local **workspace** browsing, and light/dark
+  **themes**.
+
+### Simulation-only mode (`VIZU_DEMO_MODE=1`)
+
+Set `VIZU_DEMO_MODE=1` and **no `run:` step is ever spawned**. Mocks still
+apply (how the demo shows failures). Workspace browse of the host is disabled.
+Session creation is rate-limited. See [DEPLOY.md](./DEPLOY.md).
+
+## Release Intelligence
 
 Open **Release** in the navigation (`/release`). Enter `owner/repository` or
 an HTTPS GitHub repository URL, a base tag/branch/SHA, and a head ref. Click
@@ -90,76 +188,27 @@ provenance and release verification procedure.
   hosted changelog, Slack, or automatic publishing. Results live in the
   current browser view; copy them before navigating away.
 
-The existing debugger's execution, ownership, consent, and secret-masking
-boundaries remain in place. Public deployments still require `VIZU_DEMO_MODE=1`.
+The debugger's execution, ownership, consent, and secret-masking boundaries
+are unchanged by Release. Public deployments still require `VIZU_DEMO_MODE=1`.
 
-A visual, step-through debugger for GitHub Actions workflows: set breakpoints on
-steps, inspect every context (`github`, `env`, `vars`, `secrets` (masked),
-`matrix`, `needs`, `steps`, `runner`, `job`, `inputs`), explore matrix
-combinations, edit values with What-If, and run `run:` steps for real in a
-local scratch workspace — no push, no waiting on a runner.
+### Evaluating release classification
 
-This repository implements the **MVP slice** of a much larger product
-blueprint. See [Scope](#scope-what-this-is-and-isnt) below for exactly what's
-built versus what would come later, and [ROADMAP.md](./ROADMAP.md) for the
-prioritized checklist of what's next.
-
-Before using or deploying it, read [SECURITY.md](./SECURITY.md),
-[PRIVACY.md](./PRIVACY.md), and [DEPLOY.md](./DEPLOY.md). Do not enter
-production secrets or confidential workflow data into the public demo or a
-share link.
-
-## Status (September 2026)
-
-| Layer | State |
-|-------|--------|
-| **MVP debugger** | Shipped end-to-end (graph, breakpoints, matrix lanes, expression playground, What-If, mocks, time-travel, share links, themes). |
-| **Public demo** | [vizu-four.onrender.com](https://vizu-four.onrender.com) — **`VIZU_DEMO_MODE=1`** (`/api/config` → `{"simulationOnly":true}`). Real `run:` and host workspace browse are off. |
-| **Hardening** | First audit pass (28 findings) plus a follow-up security review (**8 findings**) are **merged** on the default branch (`53a34a6`, regression `63eb857`). |
-| **Live re-checks** | Demo-compatible findings re-probed over HTTP: YAML bomb rejected, secret-as-key masked, expression response budget held, oversized `event`/secrets rejected, pending-step `env` matches the playground, non-owner sessions → 404. |
-| **Still open for formal sign-off** | Confirm Render deploy SHA in the dashboard; re-run full local `npm test` / typecheck / lint / build on a clean machine; real-execution masking tests need a local (non-demo) process. Container isolation ([#14](https://github.com/StormDoragon/vizu-four/issues/14)) remains a **hard prerequisite** before any shared host re-enables `run:`. |
-
-## Live demo
-
-**[vizu-four.onrender.com](https://vizu-four.onrender.com)** — running in
-`VIZU_DEMO_MODE=1` (see [DEPLOY.md](./DEPLOY.md)), so `run:` steps are
-simulated rather than executed for real. Click **⚠ See a failure debugged
-(one click)** on the home page for the fastest way to see what the debugger
-actually does.
-
-This runs on Render's free tier as a single persistent instance (see
-[DEPLOY.md](./DEPLOY.md#render-quickstart-recommended-free-one-instance-no-card)),
-which is why it's the recommended host over a serverless platform: a
-serverless deployment can route requests across multiple instances, each
-with its own empty copy of the in-memory session store, causing sessions to
-intermittently "disappear" mid-debug. One free-tier tradeoff: the instance
-spins down after ~15 minutes idle, so the first request after a quiet
-period can take up to a minute to wake it back up.
-
-(An earlier `*.vercel.app` link for this project has been paused and is no
-longer live — the Render URL above is the only public demo.)
-
-## Quick start
+`src/lib/release/eval/` holds the evaluation harness, metrics, and a
+**synthetic** 177-case corpus. To measure accuracy on a real public range, a
+maintainer generates a blank worksheet and labels it without looking at the
+classifier's output:
 
 ```bash
-npm install
-npm run dev
+npm run eval:worksheet -- <owner/repo> <base-ref> <head-ref> --out src/lib/release/eval/worksheets/<name>.json
 ```
 
-Open http://localhost:3000, paste a workflow (or click one of the bundled
-examples under `examples/workflows/`), and click **Start Debugging**. Or
-click **⚠ See a failure debugged (one click)** to skip straight to a real
-failed step with no setup — it works the same way in a `VIZU_DEMO_MODE=1`
-deployment as it does locally, since the failure is a mocked step result
-rather than something that depends on `run:` actually executing.
+See [`src/lib/release/eval/README.md`](./src/lib/release/eval/README.md) for
+the full labeling, review-record, and calibration/hold-out workflow, and
+[ROADMAP.md](./ROADMAP.md) for current synthetic measurements. Files in
+`labeling/` are AI-drafted judgments for one range of this repository; they
+are not a maintainer review and are not loaded as reviewed data.
 
-Requires Node.js 20+ and a Unix-like shell (`bash`) on PATH — `run:` steps
-are executed with `bash --noprofile --norc -eo pipefail`, matching GitHub's
-own default. Windows/macOS runner emulation isn't implemented (see Scope).
-
-## What you can do
-
-### Verification
+## Verification
 
 CI runs the entire typecheck, lint, and Vitest suite on Ubuntu with Node 22.
 It also builds on Node 20, matching the runtime pinned in `render.yaml`.
@@ -172,10 +221,6 @@ Live GitHub and paid Anthropic behavior still need separate integration checks.
 Release tests cover LF/CRLF metadata and case-sensitive, Unicode, and escaped
 GitHub paths without using the host filesystem's path conventions. The full
 test suite needs Node 22+ and Bash; Node 20 is checked as a production runtime.
-
-See the full feature list in the repository (graph, breakpoints, context
-inspector, matrix explorer, expression playground, What-If, mocks, workspace
-opt-in, time-travel, failure explanation, themes, share links).
 
 ## Security note
 
@@ -201,6 +246,12 @@ explanations may send masked failure context to Anthropic when an operator
 configures an API key. See [PRIVACY.md](./PRIVACY.md) for the current data-flow
 and retention details.
 
+Release only reads public GitHub metadata through a fixed API origin, sends no
+GitHub credentials, and never downloads or runs repository code. With AI
+wording opted in, eligible public titles are sent to Anthropic;
+security-sensitive descriptions are withheld. Treat every draft as untrusted
+until a person has reviewed it.
+
 ### Hardening summary (latest)
 
 1. **Initial audit / hardening** — concurrency, validation, ownership, rate
@@ -224,21 +275,22 @@ arbitrary workflow `shell:`; shared-host real execution needs
 [#14](https://github.com/StormDoragon/vizu-four/issues/14). See
 [DEPLOY.md](./DEPLOY.md) before any public deploy.
 
-## Simulation-only mode (`VIZU_DEMO_MODE=1`)
-
-Set `VIZU_DEMO_MODE=1` and **no `run:` step is ever spawned**. Mocks still
-apply (how the demo shows failures). Workspace browse of the host is disabled.
-Session creation is rate-limited. See [DEPLOY.md](./DEPLOY.md).
-
 ## Scope
 
-**Built:** visual debugger, real local `run:` execution, expression engine,
-matrix lanes, What-If, mocks, time-travel, share links, AI/heuristic failure
-explanation.
+**Built — Debug:** visual debugger, real local `run:` execution, expression
+engine, matrix lanes, What-If, mocks, time-travel, share links, AI/heuristic
+failure explanation.
+
+**Built — Release:** public-repository range analysis, deterministic
+classification with evidence links, technical and customer Markdown notes,
+opt-in AI wording, and an offline evaluation harness.
 
 **Not built:** container action execution, GitHub run import, IDE extensions,
-team/SSO/billing, Windows/macOS runner emulation. Full scope notes and
-expression divergences remain in git history and [ROADMAP.md](./ROADMAP.md).
+team/SSO/billing, Windows/macOS runner emulation; for Release, private
+repositories, a GitHub App, persistence, webhooks, hosted changelogs, and
+automatic publishing. Full scope notes and expression divergences remain in
+git history, [docs/history.md](./docs/history.md), and
+[ROADMAP.md](./ROADMAP.md).
 
 ## License
 
