@@ -106,7 +106,11 @@ Session creation is rate-limited. See [DEPLOY.md](./DEPLOY.md).
 Open **Release** in the navigation (`/release`). Enter `owner/repository` or
 an HTTPS GitHub repository URL, a base tag/branch/SHA, and a head ref. Click
 **Analyze release**, inspect included and excluded changes and their sources,
+open each change to edit its technical/customer wording or include/exclude it,
 then switch between **Technical** and **Customer** notes and copy Markdown.
+Edits preserve source links and security/breaking flags. Security-sensitive
+wording stays protected. **Reset draft edits** restores the collected result.
+Edits stay in this page and clear on navigation or a new analysis.
 Nothing is automatically published.
 
 `POST /api/releases/analyze` accepts only:
@@ -127,10 +131,13 @@ One canonical analysis contains each change's category, impact, importance,
 confidence, securitySensitive, breakingChange, releaseWorthy, reason, and
 evidence. Deterministic conventional-commit/merged-PR-title rules distinguish
 features, fixes, performance, docs, internal maintenance, and unknown changes.
-Simple Add/Fix/Improve-style titles also qualify, with lower confidence;
-CI, test, build, and tooling scopes remain internal unless flagged for review.
+Plain-English change verbs and common emoji/ticket prefixes also qualify, with
+lower confidence. Test/CI/build-only entries and duplicate merges stay excluded
+unless breaking; their security flags still require review.
 Unknown items are retained for review but excluded from notes. Explicit
-breaking and security signals override maintenance filtering. Both audiences
+breaking signals override maintenance filtering. Protective changes described
+as secret masking, request bounds, confinement or server availability are
+flagged for review. Both audiences
 are derived from that analysis. Security-sensitive descriptions are withheld
 from exports and AI prompts; technical notes retain a review placeholder.
 
@@ -144,6 +151,9 @@ membership, bounded strings, and evidence IDs belonging to the same change.
 It cannot set flags, categories, release-worthiness, or URLs. No key, exhausted
 budget, timeout, incomplete output, or failed validation yields deterministic
 notes with a visible explanation instead.
+
+See [SHIPPING.md](./SHIPPING.md) for the public-preview scope, evaluation
+provenance and release verification procedure.
 
 ### Release limits and caveats
 

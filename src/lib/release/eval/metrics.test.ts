@@ -31,13 +31,13 @@ describe("eval metrics", () => {
   });
   it("scores inclusion only when a category is omitted, and category only when given", () => {
     const m = computeMetrics([
-      evaluateCase(make("no-category", "Fixed a thing", { releaseWorthy: false })),
+      evaluateCase(make("no-category", "An unspecified thing", { releaseWorthy: false })),
       evaluateCase(make("wrong-category", "fix: a thing", { releaseWorthy: true, category: "added" })),
       evaluateCase(make("right-category", "fix: a thing", { releaseWorthy: true, category: "fixed" })),
     ]);
     expect(m.categoryCases).toBe(2); expect(m.categoryAccuracy).toBe(0.5);
     expect(m.total).toBe(3);
-    const ids = computeMetrics([evaluateCase(make("only-inclusion", "Fixed a thing", { releaseWorthy: true }))]);
+    const ids = computeMetrics([evaluateCase(make("only-inclusion", "An unspecified thing", { releaseWorthy: true }))]);
     expect(ids.categoryCases).toBe(0); expect(ids.categoryAccuracy).toBeNull(); expect(ids.falseExclusions).toBe(1);
   });
   it("keeps accepted mismatches in the counts and flags them as accepted", () => {

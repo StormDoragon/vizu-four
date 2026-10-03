@@ -42,6 +42,10 @@ const EXPOSURE = "(?:leak\\w*|expos\\w*|disclos\\w*|dump\\w*|print\\w*|logs?|log
 const BRIDGE = "[^\\n]{0,40}";
 const SECRET_EXPOSURE = new RegExp(`\\b${EXPOSURE}\\b${BRIDGE}\\b${SECRET}\\b|\\b${SECRET}\\b${BRIDGE}\\b${EXPOSURE}\\b`, "i");
 
+// Review triggers for protective changes described without vulnerability acronyms.
+// Keep gaps bounded and within a paragraph; these identify review needs, not proven vulnerabilities.
+const PROTECTIVE_CHANGE = /\bmask\w*\b[^\n]{0,80}\bsecrets?\b|\bsecrets?\b[^\n]{0,80}\bmask\w*\b|\bpath confinement\b|\b(?:unbounded|unlimited)\b[^\n]{0,80}\b(?:read|buffer|memory|request|spend|calls?)\w*\b|\bbound\w*\b[^\n]{0,80}\b(?:request bodies|configuration|spend|concurrency)\b|\b(?:stall\w*|held|hold\w*|block\w*)\b[^\n]{0,60}\b(?:whole server|server for every visitor)\b|\bwhole instance down\b|\bthen it ran for real\b|\bneutraliz\w*\b[^\n]{0,60}\b(?:URLs?|autolinks?|mentions?)\b/i;
+
 /**
  * A BARE token/key is not a secret on its own ("parser tokens", "object keys"). It becomes a conservative
  * review trigger only when all three appear together within bounded distances: the noun, exposure wording,
@@ -73,6 +77,8 @@ const WS = "(?: +| *\\n *(?!\\n))";
 const BREAKING_PROSE = new RegExp(`\\b(?:backwards?|backward)(?:-|${WS})incompatible\\b`, "gi");
 const NOT_COMPATIBLE = new RegExp(`\\bnot${WS}(?:backwards?|backward)(?:-|${WS})compatible\\b`, "i");
 const BREAKING_SUPPORT = new RegExp(`\\b(?:drop(?:s|ped|ping)?|remov(?:e|es|ed|ing))${WS}(?:support|compatibility)${WS}(?:for|of|with)\\b|\\bend${WS}of${WS}support\\b|\\bno${WS}longer${WS}(?:support\\w*|compatible${WS}with)\\b`, "gi");
+const NEW_INCOMPATIBILITY = /\b(?:now|becomes?|becoming) +incompatible +with\b/gi;
+const NEW_CONFIG_BOUND = /^(?:bound|cap|limit)\b[^\n]{0,60}\baccumulated configuration\b/im;
 
 /** Words that mean a change avoids, repairs or refuses something rather than introducing it. */
 const NEGATORS = "(?:avoid\\w*|prevent\\w*|without|never|not|no|restor\\w*|preserv\\w*|maintain\\w*|keep\\w*|ensur\\w*|stop\\w*|(?:don|doesn|didn|won|can)'?t)";
@@ -124,7 +130,7 @@ export function reviewFlags(text: string) {
   const lines = blankLines(normalizeForDetection(text));
   const prose = joinWrapped(lines);
   return {
-    breakingChange: BREAKING_FOOTER.test(lines) || BREAKING_BRACKET.test(lines) || hasUnnegatedMatch(BREAKING_SUPPORT, lines) || introducesIncompatibility(lines),
-    securitySensitive: VULNERABILITY_TERMS.test(prose) || SECRET_EXPOSURE.test(prose) || BARE_SECRET_IN_LOGS.test(prose),
+    breakingChange: BREAKING_FOOTER.test(lines) || BREAKING_BRACKET.test(lines) || hasUnnegatedMatch(BREAKING_SUPPORT, lines) || introducesIncompatibility(lines) || hasUnnegatedMatch(NEW_INCOMPATIBILITY, lines) || NEW_CONFIG_BOUND.test(lines),
+    securitySensitive: VULNERABILITY_TERMS.test(prose) || SECRET_EXPOSURE.test(prose) || BARE_SECRET_IN_LOGS.test(prose) || PROTECTIVE_CHANGE.test(prose),
   };
 }

@@ -23,7 +23,7 @@ const SECURITY_POSITIVES = [
   "sec-bare-token-gap", "sec-open-token-logs", "sec-open-keys-logs",
 ];
 const BREAKING_POSITIVES = [
-  "cc-breaking-bang", "cc-breaking-scope-bang", "cc-breaking-footer", "br-plain-remove", "br-plain-rename", "br-bracket", "br-colon-prefix", "br-incompatible", "br-lowercase-footer",
+  "br-incompatible-gap", "cc-breaking-bang", "cc-breaking-scope-bang", "cc-breaking-footer", "br-plain-remove", "br-plain-rename", "br-bracket", "br-colon-prefix", "br-incompatible", "br-lowercase-footer",
   "br-plural-footer", "br-bracket-hyphen", "br-bracket-after-type", "br-drop-support", "br-dropped-support", "br-remove-support", "br-no-longer-supports",
   "br-unicode-hyphen", "br-wrapped-lf", "br-wrapped-crlf", "br-footer-lf", "br-footer-crlf", "br-late-bare-cr-footer",
   "br-r10-ship", "br-r10-making", "br-r10-fixes-colon",
@@ -39,10 +39,10 @@ const BREAKING_GUARDS = ["br-not-breaking", "br-guard-bare-breaking", "br-guard-
   "br-wrap-guard-blank", "br-wrap-guard-spaces-blank"];
 /** Cases allowed to carry an accepted mismatch. Adding to this list is a deliberate, reviewed edit. */
 /**
- * Accepted mismatches. "br-incompatible-gap" and "sec-guard-sanitize-ui" are PENDING maintainer decisions, not completed fixes.
+ * Accepted conservative security triggers. Explicit new runtime incompatibility is now a required positive.
  * "sec-tradeoff-object-keys-logs" is a decided trade-off: the owner chose a conservative review trigger for bare token/key + exposure + logs.
  */
-const ACCEPTED = ["br-incompatible-gap", "sec-guard-sanitize-ui", "sec-tradeoff-object-keys-logs"];
+const ACCEPTED = ["sec-guard-sanitize-ui", "sec-tradeoff-object-keys-logs"];
 /** Scored security false alarms that are neither guards nor accepted: known, pre-existing. */
 const KNOWN_SECURITY_FALSE_ALARMS = ["sec-credential-ui", "sec-false-alarm-docs"];
 
@@ -52,7 +52,7 @@ const KNOWN_SECURITY_FALSE_ALARMS = ["sec-credential-ui", "sec-false-alarm-docs"
  * raise one to make a change pass. Print every miss with:
  *   npx vitest run src/lib/release/eval --reporter=verbose --silent=false
  */
-const BASELINE = { falseExclusions: 14, falseInclusions: 5, securityMisses: 0, breakingMisses: 1, securityFalseAlarms: 4, breakingFalseAlarms: 0, minCategoryAccuracy: 0.77 };
+const BASELINE = { falseExclusions: 0, falseInclusions: 1, securityMisses: 0, breakingMisses: 0, securityFalseAlarms: 4, breakingFalseAlarms: 0, minCategoryAccuracy: 66 / 70 };
 
 describe("release classification evaluation", () => {
   it("has a nonempty corpus with unique ids and only declared sources", () => {
@@ -61,7 +61,7 @@ describe("release classification evaluation", () => {
     expect(corpus.every(c => c.source === "synthetic" || c.source === "maintainer-reviewed")).toBe(true);
     expect(metrics.synthetic.total).toBeGreaterThan(0);
   });
-  it("prints the report", () => { console.log(`\n${formatReport(results)}\n`); });
+  it("prints the report", () => { process.stdout.write(`\n${formatReport(results)}\n`); });
 
   it("retains every required security-positive and breaking-positive case with its expectation", () => {
     for (const id of SECURITY_POSITIVES) expect(result(id).case.expected.securitySensitive, id).toBe(true);

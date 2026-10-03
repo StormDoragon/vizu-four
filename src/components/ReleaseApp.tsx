@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReleaseResult } from "@/lib/release/types";
 import { parseReleaseInput } from "@/lib/release/validation";
 import { ModuleNav } from "./ModuleNav";
 import { ThemeToggle } from "./ThemeToggle";
+import { applyReleaseEdits, type ChangeEdit } from "@/lib/release/review";
+import { renderNotes } from "@/lib/release/analysis";
 
 export function ReleaseApp() {
   const [repository, setRepository] = useState("");
@@ -13,7 +15,13 @@ export function ReleaseApp() {
   const [useAi, setUseAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<ReleaseResult | null>(null);
+  const [originalResult, setResult] = useState<ReleaseResult | null>(null);
+  const [edits, setEdits] = useState<Record<string, ChangeEdit>>({});
+  const result = useMemo(() => {
+    if (!originalResult) return null;
+    const analysis = applyReleaseEdits(originalResult.analysis, edits);
+    return { analysis, notes: renderNotes(analysis) };
+  }, [originalResult, edits]);
   const [audience, setAudience] = useState<"technical" | "customer">("technical");
   const [copyStatus, setCopyStatus] = useState("");
   const controller = useRef<AbortController | null>(null);
@@ -22,7 +30,7 @@ export function ReleaseApp() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (controller.current) return;
-    setError(""); setResult(null); setCopyStatus("");
+    setError(""); setResult(null); setCopyStatus(""); setEdits({});
     try {
       const input = parseReleaseInput({ repository, base, head, useAi });
       controller.current = new AbortController();
@@ -39,6 +47,10 @@ export function ReleaseApp() {
   async function copy() {
     try { await navigator.clipboard.writeText(result!.notes[audience]); setCopyStatus("Copied Markdown."); }
     catch { setCopyStatus("Clipboard unavailable. Select and copy the notes below."); }
+  }
+  function editChange(id: string, patch: ChangeEdit) {
+    setEdits(current => ({ ...current, [id]: { ...current[id], ...patch } }));
+    setCopyStatus("");
   }
   const inputClass = "mt-2 w-full rounded-md border border-bg-border bg-bg-panel p-3 text-ink focus:border-status-running focus:outline-none";
 
@@ -66,6 +78,8 @@ export function ReleaseApp() {
         <p className="text-sm text-ink-300">{result.analysis.repository} · {result.analysis.baseSha.slice(0, 7)} → {result.analysis.headSha.slice(0, 7)} · {result.analysis.source === "claude" ? "AI-assisted draft" : "Deterministic draft"}</p>
         <a className="text-sm text-status-running underline" href={result.analysis.compareUrl} target="_blank" rel="noreferrer">View comparison on GitHub</a>
         <p className="text-sm text-ink-300">Impact and confidence are inferred from metadata, not verified product behavior. Review wording and breaking changes before sharing. Security-sensitive details are withheld from exported notes.</p>
+        <p className="text-sm text-ink-300">Open each change below to adjust inclusion and wording. Edits stay in this page and are lost when you leave or analyze another range.</p>
+        <button disabled={!Object.keys(edits).length} onClick={() => { setEdits({}); setCopyStatus(""); }} className="rounded border border-bg-border px-3 py-2 text-sm text-ink disabled:opacity-50">Reset draft edits</button>
         {result.analysis.warnings.map(w => <p key={w} role="note" className="text-sm text-ink-300">{w}</p>)}
       </section>
       <section className="rounded-xl border border-bg-border bg-bg-panel p-5" aria-label="Release notes">
@@ -80,10 +94,16 @@ export function ReleaseApp() {
       <section aria-label="Change evidence" className="space-y-3">
         <h2 className="text-xl font-semibold text-ink">Changes and evidence</h2>
         {!result.analysis.changes.length && <p className="text-ink-300">These refs contain no new commits.</p>}
-        {result.analysis.changes.map(change => <details key={change.id} className="rounded-lg border border-bg-border bg-bg-panel p-4">
+        {result.analysis.changes.map((change, index) => <details key={change.id} className="rounded-lg border border-bg-border bg-bg-panel p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink">{change.securitySensitive ? "Security-related change — review required" : change.title} · {change.releaseWorthy ? "Included" : "Excluded"}</summary>
           <p className="mt-3 text-sm text-ink-300">{change.reason}</p>
           <p className="mt-2 text-xs text-ink-400">Category: {change.category} · Impact: {change.impact} · Importance: {change.importance} · Confidence: {change.confidence} · Breaking: {change.breakingChange ? "yes" : "no"} · Security-sensitive: {change.securitySensitive ? "yes" : "no"}</p>
+          <label className="mt-3 flex items-center gap-2 text-sm text-ink"><input type="checkbox" aria-label={`Include change ${index + 1}`} checked={change.releaseWorthy} onChange={e => editChange(change.id, { included: e.target.checked })} />Include in notes</label>
+          {edits[change.id] && <button aria-label={`Reset change ${index + 1}`} onClick={() => { setEdits(current => { const next = { ...current }; delete next[change.id]; return next; }); setCopyStatus(""); }} className="mt-3 rounded border border-bg-border px-3 py-2 text-sm text-ink">Reset this change</button>}
+          {change.securitySensitive ? <p className="mt-3 text-sm text-ink-300">Sensitive wording is protected. Review the linked source separately; including this change keeps its details withheld.</p> : <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm text-ink">Technical wording<textarea aria-label={`Technical wording ${index + 1}`} maxLength={600} value={edits[change.id]?.technical ?? change.technical} onChange={e => editChange(change.id, { technical: e.target.value })} className={inputClass} /></label>
+            <label className="text-sm text-ink">Customer wording<textarea aria-label={`Customer wording ${index + 1}`} maxLength={600} value={edits[change.id]?.customer ?? change.customer} onChange={e => editChange(change.id, { customer: e.target.value })} className={inputClass} /></label>
+          </div>}
           <ul className="mt-3 flex flex-wrap gap-4">{change.evidence.map(e => <li key={e.id}><a href={e.url} target="_blank" rel="noreferrer" className="text-sm text-status-running underline">{e.label}</a></li>)}</ul>
         </details>)}
       </section>

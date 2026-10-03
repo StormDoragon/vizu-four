@@ -84,6 +84,7 @@ export function metricsBySource(results: CaseResult[]): Record<EvalSource, Metri
   return {
     synthetic: computeMetrics(results.filter(r => r.case.source === "synthetic")),
     "maintainer-reviewed": computeMetrics(results.filter(r => r.case.source === "maintainer-reviewed")),
+    "ai-draft": computeMetrics(results.filter(r => r.case.source === "ai-draft")),
   };
 }
 
@@ -91,6 +92,7 @@ export const percent = (value: Ratio) => value === null ? "N/A" : `${(value * 10
 
 export function formatReport(results: CaseResult[]): string {
   const lines: string[] = ["NOTE: synthetic cases are hand-labeled development data; they are not evidence of real-world accuracy."];
+  if (results.some(r => r.case.source === "ai-draft")) lines.push("NOTE: ai-draft scores measure agreement with AI-authored development labels, not human-reviewed accuracy. No human baseline is set from these scores.");
   for (const [source, m] of Object.entries(metricsBySource(results))) {
     lines.push(`[${source}] n=${m.total} inclusion=${percent(m.inclusionAccuracy)} (false incl ${m.falseInclusions}, false excl ${m.falseExclusions}) category=${percent(m.categoryAccuracy)}/${m.categoryCases}`
       + ` security: ${m.securityMisses} misses/${m.securityPositives} positives (recall ${percent(m.securityRecall)}), ${m.securityFalseAlarms} false alarms/${m.securityNegatives} negatives`

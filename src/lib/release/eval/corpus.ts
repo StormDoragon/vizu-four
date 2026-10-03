@@ -171,7 +171,7 @@ const rows: Row[] = [
   ["br-footer-lf", "feat: new auth\n\nBREAKING CHANGE: tokens expire hourly", { releaseWorthy: true, breakingChange: true }],
   ["br-footer-crlf", "feat: new auth\r\n\r\nBREAKING CHANGE: tokens expire hourly", { releaseWorthy: true, breakingChange: true }, { note: "Must match the LF case." }],
   ["br-late-bare-cr-footer", `feat: new auth\r${LATE_FILLER}\rBREAKING CHANGE: tokens expire hourly`, { releaseWorthy: true, breakingChange: true }, { note: "Footer after more than 1200 characters, separated by a bare CR." }],
-  ["br-incompatible-gap", "Now incompatible with Node 16", { releaseWorthy: true, breakingChange: true }, { acceptedMismatch: { kinds: ["breaking miss", "false exclusion", "category"], reason: "'Incompatible with X' is equally a bug report (\"fix plugin incompatible with Node 20\"); not flagged." }, openPolicy: "Whether 'incompatible with <runtime>' should mean breaking is a maintainer decision." }],
+  ["br-incompatible-gap", "Now incompatible with Node 16", { releaseWorthy: true, breakingChange: true }, { note: "Explicit new runtime incompatibility is a breaking declaration; an ordinary bug report is not." }],
   // Breaking: R10 positives. A leading "fix" does not make an introduced incompatibility safe.
   ["br-r10-ship", "fix: ship backwards-incompatible output", { releaseWorthy: true, breakingChange: true }],
   ["br-r10-making", "Fix the API by making it backwards incompatible", { releaseWorthy: true, breakingChange: true }],

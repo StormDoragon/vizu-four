@@ -3,9 +3,10 @@ import type { ReleaseChange } from "../types";
 /**
  * "synthetic" cases are hand-written by the implementer to probe known-hard metadata shapes.
  * Only "maintainer-reviewed" cases may be cited as evidence of real-world accuracy, and each one
- * must carry provenance (see `Provenance`). Metrics are always reported per source.
+ * must carry provenance (see `Provenance`). AI drafts remain development data and
+ * cannot supply human review provenance. Metrics are always reported per source.
  */
-export type EvalSource = "synthetic" | "maintainer-reviewed";
+export type EvalSource = "synthetic" | "maintainer-reviewed" | "ai-draft";
 
 export interface EvalExpectation {
   releaseWorthy: boolean;

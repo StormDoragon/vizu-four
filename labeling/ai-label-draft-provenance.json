@@ -3,10 +3,19 @@
   "author": "Codex (AI assistant)",
   "authorization": "Owner authorized the assistant to decide the labels in this chat.",
   "evidence": "All original commit messages and changed-file statistics; selected historical diffs for ambiguous rows.",
-  "classifierRunForThisRange": false,
+  "classifierRunForThisRange": true,
   "independentHumanReview": false,
   "humanReviewRecord": null,
-  "sourceWorksheetSha256": "0df1de68e9014a794f03006dee1a6c9fc265b83332a88f105a8d575341c3e232",
+  "sourceWorksheetSha256": "b954f6ae27cbd6d4495a3ac5521f00e6eee239d3e8db851792037d3b669f1e33",
   "labeledDraftSha256": "9d30d170aae0ed86179f9da4292ce8d03e7865a8aadd1bf329161deae1b7c294",
-  "priorExposure": "This assistant previously reviewed classifier implementation and synthetic tests. This draft is not an independent human calibration dataset."
+  "priorExposure": "This assistant previously reviewed classifier implementation and synthetic tests. This draft is not an independent human calibration dataset.",
+  "checksumEncoding": "UTF-8 repository blob bytes (LF line endings)",
+  "classifierRunBeforeLabeling": false,
+  "postLabelingUse": {
+    "firstRecordedMeasurement": "https://github.com/StormDoragon/vizu-four/pull/37",
+    "measurementRecordedAt": "2026-10-03",
+    "subsequentDevelopmentUse": "https://github.com/StormDoragon/vizu-four/pull/39",
+    "independentCalibrationEligible": false,
+    "note": "Measurements were made after the AI draft was frozen. PR #39 tunes rules against these AI decisions and retains all original labels; this range is development data, not independent calibration or human-reviewed accuracy."
+  }
 }
