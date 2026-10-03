@@ -119,6 +119,25 @@ describe("loadReviewedCases", () => {
   it("treats a missing directory as no reviewed ranges yet", () => {
     expect(loadReviewedCases(join(tmpdir(), "vizu-does-not-exist-" + Date.now()))).toEqual({ cases: [], skipped: [], problems: [] });
   });
+  it("reports a directory that cannot be read instead of treating it as empty (ENOTDIR)", () => {
+    const dir = temp();
+    const notADirectory = join(dir, "reviewed");
+    writeFileSync(notADirectory, "this is a file, not a directory");
+    const result = loadReviewedCases(notADirectory);
+    expect(result.problems).toEqual(["reviewed directory could not be read: ENOTDIR"]);
+    expect(result.cases).toEqual([]);
+  });
+  it("reports a worksheet that cannot be read, by name (EISDIR), and keeps the readable ones", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "good.json"), JSON.stringify(worksheet([row(C, "feat: x")])));
+    mkdirSync(join(dir, "unreadable.json"));
+    const result = loadReviewedCases(dir);
+    expect(result.problems).toEqual(["unreadable.json: could not be read (EISDIR)"]);
+    expect(result.cases).toHaveLength(1);
+  });
+  it("only ENOENT means no reviewed ranges: a missing directory reports nothing", () => {
+    expect(loadReviewedCases(join(temp(), "missing"))).toEqual({ cases: [], skipped: [], problems: [] });
+  });
   it("loads every json worksheet, ignores other files, and reports bad ones by name", () => {
     const dir = temp();
     writeFileSync(join(dir, "good.json"), JSON.stringify(worksheet([row(C, "feat: x")])));

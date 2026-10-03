@@ -28,10 +28,15 @@
    the review is recorded (an issue, PR comment, or document). The tooling checks the fields are present and well
    formed. **It cannot check that a person really did the review**, so a worksheet is only as trustworthy as the person
    and the link behind it.
+   The generator only writes ranges the product supports: a public repository whose name matches, a head that
+   descends from the base (`ahead`; `diverged` and `behind` are rejected), at least one commit, and at most 40.
 5. **Move the finished file to `reviewed/`** (`worksheets/` holds drafts and is never loaded) and run
    `npx vitest run src/lib/release/eval --reporter=verbose --silent=false`.
 
 ## What happens to a reviewed range
+
+A `reviewed/` directory that cannot be read, or a worksheet that cannot be read or parsed, **fails the tests**; only a
+directory that does not exist (ENOENT) means there are no reviewed ranges yet. Nothing is skipped silently.
 
 Cases load as `maintainer-reviewed`, are reported separately from the synthetic ones, and carry the flags the collector
 would compute from the raw message and PR title. Today the gate (`gate.ts`) requires every reviewed case to match every

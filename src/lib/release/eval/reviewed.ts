@@ -123,14 +123,25 @@ export function importWorksheet(raw: unknown, origin = "worksheet"): ImportResul
   return problems.length ? { cases: [], skipped: [], problems } : { cases, skipped, problems };
 }
 
-/** Loads every `*.json` worksheet in `dir`. A missing directory means no reviewed ranges yet. */
+const errorCode = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code ?? "unknown error";
+
+/**
+ * Loads every `*.json` worksheet in `dir`. Only a directory that does not exist (ENOENT) means "no reviewed
+ * ranges yet". Any other failure (ENOTDIR, EACCES, an unreadable file, ...) is reported as a problem, because
+ * swallowing it would silently remove reviewed cases and let the gate pass.
+ */
 export function loadReviewedCases(dir: string): ImportResult {
-  let files: string[] = [];
-  try { files = readdirSync(dir).filter(f => f.endsWith(".json")).sort(); } catch { return { cases: [], skipped: [], problems: [] }; }
   const all: ImportResult = { cases: [], skipped: [], problems: [] };
+  let files: string[];
+  try { files = readdirSync(dir).filter(f => f.endsWith(".json")).sort(); } catch (error) {
+    if (errorCode(error) !== "ENOENT") all.problems.push(`reviewed directory could not be read: ${errorCode(error)}`);
+    return all;
+  }
   for (const file of files) {
+    let text: string;
+    try { text = readFileSync(join(dir, file), "utf8"); } catch (error) { all.problems.push(`${file}: could not be read (${errorCode(error)})`); continue; }
     let parsed: unknown;
-    try { parsed = JSON.parse(readFileSync(join(dir, file), "utf8")); } catch { all.problems.push(`${file}: invalid JSON`); continue; }
+    try { parsed = JSON.parse(text); } catch { all.problems.push(`${file}: invalid JSON`); continue; }
     const result = importWorksheet(parsed, file);
     all.cases.push(...result.cases); all.skipped.push(...result.skipped); all.problems.push(...result.problems);
   }

@@ -19,7 +19,11 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
-const API = "https://api.github.com";
+// Test hook: a loopback URL replaces the API so the script can be exercised against a mock server. It can only
+// point at 127.0.0.1/localhost, and a GITHUB_TOKEN is NEVER sent to it.
+const testApi = process.env.RELEASE_EVAL_TEST_API;
+if (testApi && !/^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/.test(testApi)) { console.error("RELEASE_EVAL_TEST_API must be a loopback URL."); process.exit(2); }
+const API = testApi || "https://api.github.com";
 const args = process.argv.slice(2);
 const flag = name => { const i = args.indexOf(name); if (i === -1) return undefined; const [, value] = args.splice(i, 2); return value; };
 const out = flag("--out");
@@ -31,7 +35,7 @@ if (!repository || !baseRef || !headRef || !/^[\w.-]+\/[\w.-]+$/.test(repository
   process.exit(2);
 }
 
-let useToken = Boolean(process.env.GITHUB_TOKEN);
+let useToken = Boolean(process.env.GITHUB_TOKEN) && !testApi;
 async function get(path) {
   const request = authenticated => {
     const headers = { accept: "application/vnd.github+json", "user-agent": "vizu-release-eval-worksheet", "x-github-api-version": "2022-11-28" };
@@ -53,10 +57,14 @@ const git = (...gitArgs) => execFileSync("git", ["-C", localDir, ...gitArgs], { 
 
 async function collectFromApi() {
   const repo = await get("");
-  if (repo.private !== false) throw new Error("Only public repositories are supported.");
+  if (repo.private !== false || typeof repo.full_name !== "string" || repo.full_name.toLowerCase() !== repository.toLowerCase()) throw new Error("Public repository not found (it must be public and match owner/repo exactly).");
   const resolve = async ref => { const c = await get(`/commits/${encodeURIComponent(ref)}`); if (!/^[0-9a-f]{40}$/.test(c.sha)) throw new Error(`Could not resolve ${ref}`); return c.sha; };
   const [baseSha, headSha] = [await resolve(baseRef), await resolve(headRef)];
   const compare = await get(`/compare/${baseSha}...${headSha}?per_page=100&page=1`);
+  // Same rule as the product: the head must descend from the base. "behind" and "diverged" ranges are not supported.
+  if (!["ahead", "identical"].includes(String(compare.status))) throw new Error(`Head must descend from base (GitHub reports the comparison as "${compare.status}"). Choose an ancestor base ref.`);
+  if (!Number.isSafeInteger(compare.total_commits) || compare.total_commits < 0 || !Array.isArray(compare.commits)) throw new Error("GitHub returned an invalid comparison.");
+  if (compare.total_commits === 0) throw new Error("The range has no commits.");
   if (compare.total_commits > maxCommits) throw new Error(`The range has ${compare.total_commits} commits; the limit is ${maxCommits}. Choose a smaller range (or raise --max, up to 100).`);
   if (compare.commits.length !== compare.total_commits) throw new Error("GitHub returned an incomplete commit list.");
   const rows = [];
