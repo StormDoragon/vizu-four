@@ -90,6 +90,9 @@ Next three implementation steps:
    `maintainer-reviewed` cases. **No range has been labeled yet**: the one draft
    committed under `eval/worksheets/` (this repository, `eba1815..6dbf7b0`, 40
    commits, no merged-PR titles) is blank and is not loaded. It needs a maintainer.
+   A second blank worksheet, `e47bfd9..eba1815` (31 commits, role `holdout`), is the
+   hold-out: label it after any rule change and never tune against it. It is the
+   same repository, so it is a weak generalization test.
    Open decision: today a reviewed case must match every stated label, so the first
    labeled range will fail the suite on each classifier disagreement; whether to
    report reviewed disagreements as a measured baseline with a ratchet (zero

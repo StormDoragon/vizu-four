@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { reviewedViolations } from "./gate";
 import { evaluateCase } from "./metrics";
-import { importWorksheet, loadReviewedCases, type Worksheet, type WorksheetRow } from "./reviewed";
+import { importWorksheet, loadReviewedCases, ROLES, roleProblems, type Worksheet, type WorksheetRow } from "./reviewed";
 
 /**
  * FIXTURES ONLY. The reviewer, record link and SHAs below are invented for the tests, which is exactly why a
@@ -98,6 +98,43 @@ describe("importWorksheet", () => {
   });
 });
 
+describe("worksheet roles", () => {
+  const named = (name: string, w: Worksheet) => ({ name, worksheet: w as unknown });
+
+  it.each([undefined, "calibration", "holdout"])("imports a worksheet whose role is %s", role => {
+    expect(importWorksheet(worksheet([row(C, "feat: x")], role === undefined ? {} : { role: role as Worksheet["role"] })).problems).toEqual([]);
+  });
+  it.each(["hold-out", "Holdout", "validation", "", 1, null])("rejects an unknown role %j on import", role => {
+    const result = importWorksheet(worksheet([row(C, "feat: x")], { role: role as never }));
+    expect(result.problems.join()).toContain("role must be absent");
+    expect(result.cases).toEqual([]);
+  });
+  it("reports an unknown role instead of dropping the worksheet from the overlap check (the \"hold-out\" probe)", () => {
+    const calibration = named("calibration.json", worksheet([row(C, "feat: x")]));
+    const misspelled = named("misspelled.json", worksheet([row(C, "feat: x")], { role: "hold-out" as never }));
+    expect(roleProblems([calibration, misspelled])).toEqual(['misspelled.json: unknown role "hold-out" (expected "calibration" or "holdout")']);
+  });
+  it("finds a commit shared by a hold-out and a calibration range even when the repository is capitalized differently", () => {
+    const calibration = named("calibration.json", worksheet([row(C, "feat: x"), row(D, "fix: y")], { repository: "StormDoragon/vizu-four" }));
+    const holdout = named("holdout.json", worksheet([row(D, "fix: y")], { repository: "stormdoragon/vizu-four", role: "holdout" }));
+    expect(roleProblems([calibration, holdout])).toEqual([`commit stormdoragon/vizu-four@${D} is in hold-out holdout.json and calibration calibration.json`]);
+  });
+  it("finds the same overlap with identical capitalization, treats an absent role as calibration, and passes disjoint ranges", () => {
+    const calibration = named("c.json", worksheet([row(C, "feat: x")]));
+    expect(roleProblems([calibration, named("h.json", worksheet([row(C, "feat: x")], { role: "holdout" }))])).toHaveLength(1);
+    expect(roleProblems([calibration, named("h.json", worksheet([row(D, "fix: y")], { role: "holdout" }))])).toEqual([]);
+    expect(roleProblems([calibration, named("c2.json", worksheet([row(C, "feat: x")], { role: "calibration" }))])).toEqual([]);
+  });
+  it("reports something that is not a worksheet rather than skipping it", () => {
+    expect(roleProblems([{ name: "junk.json", worksheet: { schema: 1 } }])).toEqual(["junk.json: not a worksheet"]);
+  });
+  it("uses a lower-case repository in case ids, so capitalization cannot create a second identity", () => {
+    const [c] = importWorksheet(worksheet([row(C, "feat: x")], { repository: "StormDoragon/Vizu-Four" })).cases;
+    expect(c.id).toBe(`stormdoragon/vizu-four@${C.slice(0, 7)}`);
+    expect(c.provenance?.repository).toBe("StormDoragon/Vizu-Four");
+  });
+});
+
 describe("reviewed cases and the gate", () => {
   it("passes when the classifier agrees with the maintainer, and fails on a disagreement", () => {
     const agree = importWorksheet(worksheet([row(C, "feat: add CSV export", { label: label({ category: "added" }) })]));
@@ -138,6 +175,22 @@ describe("loadReviewedCases", () => {
   it("only ENOENT means no reviewed ranges: a missing directory reports nothing", () => {
     expect(loadReviewedCases(join(temp(), "missing"))).toEqual({ cases: [], skipped: [], problems: [] });
   });
+  it("rejects the same commit in two reviewed worksheets, whatever the repository capitalization", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "a.json"), JSON.stringify(worksheet([row(C, "feat: x")], { repository: "StormDoragon/vizu-four" })));
+    writeFileSync(join(dir, "b.json"), JSON.stringify(worksheet([row(C, "feat: x")], { repository: "stormdoragon/vizu-four" })));
+    const result = loadReviewedCases(dir);
+    expect(result.problems).toContain(`b.json: commit stormdoragon/vizu-four@${C} is already in a.json`);
+  });
+  it("reports role problems among reviewed worksheets: an unknown role and a hold-out overlapping a calibration range", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "a.json"), JSON.stringify(worksheet([row(C, "feat: x")])));
+    writeFileSync(join(dir, "b.json"), JSON.stringify(worksheet([row(C, "feat: x")], { repository: "Example/Project", role: "holdout" })));
+    writeFileSync(join(dir, "c.json"), JSON.stringify(worksheet([row(D, "fix: y")], { role: "hold-out" as never })));
+    const problems = loadReviewedCases(dir).problems;
+    expect(problems).toContain(`commit example/project@${C} is in hold-out b.json and calibration a.json`);
+    expect(problems.some(p => p.startsWith('c.json: unknown role "hold-out"'))).toBe(true);
+  });
   it("loads every json worksheet, ignores other files, and reports bad ones by name", () => {
     const dir = temp();
     writeFileSync(join(dir, "good.json"), JSON.stringify(worksheet([row(C, "feat: x")])));
@@ -161,9 +214,19 @@ describe("committed draft worksheets", () => {
     expect(w.schema).toBe(1);
     expect(w.repository).toMatch(/^[\w.-]+\/[\w.-]+$/);
     expect(w.baseSha).toMatch(/^[0-9a-f]{40}$/); expect(w.headSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(w.role === undefined || (ROLES as readonly string[]).includes(w.role), `${file}: role ${JSON.stringify(w.role)}`).toBe(true);
     expect(w.commitCount).toBe(w.rows.length);
     expect(new Set(w.rows.map(r => r.sha)).size).toBe(w.rows.length);
     for (const r of w.rows) { expect(r.sha).toMatch(/^[0-9a-f]{40}$/); expect(typeof r.message).toBe("string"); expect(r.url).toBe(`https://github.com/${w.repository}/commit/${r.sha}`); }
+  });
+  it("keeps hold-out ranges disjoint from calibration ranges, across drafts and reviewed worksheets", () => {
+    const reviewedDir = fileURLToPath(new URL("./reviewed", import.meta.url));
+    const read = (folder: string, f: string) => ({ name: f, worksheet: JSON.parse(readFileSync(join(folder, f), "utf8")) as unknown });
+    const all = [
+      ...files.map(f => read(dir, f)),
+      ...(existsSync(reviewedDir) ? readdirSync(reviewedDir).filter(f => f.endsWith(".json")).map(f => read(reviewedDir, f)) : []),
+    ];
+    expect(roleProblems(all)).toEqual([]);
   });
   it("draft worksheets are never loaded as reviewed data", () => {
     // worksheets/ is not what the corpus loads; only reviewed/ is.

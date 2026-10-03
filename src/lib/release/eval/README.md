@@ -33,6 +33,22 @@
 5. **Move the finished file to `reviewed/`** (`worksheets/` holds drafts and is never loaded) and run
    `npx vitest run src/lib/release/eval --reporter=verbose --silent=false`.
 
+## Calibration and hold-out ranges
+
+Every worksheet has a `role`: `calibration` (the default when absent) or `holdout` (`--role holdout`). A calibration
+range is the one you measure first and may use to decide how reviewed disagreements are baselined. A **hold-out
+range must be labeled after any rule change and never used to tune rules**; it exists to confirm a change on data the
+rules have not seen. Roles are recorded in the data. Any other role value (for example `hold-out`) is rejected on import and
+reported by the overlap check, never silently ignored, and a test fails if a commit appears in both a hold-out and a
+calibration range. Commits are compared case-insensitively by repository (`StormDoragon/x` and `stormdoragon/x` are the
+same repository), and the same commit in two reviewed worksheets is reported. The tooling cannot stop someone tuning against a hold-out, only the discipline of not doing so can.
+
+Committed drafts for `StormDoragon/vizu-four` (all blank until a maintainer labels them):
+- `eba1815..6dbf7b0`, 40 commits, calibration.
+- `e47bfd9..eba1815`, 31 commits, **hold-out**: the adjacent earlier history (everything before the first range),
+  disjoint from it. It comes from the same repository and author mix, so it is a weak test of generalization; a range
+  from a different public repository would be a stronger hold-out.
+
 ## What happens to a reviewed range
 
 A `reviewed/` directory that cannot be read, or a worksheet that cannot be read or parsed, **fails the tests**; only a
