@@ -44,7 +44,7 @@ export const unaccepted = (r: CaseResult) => r.failures.filter(f => !r.accepted.
 
 export function evaluateCase(c: EvalCase): CaseResult {
   const sha = "1".repeat(40);
-  const actual = classifyChange({ sha, message: c.message, pullTitle: c.pullTitle, evidence: [{ id: `commit:${sha}`, kind: "commit", label: "1111111", url: "https://github.com/example/project/commit/" + sha }] });
+  const actual = classifyChange({ sha, message: c.message, pullTitle: c.pullTitle, reviewFlags: c.reviewFlags, evidence: [{ id: `commit:${sha}`, kind: "commit", label: "1111111", url: "https://github.com/example/project/commit/" + sha }] });
   const all: string[] = [];
   if (actual.releaseWorthy !== c.expected.releaseWorthy) all.push(c.expected.releaseWorthy ? "false exclusion" : "false inclusion");
   if (c.expected.category && actual.category !== c.expected.category) all.push(`category ${actual.category} != ${c.expected.category}`);

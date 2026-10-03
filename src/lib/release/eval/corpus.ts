@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { loadReviewedCases } from "./reviewed";
 import type { EvalCase } from "./types";
 
 type Extra = Pick<EvalCase, "pullTitle" | "note" | "acceptedMismatch" | "openPolicy">;
@@ -219,4 +221,13 @@ const rows: Row[] = [
   ["am-body-signal", "Cleanup\n\nfix: users could not reset passwords after email change", { releaseWorthy: true, category: "fixed" }, { note: "The user-facing fix lives in the body, not the subject." }],
 ];
 
-export const corpus: EvalCase[] = rows.map(([id, message, expected, extra]) => ({ id, source: "synthetic", message, expected, ...extra }));
+const synthetic: EvalCase[] = rows.map(([id, message, expected, extra]) => ({ id, source: "synthetic", message, expected, ...extra }));
+
+/**
+ * Real ranges a maintainer has labeled live in `reviewed/*.json` (see README.md). They are kept as a separate
+ * source: reported separately, held to every stated label, and never mixed into the synthetic ratchet. Import
+ * problems are surfaced by the tests, not swallowed here.
+ */
+export const reviewedImport = loadReviewedCases(fileURLToPath(new URL("./reviewed", import.meta.url)));
+
+export const corpus: EvalCase[] = [...synthetic, ...reviewedImport.cases];

@@ -45,4 +45,9 @@ export interface EvalCase {
   /** The label depends on product policy no one has decided yet. Never resolved by the implementer. */
   openPolicy?: string;
   provenance?: Provenance;
+  /**
+   * Flags the collector computes from the RAW message and PR title before truncation. Real (reviewed)
+   * cases carry them so evaluation sees exactly what collection would; synthetic cases omit them.
+   */
+  reviewFlags?: { securitySensitive: boolean; breakingChange: boolean };
 }

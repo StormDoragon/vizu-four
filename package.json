@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:worksheet": "node scripts/release-eval-worksheet.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

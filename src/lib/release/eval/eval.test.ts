@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { corpus } from "./corpus";
+import { corpus, reviewedImport } from "./corpus";
 import { evaluateCase, formatReport, metricsBySource } from "./metrics";
 import { provenanceProblems, reviewedViolations } from "./gate";
 import type { EvalCase } from "./types";
@@ -94,6 +94,10 @@ describe("release classification evaluation", () => {
     expect(m.securityFalseAlarms).toBeLessThanOrEqual(BASELINE.securityFalseAlarms);
     expect(m.breakingFalseAlarms).toBeLessThanOrEqual(BASELINE.breakingFalseAlarms);
     expect(m.categoryAccuracy).toBeGreaterThanOrEqual(BASELINE.minCategoryAccuracy);
+  });
+  it("imports every reviewed worksheet without problems", () => {
+    expect(reviewedImport.problems).toEqual([]);
+    if (reviewedImport.skipped.length) console.log(`\nReviewed worksheets: ${reviewedImport.skipped.length} row(s) skipped by the reviewer:\n${reviewedImport.skipped.map(s => `  ${s.sha.slice(0, 7)}: ${s.reason}`).join("\n")}\n`);
   });
   it("holds every maintainer-reviewed case to its stated labels and provenance", () => {
     expect(reviewedViolations(results)).toEqual([]);
