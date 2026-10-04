@@ -38,6 +38,22 @@ jobs:
           exit 1
 `;
 
+// The beta's guided simulation: a missing repository variable makes the
+// condition false. Visitors can inspect it, set RUN_CHECK=true in What-If,
+// evaluate again, then run the simulated step. No shell command executes on
+// the hosted demo.
+const BETA_CONDITION_YAML = `name: Beta Condition Demo
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gate
+        if: \${{ vars.RUN_CHECK == 'true' }}
+        run: echo "check runs"
+`;
+
 const PLACEHOLDER = `name: CI
 on: [push]
 
@@ -72,6 +88,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [failureDemoLoading, setFailureDemoLoading] = useState(false);
+  const [betaDemoLoading, setBetaDemoLoading] = useState(false);
 
   // "Open a workflow from the repo" - a directory path on the machine
   // running the debugger (this is local-first: browsers can't hand a server
@@ -180,6 +197,24 @@ export default function HomePage() {
     }
   }
 
+  async function startBetaDemo() {
+    setBetaDemoLoading(true);
+    setError(null);
+    setIssues([]);
+    try {
+      const { session, issues } = await createSession(BETA_CONDITION_YAML);
+      setIssues(issues);
+      saveWorkflowSource(session.workflowHash, BETA_CONDITION_YAML);
+      router.push(`/debug/${session.id}`);
+    } catch (err) {
+      const apiErr = err as { message?: string; body?: { issues?: ParseIssue[] } };
+      setError(apiErr.message ?? "Failed to start the condition demo");
+      setIssues(apiErr.body?.issues ?? []);
+    } finally {
+      setBetaDemoLoading(false);
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-10">
       <ModuleNav active="debug" />
@@ -187,20 +222,44 @@ export default function HomePage() {
         <div>
           <h1 className="text-2xl font-semibold text-ink">Vizu Four</h1>
           <p className="mt-1 text-sm text-ink-400">
-            Visually step through GitHub Actions workflow logic with breakpoints, live context
-            inspection, matrix exploration, and What-If editing.
+            {simulationOnly
+              ? "See why a GitHub Actions step runs or skips. Inspect the condition, test a What-If value, and follow the result in a visual simulation."
+              : "Visually step through GitHub Actions workflow logic with breakpoints, live context inspection, matrix exploration, and What-If editing."}
           </p>
         </div>
-        <button
-          onClick={startFailureDemo}
-          disabled={failureDemoLoading}
-          data-testid="failure-demo"
-          title="Loads a workflow with a real failing step and jumps straight to it - no setup"
-          className="shrink-0 rounded-md border border-status-failure/50 bg-status-failure/10 px-4 py-2 text-sm font-medium text-status-failure hover:bg-status-failure/20 disabled:opacity-50"
-        >
-          {failureDemoLoading ? "Starting…" : "⚠ See a failure debugged (one click)"}
-        </button>
+        <div className="flex flex-col gap-2">
+          {simulationOnly && (
+            <button
+              onClick={startBetaDemo}
+              disabled={betaDemoLoading}
+              data-testid="condition-demo"
+              className="rounded-md bg-status-running px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {betaDemoLoading ? "Starting…" : "Try the condition simulation — no signup"}
+            </button>
+          )}
+          <button
+            onClick={startFailureDemo}
+            disabled={failureDemoLoading}
+            data-testid="failure-demo"
+            title="Loads a workflow with a mocked failing step and jumps straight to it"
+            className="rounded-md border border-status-failure/50 bg-status-failure/10 px-4 py-2 text-sm font-medium text-status-failure hover:bg-status-failure/20 disabled:opacity-50"
+          >
+            {failureDemoLoading ? "Starting…" : "⚠ See a mocked failure (one click)"}
+          </button>
+        </div>
       </header>
+
+      {simulationOnly && (
+        <section className="rounded-lg border border-bg-border bg-bg-panel p-4 text-sm text-ink-300">
+          <h2 className="font-semibold text-ink">Try the beta example in three steps</h2>
+          <ol className="mt-2 list-inside list-decimal space-y-1">
+            <li>Evaluate <code>vars.RUN_CHECK == &apos;true&apos;</code> in Expressions; it starts false.</li>
+            <li>In What-If, add <code>RUN_CHECK=true</code> under Vars and apply it.</li>
+            <li>Evaluate again, then choose Run all to see the simulated result.</li>
+          </ol>
+        </section>
+      )}
 
       {simulationOnly && (
         <aside

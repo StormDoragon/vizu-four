@@ -1,17 +1,19 @@
-# Vizu Four — Debug & Release Intelligence
+# Vizu Four — visual GitHub Actions simulation
 
-Vizu has two modules:
+**[Try the public condition simulation — no signup required](https://vizu-four.onrender.com/).**
+Click **Try the condition simulation — no signup**. In Expressions, evaluate
+`vars.RUN_CHECK == 'true'` to see why the step is skipped. Set
+`RUN_CHECK=true` under What-If → Vars, evaluate again, then choose **Run all**.
+The hosted demo shows the path that would run; it never executes the shell
+command. Do not paste secrets or confidential workflows.
 
-- **Debug** (`/`) — a visual, step-through debugger for GitHub Actions
+The beta focuses on the **Debug** module (`/`), a visual, step-through debugger for GitHub Actions
   workflows: set breakpoints on steps, inspect every context (`github`, `env`,
   `vars`, `secrets` (masked), `matrix`, `needs`, `steps`, `runner`, `job`,
   `inputs`), explore matrix combinations, edit values with What-If, and run
   `run:` steps for real in a local scratch workspace — no push, no waiting on
-  a runner.
-- **Release** (`/release`) — evidence-backed technical and customer release
-  drafts from a public GitHub repository's commit range. Every included change
-  links back to the commits, PRs, and files it came from, and nothing is
-  published automatically.
+  a runner. Release Intelligence is separate work and is not part of this beta
+  campaign; its development status is documented below.
 
 This repository implements the **MVP slice** of a much larger product
 blueprint. See [Scope](#scope) below for exactly what's built versus what
@@ -39,9 +41,9 @@ share link.
 
 **[vizu-four.onrender.com](https://vizu-four.onrender.com)** — running in
 `VIZU_DEMO_MODE=1` (see [DEPLOY.md](./DEPLOY.md)), so `run:` steps are
-simulated rather than executed for real. Click **⚠ See a failure debugged
-(one click)** on the home page for the fastest way to see what the debugger
-actually does.
+simulated rather than executed for real. Click **Try the condition simulation
+— no signup** for the beta example. The **See a mocked failure** button opens
+a separate simulated failure example.
 
 This runs on Render's free tier as a single persistent instance (see
 [DEPLOY.md](./DEPLOY.md#render-quickstart-recommended-free-one-instance-no-card)),
@@ -63,11 +65,11 @@ npm run dev
 ```
 
 Open http://localhost:3000, paste a workflow (or click one of the bundled
-examples under `examples/workflows/`), and click **Start Debugging**. Or
-click **⚠ See a failure debugged (one click)** to skip straight to a real
-failed step with no setup — it works the same way in a `VIZU_DEMO_MODE=1`
-deployment as it does locally, since the failure is a mocked step result
-rather than something that depends on `run:` actually executing.
+examples under `examples/workflows/`), and click **Start Debugging**. On the
+hosted simulation demo, click **Try the condition simulation — no signup** for
+the beta example. Or click **See a mocked failure** to jump to a deliberately mocked
+failed step. It works in `VIZU_DEMO_MODE=1` because the failure comes from a
+mock, not from executing `run:`.
 
 For Release, open **Release** in the navigation (or go to `/release`) and
 enter a public repository with a base and head ref.
