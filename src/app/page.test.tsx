@@ -79,6 +79,26 @@ describe("HomePage - one-click failure demo", () => {
   });
 });
 
+describe("HomePage - beta condition demo", () => {
+  it("opens the simulation ready for the visitor's What-If steps", async () => {
+    vi.spyOn(apiClient, "listExamples").mockResolvedValue([]);
+    vi.spyOn(apiClient, "getDeploymentConfig").mockResolvedValue({ simulationOnly: true });
+    const session = makeSessionView({ id: "condition-session" });
+    const createSession = vi.spyOn(apiClient, "createSession").mockResolvedValue({ session, issues: [] });
+    const control = vi.spyOn(apiClient, "control");
+
+    render(<HomePage />);
+    fireEvent.click(await screen.findByTestId("condition-demo"));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/debug/condition-session"));
+    expect(createSession).toHaveBeenCalledWith(
+      expect.stringContaining("if: ${{ vars.RUN_CHECK == 'true' }}")
+    );
+    expect(control).not.toHaveBeenCalled();
+    expect(screen.getByText(/In What-If, add/)).toBeInTheDocument();
+  });
+});
+
 describe("HomePage - footer", () => {
   it("doesn't claim run: steps execute on a deployment that never runs them", async () => {
     // The public demo is simulation-only. The footer said, unconditionally,

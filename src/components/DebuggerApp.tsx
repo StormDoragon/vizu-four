@@ -468,6 +468,14 @@ export function DebuggerApp({ sessionId }: { sessionId: string }) {
           behaves normally. Run it locally to execute for real.
         </div>
       )}
+      {session.simulationOnly && session.workflow.name === "Beta Condition Demo" && (
+        <div className="border-b border-bg-border bg-bg-raised px-4 py-2 text-xs text-ink-300">
+          <strong className="text-ink">Try this example:</strong> In Expressions, evaluate{" "}
+          <code>vars.RUN_CHECK == &apos;true&apos;</code>. In What-If, set{" "}
+          <code>RUN_CHECK=true</code> under Vars and apply it. Evaluate again, then choose{" "}
+          <strong>Run all</strong> to see the simulated result.
+        </div>
+      )}
       {session.usesRealWorkspace && (
         <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-200">
           <strong>Real working tree.</strong> Unmocked <code>run:</code> steps in this session
